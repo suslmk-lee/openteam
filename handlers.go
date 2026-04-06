@@ -1,0 +1,2028 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"os"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
+	"time"
+
+	"openreport/internal/ai"
+	"openreport/internal/db"
+	"openreport/internal/excel"
+	"openreport/internal/integrations"
+
+	"github.com/wailsapp/wails/v2/pkg/runtime"
+)
+
+// --- User ---
+
+func (a *App) GetCurrentUser() (*db.User, error) {
+	return a.database.GetOrCreateDefaultUser()
+}
+
+func (a *App) UpdateUser(name, team string) error {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return err
+	}
+	return a.database.ExecRaw("UPDATE users SET name=?, team=? WHERE id=?", name, team, user.ID)
+}
+
+// --- Activities ---
+
+type ActivityWithSource struct {
+	db.Activity
+	SourceLabel string `json:"sourceLabel"`
+	SourceIcon  string `json:"sourceIcon"`
+}
+
+func (a *App) GetWeekActivities(weekStart, weekEnd string) ([]ActivityWithSource, error) {
+	activities, err := a.database.ListActivities(weekStart, weekEnd)
+	if err != nil {
+		return nil, err
+	}
+
+	var result []ActivityWithSource
+	for _, act := range activities {
+		aws := ActivityWithSource{
+			Activity:    act,
+			SourceLabel: sourceLabel(act.Source),
+			SourceIcon:  sourceIcon(act.Source),
+		}
+		result = append(result, aws)
+	}
+	return result, nil
+}
+
+func sourceLabel(source string) string {
+	labels := map[string]string{
+		"naverworks_mail":     "NaverWorks 메일",
+		"naverworks_calendar": "NaverWorks 캘린더",
+		"naverworks_board":    "NaverWorks 게시판",
+		"linear_issue":        "Linear 이슈",
+		"gmail":               "Gmail",
+		"gmail_sent":          "Gmail 발신",
+		"gmail_received":      "Gmail 수신",
+		"google_calendar":     "Google 캘린더",
+		"kakaotalk":           "카카오톡",
+		"manual":              "수동 입력",
+	}
+	if l, ok := labels[source]; ok {
+		return l
+	}
+	return source
+}
+
+func sourceIcon(source string) string {
+	icons := map[string]string{
+		"naverworks_mail":     "mail",
+		"naverworks_calendar": "calendar",
+		"naverworks_board":    "clipboard",
+		"linear_issue":        "circle-dot",
+		"gmail":               "mail",
+		"gmail_sent":          "mail",
+		"gmail_received":      "mail",
+		"google_calendar":     "calendar",
+		"kakaotalk":           "message-circle",
+		"manual":              "pencil",
+	}
+	if i, ok := icons[source]; ok {
+		return i
+	}
+	return "file"
+}
+
+// --- Weekly Reports ---
+
+func (a *App) GetOrCreateWeeklyReport(weekStart, weekEnd string) (*db.WeeklyReport, error) {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return nil, err
+	}
+
+	report, err := a.database.GetWeeklyReportByWeek(user.ID, weekStart)
+	if err != nil {
+		return nil, err
+	}
+	if report != nil {
+		return report, nil
+	}
+
+	id, err := a.database.CreateWeeklyReport(user.ID, weekStart, weekEnd)
+	if err != nil {
+		return nil, err
+	}
+
+	// Carry over next_week items from previous report → this_week
+	prevReport, err := a.database.GetPreviousWeekReport(user.ID, weekStart)
+	if err != nil {
+		log.Printf("[CarryOver] Error finding previous report: %v", err)
+	} else if prevReport != nil {
+		nextWeekItems, err := a.database.ListReportItemsByPeriod(prevReport.ID, "next_week")
+		if err != nil {
+			log.Printf("[CarryOver] Error listing prev next_week items: %v", err)
+		} else {
+			for i, item := range nextWeekItems {
+				carried := &db.ReportItem{
+					ReportID:   id,
+					Section:    item.Section,
+					Category:   item.Category,
+					WorkType:   item.WorkType,
+					Content:    item.Content,
+					Period:     "this_week",
+					SortOrder:  i,
+					IsSelected: true,
+				}
+				if _, err := a.database.SaveReportItem(carried); err != nil {
+					log.Printf("[CarryOver] Failed to carry over item %d: %v", item.ID, err)
+				}
+			}
+			if len(nextWeekItems) > 0 {
+				log.Printf("[CarryOver] Carried over %d items from report %d to %d", len(nextWeekItems), prevReport.ID, id)
+			}
+		}
+	}
+
+	return a.database.GetWeeklyReport(id)
+}
+
+func (a *App) ListWeeklyReports() ([]db.WeeklyReport, error) {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return nil, err
+	}
+	return a.database.ListWeeklyReports(user.ID)
+}
+
+// --- Report Items ---
+
+func (a *App) GetReportItems(reportID int64) ([]db.ReportItem, error) {
+	return a.database.ListReportItems(reportID)
+}
+
+func (a *App) AddReportItem(reportID int64, section, category, content string, activityID *int64, period string) (*db.ReportItem, error) {
+	if period == "" {
+		period = "this_week"
+	}
+	items, err := a.database.ListReportItems(reportID)
+	if err != nil {
+		return nil, err
+	}
+	sortOrder := len(items)
+	workType := inferWorkType(section, category, content)
+
+	item := &db.ReportItem{
+		ReportID:   reportID,
+		ActivityID: activityID,
+		Section:    section,
+		Category:   category,
+		WorkType:   workType,
+		Content:    content,
+		Period:     period,
+		SortOrder:  sortOrder,
+		IsSelected: true,
+	}
+
+	id, err := a.database.SaveReportItem(item)
+	if err != nil {
+		return nil, err
+	}
+	item.ID = id
+	return item, nil
+}
+
+func (a *App) UpdateReportItem(item db.ReportItem) error {
+	_, err := a.database.SaveReportItem(&item)
+	return err
+}
+
+func (a *App) DeleteReportItem(id int64) error {
+	return a.database.DeleteReportItem(id)
+}
+
+func (a *App) AddActivityToReport(reportID int64, activityID int64, section, category string) (*db.ReportItem, error) {
+	activities, err := a.database.ListActivities("2000-01-01", "2099-12-31")
+	if err != nil {
+		return nil, err
+	}
+
+	var activity *db.Activity
+	for _, act := range activities {
+		if act.ID == activityID {
+			activity = &act
+			break
+		}
+	}
+	if activity == nil {
+		return nil, fmt.Errorf("activity not found: %d", activityID)
+	}
+
+	content := activity.Title
+	if activity.Summary != "" && activity.Title != "" {
+		content = activity.Title + "\n" + activity.Summary
+	} else if activity.Summary != "" {
+		content = activity.Summary
+	}
+
+	generated, err := a.generateAIReportContent(activity, section, category)
+	if err != nil {
+		log.Printf("[openai] failed to generate report content for activity %d: %v", activity.ID, err)
+	} else if generated != "" {
+		content = normalizeNarrativeContent(generated)
+	}
+
+	item, err := a.AddReportItem(reportID, section, category, content, &activityID, "this_week")
+	if err != nil {
+		return nil, err
+	}
+
+	if item.WorkType == "" {
+		item.WorkType = inferWorkType(section, category, content)
+		_, _ = a.database.SaveReportItem(item)
+	}
+
+	return item, nil
+}
+
+// PopulateReportFromTeamData auto-populates a report with team data (attendance, projects, utilization)
+func (a *App) PopulateReportFromTeamData(reportID int64) (int, error) {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return 0, err
+	}
+
+	report, err := a.database.GetWeeklyReport(reportID)
+	if err != nil {
+		return 0, err
+	}
+
+	// Check existing items to avoid duplicates
+	existingItems, err := a.database.ListReportItems(reportID)
+	if err != nil {
+		return 0, err
+	}
+	existingContentSet := make(map[string]bool)
+	for _, item := range existingItems {
+		existingContentSet[item.Section+"|"+item.Content] = true
+	}
+
+	addedCount := 0
+	addItem := func(section, category, content, workType, period string) {
+		key := section + "|" + content
+		if existingContentSet[key] {
+			return
+		}
+		item := &db.ReportItem{
+			ReportID:   reportID,
+			Section:    section,
+			Category:   category,
+			WorkType:   workType,
+			Content:    content,
+			Period:     period,
+			SortOrder:  len(existingItems) + addedCount,
+			IsSelected: true,
+		}
+		if _, err := a.database.SaveReportItem(item); err != nil {
+			log.Printf("[PopulateReport] Failed to save item: %v", err)
+			return
+		}
+		existingContentSet[key] = true
+		addedCount++
+	}
+
+	// 1. Attendance summary for the week
+	summaries, err := a.database.GetAttendanceSummary(user.ID, report.WeekStart, report.WeekEnd)
+	if err != nil {
+		log.Printf("[PopulateReport] Attendance summary error: %v", err)
+	} else {
+		attendanceLines := []string{}
+		for _, s := range summaries {
+			if s.TotalDays > 0 {
+				parts := []string{}
+				if s.VacationDays > 0 {
+					parts = append(parts, fmt.Sprintf("연차 %d일", s.VacationDays))
+				}
+				if s.MorningHalfDays > 0 {
+					parts = append(parts, fmt.Sprintf("오전반차 %d건", s.MorningHalfDays))
+				}
+				if s.AfternoonHalfDays > 0 {
+					parts = append(parts, fmt.Sprintf("오후반차 %d건", s.AfternoonHalfDays))
+				}
+				attendanceLines = append(attendanceLines,
+					fmt.Sprintf("%s: %s (합계 %.1f일)", s.TeamMemberName, strings.Join(parts, ", "), s.TotalDays))
+			}
+		}
+		if len(attendanceLines) > 0 {
+			content := strings.Join(attendanceLines, "\n")
+			addItem("attendance", "근태현황", content, "sm", "this_week")
+		}
+	}
+
+	// 2. Active SI projects → project_progress section
+	projects, err := a.database.ListProjectsWithClient(user.ID, "si")
+	if err != nil {
+		log.Printf("[PopulateReport] Projects error: %v", err)
+	} else {
+		statusLabel := map[string]string{
+			"preparing":      "준비중",
+			"poc_proposal":   "PoC/제안",
+			"in_development": "개발중",
+			"in_operation":   "운영중",
+			"closed":         "종료",
+		}
+		for _, p := range projects {
+			if p.Status == "closed" {
+				continue
+			}
+			label := statusLabel[p.Status]
+			if label == "" {
+				label = p.Status
+			}
+			client := p.ClientName
+			if client == "" {
+				client = "내부"
+			}
+			content := fmt.Sprintf("[%s] %s (%s) - %s", label, p.Name, client, p.Description)
+			if p.Description == "" {
+				content = fmt.Sprintf("[%s] %s (%s)", label, p.Name, client)
+			}
+			addItem("project_progress", p.Name, content, "si", "this_week")
+		}
+	}
+
+	// 3. SI utilization snapshot
+	snapshot, err := a.database.GetSIWeeklySnapshot(user.ID, report.WeekStart, report.WeekEnd)
+	if err != nil {
+		log.Printf("[PopulateReport] Snapshot error: %v", err)
+	} else if snapshot != nil {
+		utilizationContent := fmt.Sprintf("팀 가동률: %.0f%%, 미배치 인원: %d명",
+			snapshot.TeamUtilizationPercent, snapshot.UnassignedCount)
+		addItem("other", "인원현황", utilizationContent, "sm", "this_week")
+	}
+
+	log.Printf("[PopulateReport] Added %d items to report %d", addedCount, reportID)
+	return addedCount, nil
+}
+
+func inferWorkType(section, category, content string) string {
+	text := strings.ToLower(strings.Join([]string{section, category, content}, " "))
+
+	smKeywords := []string{"운영", "유지보수", "지원", "장애", "문의", "헬프", "helpdesk", "dooray", "모니터링", "sm"}
+	for _, kw := range smKeywords {
+		if strings.Contains(text, kw) {
+			return "sm"
+		}
+	}
+
+	siKeywords := []string{"si", "프로젝트", "구축", "개발", "고도화", "전개", "개선", "도입", "설계", "구현", "poc"}
+	for _, kw := range siKeywords {
+		if strings.Contains(text, kw) {
+			return "si"
+		}
+	}
+
+	if section == "attendance" || section == "hiring" {
+		return "sm"
+	}
+
+	return "si"
+}
+
+func isMailSource(source string) bool {
+	s := strings.ToLower(source)
+	return strings.Contains(s, "mail") || strings.HasPrefix(s, "gmail_")
+}
+
+type openAIIntegrationConfig struct {
+	APIKey string `json:"apiKey"`
+	Model  string `json:"model"`
+}
+
+func (a *App) generateAIReportContent(activity *db.Activity, section, category string) (string, error) {
+	cfg, err := a.getOpenAIConfig()
+	if err != nil {
+		return "", err
+	}
+	if cfg == nil {
+		return "", nil
+	}
+
+	return a.generateAIReportContentWithConfig(cfg, activity, section, category)
+}
+
+func (a *App) generateAIReportContentWithConfig(cfg *openAIIntegrationConfig, activity *db.Activity, section, category string) (string, error) {
+	client := ai.NewClient(cfg.APIKey, cfg.Model)
+	return client.GenerateReportSentence(activity.Source, section, category, activity.Title, activity.Summary, activity.ActivityDate)
+}
+
+type activityTopicGroup struct {
+	base       *db.ReportItem
+	members    []*db.ReportItem
+	activities []db.Activity
+	topic      string
+}
+
+var issueKeyPattern = regexp.MustCompile(`(?i)\b([a-z][a-z0-9]+-\d+)\b`)
+
+func extractTopicIdentifier(act db.Activity) string {
+	title := strings.TrimSpace(act.Title)
+	if m := issueKeyPattern.FindStringSubmatch(title); len(m) > 1 {
+		return strings.ToLower(m[1])
+	}
+
+	if strings.TrimSpace(act.RawData) != "" {
+		var obj map[string]interface{}
+		if err := json.Unmarshal([]byte(act.RawData), &obj); err == nil {
+			for _, key := range []string{"threadId", "thread_id", "conversationId", "conversation_id", "issueId", "issue_id", "ticketId", "ticket_id", "parentId", "parent_id"} {
+				if v, ok := obj[key]; ok {
+					if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
+						return strings.ToLower(strings.TrimSpace(s))
+					}
+				}
+			}
+		}
+	}
+
+	source := strings.ToLower(strings.TrimSpace(act.Source))
+	if act.ExternalID != "" {
+		toolLikeIssue := strings.Contains(source, "linear") || strings.Contains(source, "jira") || strings.Contains(source, "github") || strings.Contains(source, "gitlab") || strings.Contains(source, "asana") || strings.Contains(source, "trello") || strings.Contains(source, "clickup") || strings.Contains(source, "notion")
+		if toolLikeIssue {
+			return strings.ToLower(strings.TrimSpace(act.ExternalID))
+		}
+	}
+
+	return ""
+}
+
+func normalizeActivityTopic(source, title, summary string) string {
+	text := strings.ToLower(strings.TrimSpace(title))
+	if text == "" {
+		text = strings.ToLower(strings.TrimSpace(summary))
+	}
+	if text == "" {
+		return "untitled"
+	}
+
+	for {
+		before := text
+		for _, prefix := range []string{"re:", "fw:", "fwd:", "답장:", "회신:", "[external]", "[외부]", "[공지]"} {
+			if strings.HasPrefix(text, prefix) {
+				text = strings.TrimSpace(strings.TrimPrefix(text, prefix))
+			}
+		}
+		if before == text {
+			break
+		}
+	}
+
+	replacer := strings.NewReplacer("[", " ", "]", " ", "(", " ", ")", " ", "{", " ", "}", " ", "_", " ", "-", " ", ":", " ", "|", " ")
+	text = replacer.Replace(text)
+	words := strings.Fields(text)
+	if len(words) == 0 {
+		return "untitled"
+	}
+	if len(words) > 10 {
+		words = words[:10]
+	}
+	return strings.Join([]string{strings.ToLower(strings.TrimSpace(source)), strings.Join(words, " ")}, "|")
+}
+
+func buildActivityDigest(act db.Activity) string {
+	title := strings.TrimSpace(strings.ReplaceAll(act.Title, "\n", " "))
+	summary := strings.TrimSpace(strings.ReplaceAll(act.Summary, "\n", " "))
+	if summary == "" {
+		summary = "(요약 없음)"
+	}
+	if title == "" {
+		title = "(제목 없음)"
+	}
+	return fmt.Sprintf("[%s] %s | 제목: %s | 요약: %s", act.Source, act.ActivityDate, title, summary)
+}
+
+func (a *App) consolidateSelectedActivityItemsWithAI(reportID int64, cfg *openAIIntegrationConfig) (int, int, error) {
+	items, err := a.database.ListReportItems(reportID)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	activities, err := a.database.ListActivities("2000-01-01", "2099-12-31")
+	if err != nil {
+		return 0, 0, err
+	}
+
+	activityMap := make(map[int64]db.Activity, len(activities))
+	for _, act := range activities {
+		activityMap[act.ID] = act
+	}
+
+	groups := make(map[string]*activityTopicGroup)
+	for i := range items {
+		item := &items[i]
+		if !item.IsSelected || item.ActivityID == nil {
+			continue
+		}
+
+		act, ok := activityMap[*item.ActivityID]
+		if !ok {
+			continue
+		}
+
+		topicID := extractTopicIdentifier(act)
+		topic := normalizeActivityTopic(act.Source, act.Title, act.Summary)
+		if topicID != "" {
+			topic = strings.Join([]string{strings.ToLower(strings.TrimSpace(act.Source)), "id", topicID}, "|")
+		}
+		groupKey := strings.Join([]string{item.Section, item.Category, item.WorkType, topic}, "|")
+
+		grp, exists := groups[groupKey]
+		if !exists {
+			grp = &activityTopicGroup{
+				base:    item,
+				topic:   topic,
+				members: []*db.ReportItem{},
+			}
+			groups[groupKey] = grp
+		}
+
+		grp.members = append(grp.members, item)
+		grp.activities = append(grp.activities, act)
+	}
+
+	client := ai.NewClient(cfg.APIKey, cfg.Model)
+	updated := 0
+	merged := 0
+
+	for _, grp := range groups {
+		if len(grp.members) == 0 {
+			continue
+		}
+
+		sort.Slice(grp.activities, func(i, j int) bool {
+			return grp.activities[i].ActivityDate < grp.activities[j].ActivityDate
+		})
+
+		var content string
+		if len(grp.activities) == 1 {
+			generated, err := a.generateAIReportContentWithConfig(cfg, &grp.activities[0], grp.base.Section, grp.base.Category)
+			if err != nil {
+				log.Printf("[openai] single activity preprocessing failed for activity %d: %v", grp.activities[0].ID, err)
+				content = grp.base.Content
+			} else {
+				content = generated
+			}
+		} else {
+			digests := make([]string, 0, len(grp.activities))
+			for _, act := range grp.activities {
+				digests = append(digests, buildActivityDigest(act))
+			}
+
+			generated, err := client.GenerateGroupedReportSentence(grp.base.Section, grp.base.Category, grp.topic, digests)
+			if err != nil {
+				log.Printf("[openai] grouped preprocessing failed (topic=%s, items=%d): %v", grp.topic, len(grp.activities), err)
+				content = grp.base.Content
+			} else {
+				content = generated
+			}
+		}
+
+		content = normalizeNarrativeContent(content)
+		if strings.TrimSpace(content) == "" {
+			content = grp.base.Content
+		}
+
+		if grp.base.WorkType == "" {
+			grp.base.WorkType = inferWorkType(grp.base.Section, grp.base.Category, content)
+		}
+
+		if len(grp.members) > 1 {
+			grp.base.ActivityID = nil
+		}
+
+		grp.base.Content = content
+		if _, err := a.database.SaveReportItem(grp.base); err != nil {
+			log.Printf("[openai] failed to save consolidated item %d: %v", grp.base.ID, err)
+			continue
+		}
+		updated++
+
+		if len(grp.members) > 1 {
+			for i := 1; i < len(grp.members); i++ {
+				if err := a.database.DeleteReportItem(grp.members[i].ID); err != nil {
+					log.Printf("[openai] failed to delete merged item %d: %v", grp.members[i].ID, err)
+					continue
+				}
+				merged++
+			}
+		}
+	}
+
+	return updated, merged, nil
+}
+
+func (a *App) regenerateSelectedMailItemsForExport(items []db.ReportItem) ([]db.ReportItem, int) {
+	cfg, err := a.getOpenAIConfig()
+	if err != nil {
+		log.Printf("[openai] config read failed: %v", err)
+		return items, 0
+	}
+	if cfg == nil {
+		return items, 0
+	}
+
+	activities, err := a.database.ListActivities("2000-01-01", "2099-12-31")
+	if err != nil {
+		log.Printf("[openai] failed to load activities for export regeneration: %v", err)
+		return items, 0
+	}
+
+	activityMap := make(map[int64]db.Activity, len(activities))
+	for _, act := range activities {
+		activityMap[act.ID] = act
+	}
+
+	updated := 0
+	for i := range items {
+		item := &items[i]
+		if !item.IsSelected || item.ActivityID == nil {
+			continue
+		}
+
+		act, ok := activityMap[*item.ActivityID]
+		if !ok || !isMailSource(act.Source) {
+			continue
+		}
+
+		generated, err := a.generateAIReportContentWithConfig(cfg, &act, item.Section, item.Category)
+		if err != nil {
+			log.Printf("[openai] export regeneration failed for activity %d: %v", act.ID, err)
+			continue
+		}
+		generated = normalizeNarrativeContent(generated)
+		if strings.TrimSpace(generated) == "" || generated == item.Content {
+			continue
+		}
+
+		item.Content = generated
+		if _, err := a.database.SaveReportItem(item); err != nil {
+			log.Printf("[openai] failed to persist regenerated content for report item %d: %v", item.ID, err)
+			continue
+		}
+		updated++
+	}
+
+	if updated > 0 {
+		log.Printf("[openai] regenerated %d selected mail report items before export", updated)
+	}
+
+	return items, updated
+}
+
+func normalizeNarrativeContent(content string) string {
+	text := strings.TrimSpace(content)
+	if text == "" {
+		return ""
+	}
+
+	text = strings.ReplaceAll(text, "\\n", "\n")
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
+
+	if !strings.Contains(text, "\n") {
+		text = strings.ReplaceAll(text, " 2) 후속조치:", "\n2) 후속조치:")
+		text = strings.ReplaceAll(text, "2) 후속조치:", "\n2) 후속조치:")
+		text = strings.ReplaceAll(text, " 후속조치:", "\n후속조치:")
+	}
+
+	lines := []string{}
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		lines = append(lines, line)
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+
+	if len(lines) == 1 {
+		line := lines[0]
+		if strings.HasPrefix(line, "1) 진행업무:") {
+			return line + "\n2) 후속조치: 관련 후속 조치를 진행함."
+		}
+		if strings.HasPrefix(line, "진행업무:") {
+			return "1) " + line + "\n2) 후속조치: 관련 후속 조치를 진행함."
+		}
+		return "1) 진행업무: " + line + "\n2) 후속조치: 관련 후속 조치를 진행함."
+	}
+
+	first := lines[0]
+	second := lines[1]
+	if strings.HasPrefix(first, "진행업무:") {
+		first = "1) " + first
+	} else if !strings.HasPrefix(first, "1) 진행업무:") {
+		first = "1) 진행업무: " + first
+	}
+	if strings.HasPrefix(second, "후속조치:") {
+		second = "2) " + second
+	} else if !strings.HasPrefix(second, "2) 후속조치:") {
+		second = "2) 후속조치: " + second
+	}
+
+	return first + "\n" + second
+}
+
+func (a *App) PreprocessReportItemsWithAI(reportID int64) SyncResult {
+	cfg, err := a.getOpenAIConfig()
+	if err != nil {
+		return SyncResult{Success: false, Count: 0, Message: fmt.Sprintf("OpenAI 설정 조회 실패: %v", err)}
+	}
+	if cfg == nil {
+		return SyncResult{Success: false, Count: 0, Message: "OpenAI 설정이 비활성화되어 있습니다"}
+	}
+
+	updated, merged, err := a.consolidateSelectedActivityItemsWithAI(reportID, cfg)
+	if err != nil {
+		return SyncResult{Success: false, Count: 0, Message: fmt.Sprintf("AI 취합 전처리 실패: %v", err)}
+	}
+
+	msg := fmt.Sprintf("AI 취합 전처리 완료 (업데이트 %d개", updated)
+	if merged > 0 {
+		msg += fmt.Sprintf(", 병합 %d개", merged)
+	}
+	msg += ")"
+	return SyncResult{Success: true, Count: updated, Message: msg}
+}
+
+func (a *App) getOpenAIConfig() (*openAIIntegrationConfig, error) {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return nil, err
+	}
+
+	intg, err := a.database.GetIntegrationByType(user.ID, "openai")
+	if err != nil {
+		return nil, err
+	}
+	if intg == nil || !intg.Enabled {
+		return nil, nil
+	}
+
+	var cfg openAIIntegrationConfig
+	if err := json.Unmarshal([]byte(intg.ConfigJSON), &cfg); err != nil {
+		return nil, fmt.Errorf("invalid openai config json: %w", err)
+	}
+	if strings.TrimSpace(cfg.APIKey) == "" {
+		return nil, nil
+	}
+	if strings.TrimSpace(cfg.Model) == "" {
+		cfg.Model = "gpt-4o-mini"
+	}
+	return &cfg, nil
+}
+
+// --- Excel Template ---
+
+func (a *App) UploadExcelTemplate() (string, error) {
+	selection, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "Excel 템플릿 선택",
+		Filters: []runtime.FileFilter{
+			{DisplayName: "Excel Files", Pattern: "*.xlsx;*.xls"},
+		},
+	})
+	if err != nil {
+		return "", err
+	}
+	if selection == "" {
+		return "", nil
+	}
+
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return "", err
+	}
+
+	destDir := filepath.Join(a.dataDir, "templates")
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		return "", err
+	}
+
+	destPath := filepath.Join(destDir, filepath.Base(selection))
+	if err := copyFile(selection, destPath); err != nil {
+		return "", fmt.Errorf("failed to copy template: %w", err)
+	}
+
+	ts, err := excel.ParseTemplate(destPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse template: %w", err)
+	}
+
+	structJSON, err := excel.StructureToJSON(ts)
+	if err != nil {
+		return "", err
+	}
+
+	tmpl := &db.ExcelTemplate{
+		UserID:        user.ID,
+		Name:          filepath.Base(selection),
+		FilePath:      destPath,
+		StructureJSON: structJSON,
+	}
+
+	_, err = a.database.SaveExcelTemplate(tmpl)
+	if err != nil {
+		return "", err
+	}
+
+	log.Printf("Template uploaded: %s (%d sheets)", tmpl.Name, len(ts.Sheets))
+	return structJSON, nil
+}
+
+func (a *App) GetExcelTemplate() (*db.ExcelTemplate, error) {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return nil, err
+	}
+	return a.database.GetExcelTemplate(user.ID)
+}
+
+// --- Excel Export ---
+
+func (a *App) ExportWeeklyReport(reportID int64) (string, error) {
+	log.Printf("ExportWeeklyReport called with reportID: %d", reportID)
+
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		log.Printf("Export error - GetOrCreateDefaultUser: %v", err)
+		return "", err
+	}
+
+	tmpl, err := a.database.GetExcelTemplate(user.ID)
+	if err != nil {
+		log.Printf("Export error - GetExcelTemplate: %v", err)
+		return "", fmt.Errorf("템플릿 조회 실패: %w", err)
+	}
+	if tmpl == nil {
+		log.Println("Export error - no template found")
+		return "", fmt.Errorf("Excel 템플릿이 없습니다. 설정에서 먼저 업로드해주세요.")
+	}
+	log.Printf("Using template: %s (path: %s)", tmpl.Name, tmpl.FilePath)
+
+	report, err := a.database.GetWeeklyReport(reportID)
+	if err != nil {
+		log.Printf("Export error - GetWeeklyReport: %v", err)
+		return "", fmt.Errorf("보고서 조회 실패: %w", err)
+	}
+
+	items, err := a.database.ListReportItems(reportID)
+	if err != nil {
+		log.Printf("Export error - ListReportItems: %v", err)
+		return "", err
+	}
+	log.Printf("Report items: %d total", len(items))
+
+	// Group items by section, splitting content by period (this_week / next_week)
+	type itemKey struct {
+		section  string
+		category string
+		workType string
+	}
+	// Track merged items: same section+category → combine this_week and next_week content
+	mergedMap := make(map[itemKey]*excel.ReportItem)
+	var mergedKeys []itemKey
+	sectionSet := make(map[string]bool)
+	var sectionOrder []string
+
+	for _, item := range items {
+		if !item.IsSelected {
+			continue
+		}
+		if item.WorkType == "" {
+			item.WorkType = inferWorkType(item.Section, item.Category, item.Content)
+		}
+		if !sectionSet[item.Section] {
+			sectionSet[item.Section] = true
+			sectionOrder = append(sectionOrder, item.Section)
+		}
+
+		key := itemKey{section: item.Section, category: item.Category, workType: item.WorkType}
+		merged, exists := mergedMap[key]
+		if !exists {
+			merged = &excel.ReportItem{
+				Category: item.Category,
+				WorkType: item.WorkType,
+			}
+			mergedMap[key] = merged
+			mergedKeys = append(mergedKeys, key)
+		}
+
+		switch item.Period {
+		case "next_week":
+			if merged.NextWeek != "" {
+				merged.NextWeek += "\n"
+			}
+			merged.NextWeek += item.Content
+		default: // "this_week" or empty
+			if merged.ThisWeek != "" {
+				merged.ThisWeek += "\n"
+			}
+			merged.ThisWeek += item.Content
+		}
+	}
+
+	// Build sections in order
+	var sections []excel.ReportSection
+	sectionMap := make(map[string]*excel.ReportSection)
+	for _, key := range mergedKeys {
+		sec, exists := sectionMap[key.section]
+		if !exists {
+			sec = &excel.ReportSection{
+				Name: key.section,
+				Type: "content",
+			}
+			sectionMap[key.section] = sec
+		}
+		sec.Items = append(sec.Items, *mergedMap[key])
+	}
+	for _, name := range sectionOrder {
+		if sec, ok := sectionMap[name]; ok {
+			sections = append(sections, *sec)
+		}
+	}
+
+	// Fetch team members for utilization data
+	teamMembers, err := a.database.ListTeamMembers(user.ID)
+	if err != nil {
+		log.Printf("Export warning - ListTeamMembers: %v", err)
+	}
+	
+	// Fetch all SI projects for reference
+	projects, err := a.database.ListProjectsWithClient(user.ID, "si")
+	if err != nil {
+		log.Printf("Export warning - ListProjectsWithClient: %v", err)
+	}
+	projectMap := make(map[int64]string)
+	for _, p := range projects {
+		projectMap[p.ID] = p.Name
+	}
+
+	// Build utilization member data
+	var utilMembers []excel.UtilizationMemberData
+	for _, member := range teamMembers {
+		utilMember := excel.UtilizationMemberData{
+			Name: member.Name,
+			Team: member.Position,
+		}
+		
+		// Get assignments for this member by TeamMemberID
+		assignments, err := a.database.ListMemberAssignments(user.ID, report.WeekStart, report.WeekEnd)
+		if err != nil {
+			log.Printf("Export warning - ListMemberAssignments for %s: %v", member.Name, err)
+		} else {
+			// Find assignments for this member
+			for _, assignment := range assignments {
+				if assignment.TeamMemberID == member.ID {
+					projectName := projectMap[assignment.ProjectID]
+					if projectName == "" {
+						projectName = "프로젝트" + fmt.Sprintf("%d", assignment.ProjectID)
+					}
+					utilMember.Projects = append(utilMember.Projects, projectName)
+					utilMember.Note = assignment.Notes
+					// Set monthly M/M based on assignment allocation percent (convert percentage to ratio)
+					monthIdx := time.Now().Month() - 1
+					if monthIdx >= 0 && monthIdx < 12 {
+						utilMember.MonthlyMM[monthIdx] = assignment.AllocationPercent / 100.0
+					}
+				}
+			}
+		}
+		
+		// If no projects assigned, set default 1.0 for current month
+		if len(utilMember.Projects) == 0 {
+			monthIdx := time.Now().Month() - 1
+			if monthIdx >= 0 && monthIdx < 12 {
+				utilMember.MonthlyMM[monthIdx] = 1.0
+			}
+		}
+		
+		utilMembers = append(utilMembers, utilMember)
+	}
+
+	data := &excel.ReportData{
+		WeekLabel: report.WeekStart,
+		WeekStart: report.WeekStart,
+		WeekEnd:   report.WeekEnd,
+		UserName:  user.Name,
+		TeamName:  user.Team,
+		Sections:  sections,
+		Members:   utilMembers, // Add utilization members
+	}
+
+	defaultName := fmt.Sprintf("주간업무일지_%s.xlsx", report.WeekStart)
+
+	savePath, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+		Title:           "주간업무일지 저장",
+		DefaultFilename: defaultName,
+		Filters: []runtime.FileFilter{
+			{DisplayName: "Excel Files", Pattern: "*.xlsx"},
+		},
+	})
+	if err != nil {
+		log.Printf("Export error - SaveFileDialog: %v", err)
+		return "", fmt.Errorf("파일 저장 다이얼로그 오류: %w", err)
+	}
+
+	if savePath == "" {
+		// User cancelled — use default exports directory
+		outputDir := filepath.Join(a.dataDir, "exports")
+		savePath = filepath.Join(outputDir, defaultName)
+		log.Printf("SaveDialog cancelled, using default path: %s", savePath)
+	}
+
+	outputPath, err := excel.ExportToPath(tmpl.FilePath, savePath, data)
+	if err != nil {
+		log.Printf("Export error - ExportToPath: %v", err)
+		return "", fmt.Errorf("Excel 생성 실패: %w", err)
+	}
+
+	if err := a.database.UpdateReportStatus(reportID, "exported"); err != nil {
+		log.Println("Warning: failed to update report status:", err)
+	}
+
+	log.Printf("Export success: %s", outputPath)
+	return outputPath, nil
+}
+
+// --- Integrations ---
+
+func (a *App) GetIntegrations() ([]db.Integration, error) {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return nil, err
+	}
+	return a.database.ListIntegrations(user.ID)
+}
+
+func (a *App) SaveIntegration(toolType, configJSON string, enabled bool) error {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return err
+	}
+
+	integrations, err := a.database.ListIntegrations(user.ID)
+	if err != nil {
+		return err
+	}
+
+	var existing *db.Integration
+	for _, i := range integrations {
+		if i.ToolType == toolType {
+			existing = &i
+			break
+		}
+	}
+
+	if existing != nil {
+		existing.ConfigJSON = configJSON
+		existing.Enabled = enabled
+		_, err = a.database.SaveIntegration(existing)
+	} else {
+		_, err = a.database.SaveIntegration(&db.Integration{
+			UserID:     user.ID,
+			ToolType:   toolType,
+			ConfigJSON: configJSON,
+			Enabled:    enabled,
+		})
+	}
+	return err
+}
+
+// --- Project Categories ---
+
+func (a *App) GetProjectCategories() ([]db.ProjectCategory, error) {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return nil, err
+	}
+	return a.database.ListProjectCategories(user.ID)
+}
+
+func (a *App) AddProjectCategory(name string) error {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return err
+	}
+	cats, err := a.database.ListProjectCategories(user.ID)
+	if err != nil {
+		return err
+	}
+	_, err = a.database.SaveProjectCategory(user.ID, name, len(cats))
+	return err
+}
+
+func (a *App) DeleteProjectCategory(id int64) error {
+	return a.database.DeleteProjectCategory(id)
+}
+
+// --- SI Team Ops ---
+
+var validSIProjectStatuses = map[string]bool{
+	"preparing":      true,
+	"poc_proposal":   true,
+	"in_development": true,
+	"in_operation":   true,
+	"closed":         true,
+}
+
+type commonCodeSeed struct {
+	GroupCode   string
+	GroupName   string
+	Description string
+	Values      []db.CodeValue
+}
+
+var defaultCommonCodeSeeds = []commonCodeSeed{
+	{
+		GroupCode:   "position_types",
+		GroupName:   "직급체계",
+		Description: "팀원 직급 분류",
+		Values: []db.CodeValue{
+			{CodeValue: "책임", CodeLabel: "책임", SortOrder: 0, IsActive: true},
+		},
+	},
+	{
+		GroupCode:   "employment_types",
+		GroupName:   "고용형태",
+		Description: "팀원 고용형태 분류",
+		Values: []db.CodeValue{
+			{CodeValue: "정규", CodeLabel: "정규", SortOrder: 0, IsActive: true},
+			{CodeValue: "외주", CodeLabel: "외주", SortOrder: 1, IsActive: true},
+			{CodeValue: "계약", CodeLabel: "계약", SortOrder: 2, IsActive: true},
+		},
+	},
+}
+
+func (a *App) ensureDefaultCommonCodes(userID int64) error {
+	groups, err := a.database.ListCodeGroups(userID)
+	if err != nil {
+		return err
+	}
+
+	groupSet := make(map[string]bool, len(groups))
+	for _, g := range groups {
+		groupSet[g.GroupCode] = true
+	}
+
+	for idx, seed := range defaultCommonCodeSeeds {
+		createdGroup := false
+		if !groupSet[seed.GroupCode] {
+			_, err := a.database.SaveCodeGroup(&db.CodeGroup{
+				UserID:      userID,
+				GroupCode:   seed.GroupCode,
+				GroupName:   seed.GroupName,
+				Description: seed.Description,
+				SortOrder:   idx,
+			})
+			if err != nil {
+				return err
+			}
+			createdGroup = true
+			groupSet[seed.GroupCode] = true
+		}
+
+		if createdGroup {
+			for i, value := range seed.Values {
+				value.UserID = userID
+				value.GroupCode = seed.GroupCode
+				value.SortOrder = i
+				if _, err := a.database.SaveCodeValue(&value); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+func (a *App) getCommonCodeValues(userID int64, groupCode string) ([]string, error) {
+	if err := a.ensureDefaultCommonCodes(userID); err != nil {
+		return nil, err
+	}
+
+	values, err := a.database.ListCodeValuesByGroup(userID, groupCode)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]string, 0, len(values))
+	for _, v := range values {
+		if strings.TrimSpace(v.CodeValue) == "" {
+			continue
+		}
+		result = append(result, v.CodeValue)
+	}
+	return result, nil
+}
+
+func (a *App) addCommonCodeValue(userID int64, groupCode, value string) error {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return fmt.Errorf("code value is required")
+	}
+	if err := a.ensureDefaultCommonCodes(userID); err != nil {
+		return err
+	}
+
+	values, err := a.database.ListCodeValuesByGroup(userID, groupCode)
+	if err != nil {
+		return err
+	}
+	for _, v := range values {
+		if strings.EqualFold(strings.TrimSpace(v.CodeValue), trimmed) {
+			return nil
+		}
+	}
+
+	_, err = a.database.SaveCodeValue(&db.CodeValue{
+		UserID:      userID,
+		GroupCode:   groupCode,
+		CodeValue:   trimmed,
+		CodeLabel:   trimmed,
+		Description: "",
+		SortOrder:   len(values),
+		IsActive:    true,
+	})
+	return err
+}
+
+func (a *App) removeCommonCodeValue(userID int64, groupCode, value string) error {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return fmt.Errorf("code value is required")
+	}
+
+	values, err := a.database.ListCodeValuesByGroup(userID, groupCode)
+	if err != nil {
+		return err
+	}
+
+	for _, v := range values {
+		if strings.EqualFold(strings.TrimSpace(v.CodeValue), trimmed) {
+			return a.database.DeleteCodeValue(userID, v.ID)
+		}
+	}
+
+	return nil
+}
+
+func (a *App) GetSIProjectStatuses() []string {
+	return []string{"preparing", "poc_proposal", "in_development", "in_operation", "closed"}
+}
+
+func (a *App) ListTeamMembers() ([]db.TeamMember, error) {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return nil, err
+	}
+	return a.database.ListTeamMembers(user.ID)
+}
+
+func (a *App) SaveTeamMember(member db.TeamMember) (*db.TeamMember, error) {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(member.Name) == "" {
+		return nil, fmt.Errorf("team member name is required")
+	}
+	// Validate email format if provided
+	if member.Email != "" && !strings.Contains(member.Email, "@") {
+		return nil, fmt.Errorf("invalid email format")
+	}
+	member.UserID = user.ID
+	id, err := a.database.SaveTeamMember(&member)
+	if err != nil {
+		return nil, err
+	}
+	member.ID = id
+	return &member, nil
+}
+
+func (a *App) DeleteTeamMember(id int64) error {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return err
+	}
+	return a.database.DeleteTeamMember(user.ID, id)
+}
+
+func (a *App) GetPositionTypes() []string {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		log.Printf("[GetPositionTypes] failed to load default user: %v", err)
+		return []string{"책임"}
+	}
+
+	values, err := a.getCommonCodeValues(user.ID, "position_types")
+	if err != nil {
+		log.Printf("[GetPositionTypes] failed to load common codes: %v", err)
+		return []string{"책임"}
+	}
+	return values
+}
+
+func (a *App) AddPositionType(value string) error {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return err
+	}
+	return a.addCommonCodeValue(user.ID, "position_types", value)
+}
+
+func (a *App) DeletePositionType(value string) error {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return err
+	}
+	return a.removeCommonCodeValue(user.ID, "position_types", value)
+}
+
+func (a *App) GetEmploymentTypes() []string {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		log.Printf("[GetEmploymentTypes] failed to load default user: %v", err)
+		return []string{"정규", "외주", "계약"}
+	}
+
+	values, err := a.getCommonCodeValues(user.ID, "employment_types")
+	if err != nil {
+		log.Printf("[GetEmploymentTypes] failed to load common codes: %v", err)
+		return []string{"정규", "외주", "계약"}
+	}
+	return values
+}
+
+func (a *App) AddEmploymentType(value string) error {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return err
+	}
+	return a.addCommonCodeValue(user.ID, "employment_types", value)
+}
+
+func (a *App) DeleteEmploymentType(value string) error {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return err
+	}
+	return a.removeCommonCodeValue(user.ID, "employment_types", value)
+}
+
+// --- Clients ---
+
+var validClientStatuses = map[string]bool{
+	"existing": true,
+	"target":   true,
+	"inactive": true,
+}
+
+func (a *App) GetClientStatuses() []string {
+	return []string{"existing", "target", "inactive"}
+}
+
+func (a *App) ListClients(status string, activeOnly bool) ([]db.Client, error) {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return nil, err
+	}
+	return a.database.ListClients(user.ID, status, activeOnly)
+}
+
+func (a *App) SaveClient(client db.Client) (*db.Client, error) {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(client.Name) == "" {
+		return nil, fmt.Errorf("client name is required")
+	}
+	if !validClientStatuses[client.Status] {
+		client.Status = "existing"
+	}
+	// Validate email format if provided
+	if client.ContactEmail != "" && !strings.Contains(client.ContactEmail, "@") {
+		return nil, fmt.Errorf("invalid contact email format")
+	}
+	client.UserID = user.ID
+	id, err := a.database.SaveClient(&client)
+	if err != nil {
+		return nil, err
+	}
+	client.ID = id
+	return &client, nil
+}
+
+func (a *App) DeleteClient(clientID int64) error {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return err
+	}
+	return a.database.DeleteClient(user.ID, clientID)
+}
+
+func (a *App) ListSIProjects() ([]db.ProjectWithClient, error) {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return nil, err
+	}
+	return a.database.ListProjectsWithClient(user.ID, "si")
+}
+
+func (a *App) SaveSIProject(project db.Project) (*db.Project, error) {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(project.Name) == "" {
+		return nil, fmt.Errorf("project name is required")
+	}
+	if project.ClientID == 0 {
+		return nil, fmt.Errorf("client is required")
+	}
+	if !validSIProjectStatuses[project.Status] {
+		project.Status = "preparing"
+	}
+	project.UserID = user.ID
+	project.TeamType = "si"
+	id, err := a.database.SaveProject(&project)
+	if err != nil {
+		return nil, err
+	}
+	project.ID = id
+	return &project, nil
+}
+
+func (a *App) UpdateSIProjectStatus(projectID int64, status string) error {
+	if !validSIProjectStatuses[status] {
+		return fmt.Errorf("invalid project status: %s", status)
+	}
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return err
+	}
+	return a.database.UpdateProjectStatus(user.ID, projectID, status)
+}
+
+func (a *App) DeleteSIProject(projectID int64) error {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return err
+	}
+	return a.database.DeleteProject(user.ID, projectID)
+}
+
+func (a *App) ListMemberAssignments(weekStart, weekEnd string) ([]db.MemberAssignment, error) {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(weekStart) == "" || strings.TrimSpace(weekEnd) == "" {
+		wk := a.GetCurrentWeek()
+		weekStart = wk.WeekStart
+		weekEnd = wk.WeekEnd
+	}
+	return a.database.ListMemberAssignments(user.ID, weekStart, weekEnd)
+}
+
+func (a *App) SaveMemberAssignment(assignment db.MemberAssignment) (*db.MemberAssignment, error) {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return nil, err
+	}
+	assignment.UserID = user.ID
+	id, err := a.database.SaveMemberAssignment(&assignment)
+	if err != nil {
+		return nil, err
+	}
+	assignment.ID = id
+	return &assignment, nil
+}
+
+func (a *App) DeleteMemberAssignment(assignmentID int64) error {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return err
+	}
+	return a.database.DeleteMemberAssignment(user.ID, assignmentID)
+}
+
+// --- SI Project Weekly Reporting Handlers ---
+
+func (a *App) GetSIProjectTypes() []string {
+	return []string{"직영", "당선", "신대방동", "거제", "의왕", "판교", "군포", "기타"}
+}
+
+func (a *App) GetSIPhases() []string {
+	return []string{"제안/POC", "분석/설계", "개발", "테스트", "오픈", "안정화", "종료"}
+}
+
+func (a *App) GetSIRoles() []string {
+	return []string{"PM", "PL", "책임", "선임", "사원", "아키텍트", "분석가", "개발자", "현장관리자"}
+}
+
+func (a *App) GetSIProjectView(projectID int64, weekStart, weekEnd string) (*db.SIProjectView, error) {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return nil, err
+	}
+	return a.database.GetSIProjectView(user.ID, projectID, weekStart, weekEnd)
+}
+
+func (a *App) SaveSIProjectDetail(detail db.SIProjectDetail) (*db.SIProjectDetail, error) {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return nil, err
+	}
+	detail.UserID = user.ID
+	id, err := a.database.SaveSIProjectDetail(&detail)
+	if err != nil {
+		return nil, err
+	}
+	detail.ID = id
+	return &detail, nil
+}
+
+func (a *App) SaveSIWeeklyReport(report db.SIWeeklyReport) (*db.SIWeeklyReport, error) {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return nil, err
+	}
+	report.UserID = user.ID
+	id, err := a.database.SaveSIWeeklyReport(&report)
+	if err != nil {
+		return nil, err
+	}
+	report.ID = id
+	return &report, nil
+}
+
+func (a *App) SaveSIProjectMember(member db.SIProjectMember) (*db.SIProjectMember, error) {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return nil, err
+	}
+	member.UserID = user.ID
+	id, err := a.database.SaveSIProjectMember(&member)
+	if err != nil {
+		return nil, err
+	}
+	member.ID = id
+	return &member, nil
+}
+
+func (a *App) DeleteSIProjectMember(memberID int64) error {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return err
+	}
+	return a.database.DeleteSIProjectMember(user.ID, memberID)
+}
+
+func (a *App) GetUtilizationByDate(date string) ([]db.UtilizationMemberRow, error) {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(date) == "" {
+		date = time.Now().Format("2006-01-02")
+	}
+	return a.database.GetUtilizationByDate(user.ID, date)
+}
+
+func (a *App) GetSIWeeklySnapshot(weekStart, weekEnd string) (*db.SIWeeklySnapshot, error) {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(weekStart) == "" || strings.TrimSpace(weekEnd) == "" {
+		wk := a.GetCurrentWeek()
+		weekStart = wk.WeekStart
+		weekEnd = wk.WeekEnd
+	}
+	return a.database.GetSIWeeklySnapshot(user.ID, weekStart, weekEnd)
+}
+
+// --- Attendance ---
+
+var validAttendanceTypes = map[string]bool{
+	"vacation":         true,
+	"morning_half":     true,
+	"afternoon_half":   true,
+}
+
+func (a *App) GetAttendanceTypes() []string {
+	return []string{"vacation", "morning_half", "afternoon_half"}
+}
+
+func (a *App) ListAttendanceRecords(memberID int64, startDate, endDate string) ([]db.AttendanceRecord, error) {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return nil, err
+	}
+	return a.database.ListAttendanceRecords(user.ID, memberID, startDate, endDate)
+}
+
+func (a *App) SaveAttendanceRecord(record db.AttendanceRecord) (*db.AttendanceRecord, error) {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return nil, err
+	}
+	if !validAttendanceTypes[record.Type] {
+		return nil, fmt.Errorf("invalid attendance type: %s", record.Type)
+	}
+	record.UserID = user.ID
+	id, err := a.database.SaveAttendanceRecord(&record)
+	if err != nil {
+		return nil, err
+	}
+	record.ID = id
+	return &record, nil
+}
+
+func (a *App) DeleteAttendanceRecord(recordID int64) error {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return err
+	}
+	return a.database.DeleteAttendanceRecord(user.ID, recordID)
+}
+
+func (a *App) GetAttendanceSummary(startDate, endDate string) ([]db.AttendanceSummary, error) {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(startDate) == "" || strings.TrimSpace(endDate) == "" {
+		now := time.Now()
+		startDate = now.Format("2006-01-02")
+		endDate = now.Format("2006-01-02")
+	}
+	return a.database.GetAttendanceSummary(user.ID, startDate, endDate)
+}
+
+// --- Manual Activity ---
+
+func (a *App) AddManualActivity(title, summary, date string) (*db.Activity, error) {
+	act := &db.Activity{
+		Source:       "manual",
+		Title:        title,
+		Summary:      summary,
+		ActivityDate: date,
+	}
+	id, err := a.database.SaveActivity(act)
+	if err != nil {
+		return nil, err
+	}
+	act.ID = id
+	return act, nil
+}
+
+// --- Week Calculation ---
+
+type WeekInfo struct {
+	WeekStart string `json:"weekStart"`
+	WeekEnd   string `json:"weekEnd"`
+	Label     string `json:"label"`
+}
+
+// calcWeekLabel calculates the week label using Wednesday (midpoint) as the
+// reference day for the month. This ensures that a week spanning two months
+// (e.g., Mon 3/30 ~ Fri 4/3) is labeled based on the month that contains
+// the majority of workdays.
+func calcWeekLabel(monday time.Time) string {
+	wednesday := monday.AddDate(0, 0, 2)
+	month := int(wednesday.Month())
+	// Count which week of the month Wednesday falls in
+	weekNum := (wednesday.Day()-1)/7 + 1
+	return fmt.Sprintf("%02d월 %02d주차", month, weekNum)
+}
+
+func buildWeekInfo(monday time.Time) WeekInfo {
+	friday := monday.AddDate(0, 0, 4)
+	return WeekInfo{
+		WeekStart: monday.Format("2006-01-02"),
+		WeekEnd:   friday.Format("2006-01-02"),
+		Label:     calcWeekLabel(monday),
+	}
+}
+
+func (a *App) GetCurrentWeek() WeekInfo {
+	now := time.Now()
+	weekday := now.Weekday()
+	if weekday == 0 {
+		weekday = 7
+	}
+	monday := now.AddDate(0, 0, -int(weekday-1))
+	return buildWeekInfo(monday)
+}
+
+func (a *App) GetWeekByOffset(offset int) WeekInfo {
+	now := time.Now()
+	weekday := now.Weekday()
+	if weekday == 0 {
+		weekday = 7
+	}
+	monday := now.AddDate(0, 0, -int(weekday-1)+offset*7)
+	return buildWeekInfo(monday)
+}
+
+// --- Utility ---
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, in)
+	return err
+}
+
+func toJSON(v interface{}) string {
+	data, _ := json.Marshal(v)
+	return string(data)
+}
+
+// --- gogcli Integration ---
+
+type SyncResult struct {
+	Success bool   `json:"success"`
+	Count   int    `json:"count"`
+	Message string `json:"message"`
+}
+
+type StatusResult struct {
+	Ok      bool   `json:"ok"`
+	Message string `json:"message"`
+}
+
+func (a *App) CheckGogCLI() StatusResult {
+	if err := integrations.CheckInstalled(); err != nil {
+		return StatusResult{Ok: false, Message: err.Error()}
+	}
+	return StatusResult{Ok: true, Message: "gogcli (gog) is installed"}
+}
+
+func (a *App) CheckGmailAuth(account string) StatusResult {
+	cli := &integrations.GogCLI{Account: account}
+	if err := cli.CheckAuth(); err != nil {
+		return StatusResult{Ok: false, Message: err.Error()}
+	}
+	return StatusResult{Ok: true, Message: "Gmail 인증 성공"}
+}
+
+func (a *App) SetupGogCredentials() (string, error) {
+	selection, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "Google OAuth Client JSON 파일 선택",
+		Filters: []runtime.FileFilter{
+			{DisplayName: "JSON Files", Pattern: "*.json"},
+		},
+	})
+	if err != nil {
+		return "", err
+	}
+	if selection == "" {
+		return "", nil
+	}
+
+	out, err := integrations.StoreCredentials(selection)
+	if err != nil {
+		return "", fmt.Errorf("credentials 저장 실패: %w (output: %s)", err, out)
+	}
+	log.Printf("[gogcli] Credentials stored from: %s", selection)
+	return out, nil
+}
+
+func (a *App) AuthGmailAccount(account string) (string, error) {
+	cli := &integrations.GogCLI{Account: account}
+	out, err := cli.StartAuth()
+	if err != nil {
+		return out, fmt.Errorf("Gmail 인증 실패: %w", err)
+	}
+	return out, nil
+}
+
+func (a *App) SyncGmail(weekStart, weekEnd string) SyncResult {
+	log.Printf("[sync] SyncGmail called: %s ~ %s", weekStart, weekEnd)
+
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return SyncResult{Success: false, Message: fmt.Sprintf("사용자 조회 실패: %v", err)}
+	}
+
+	// Find Gmail integration
+	ints, err := a.database.ListIntegrations(user.ID)
+	if err != nil {
+		return SyncResult{Success: false, Message: fmt.Sprintf("연동 조회 실패: %v", err)}
+	}
+
+	var gmailInt *db.Integration
+	for i, intg := range ints {
+		if intg.ToolType == "gmail" && intg.Enabled {
+			gmailInt = &ints[i]
+			break
+		}
+	}
+	if gmailInt == nil {
+		return SyncResult{Success: false, Message: "Gmail 연동이 설정되지 않았습니다. 설정 페이지에서 먼저 연동해주세요."}
+	}
+
+	// Extract account from config
+	var config map[string]string
+	json.Unmarshal([]byte(gmailInt.ConfigJSON), &config)
+	account := config["account"]
+	if account == "" {
+		return SyncResult{Success: false, Message: "Gmail 계정이 설정되지 않았습니다."}
+	}
+
+	ws, _ := time.Parse("2006-01-02", weekStart)
+	we, _ := time.Parse("2006-01-02", weekEnd)
+
+	count, err := integrations.SyncGmail(a.database, account, ws, we, gmailInt.ID)
+	if err != nil {
+		return SyncResult{Success: false, Message: fmt.Sprintf("Gmail 동기화 실패: %v", err)}
+	}
+
+	// Update last synced
+	a.database.UpdateIntegrationSyncTime(gmailInt.ID)
+
+	return SyncResult{Success: true, Count: count, Message: fmt.Sprintf("Gmail %d개 활동을 가져왔습니다", count)}
+}
+
+func (a *App) SyncGoogleCalendar(weekStart, weekEnd string) SyncResult {
+	log.Printf("[sync] SyncGoogleCalendar called: %s ~ %s", weekStart, weekEnd)
+
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return SyncResult{Success: false, Message: fmt.Sprintf("사용자 조회 실패: %v", err)}
+	}
+
+	ints, err := a.database.ListIntegrations(user.ID)
+	if err != nil {
+		return SyncResult{Success: false, Message: fmt.Sprintf("연동 조회 실패: %v", err)}
+	}
+
+	var calInt *db.Integration
+	for i, intg := range ints {
+		if intg.ToolType == "google_calendar" && intg.Enabled {
+			calInt = &ints[i]
+			break
+		}
+	}
+	if calInt == nil {
+		return SyncResult{Success: false, Message: "Google Calendar 연동이 설정되지 않았습니다."}
+	}
+
+	var config map[string]string
+	json.Unmarshal([]byte(calInt.ConfigJSON), &config)
+	account := config["account"]
+	if account == "" {
+		return SyncResult{Success: false, Message: "Google 계정이 설정되지 않았습니다."}
+	}
+
+	ws, _ := time.Parse("2006-01-02", weekStart)
+	we, _ := time.Parse("2006-01-02", weekEnd)
+
+	count, err := integrations.SyncGoogleCalendar(a.database, account, ws, we, calInt.ID)
+	if err != nil {
+		return SyncResult{Success: false, Message: fmt.Sprintf("Calendar 동기화 실패: %v", err)}
+	}
+
+	a.database.UpdateIntegrationSyncTime(calInt.ID)
+
+	return SyncResult{Success: true, Count: count, Message: fmt.Sprintf("Calendar %d개 활동을 가져왔습니다", count)}
+}
+
+func (a *App) SyncAll(weekStart, weekEnd string) []SyncResult {
+	log.Printf("[sync] SyncAll called: %s ~ %s", weekStart, weekEnd)
+	var results []SyncResult
+
+	gmailResult := a.SyncGmail(weekStart, weekEnd)
+	results = append(results, gmailResult)
+
+	calResult := a.SyncGoogleCalendar(weekStart, weekEnd)
+	results = append(results, calResult)
+
+	return results
+}
+
+// PopulateReportFromProjects populates the weekly report with SI project weekly report data
+func (a *App) PopulateReportFromProjects(reportID int64, weekStart, weekEnd string) (int, error) {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return 0, err
+	}
+
+	// Get all SI projects
+	projects, err := a.database.ListProjectsWithClient(user.ID, "si")
+	if err != nil {
+		return 0, err
+	}
+
+	count := 0
+	for _, project := range projects {
+		// Skip closed projects
+		if project.Status == "closed" {
+			continue
+		}
+
+		// Get project view with weekly report
+		view, err := a.database.GetSIProjectView(user.ID, project.ID, weekStart, weekEnd)
+		if err != nil {
+			log.Printf("[PopulateReportFromProjects] Failed to get project view for %d: %v", project.ID, err)
+			continue
+		}
+
+		// If there's a weekly report, add it as report items
+		if view.WeeklyReport != nil && view.WeeklyReport.ID > 0 {
+			wr := view.WeeklyReport
+
+			// Add "금주 진행사항" as a report item
+			if strings.TrimSpace(wr.ThisWeekProgress) != "" {
+				content := fmt.Sprintf("[%s] %s", project.Name, wr.ThisWeekProgress)
+				item := &db.ReportItem{
+					ReportID:   reportID,
+					Section:    "project_progress",
+					Category:   project.Name,
+					WorkType:   "SI",
+					Content:    content,
+					Period:     "this_week",
+					SortOrder:  count,
+					IsSelected: true,
+				}
+				if _, err := a.database.SaveReportItem(item); err != nil {
+					log.Printf("[PopulateReportFromProjects] Failed to save report item: %v", err)
+				} else {
+					count++
+				}
+			}
+
+			// Add "차주 계획" as a report item
+			if strings.TrimSpace(wr.NextWeekPlan) != "" {
+				content := fmt.Sprintf("[%s] %s", project.Name, wr.NextWeekPlan)
+				item := &db.ReportItem{
+					ReportID:   reportID,
+					Section:    "next_week_plan",
+					Category:   project.Name,
+					WorkType:   "SI",
+					Content:    content,
+					Period:     "next_week",
+					SortOrder:  count,
+					IsSelected: true,
+				}
+				if _, err := a.database.SaveReportItem(item); err != nil {
+					log.Printf("[PopulateReportFromProjects] Failed to save report item: %v", err)
+				} else {
+					count++
+				}
+			}
+
+			// Add "리스크" as a report item if exists
+			if strings.TrimSpace(wr.Risks) != "" {
+				content := fmt.Sprintf("[%s] 리스크: %s", project.Name, wr.Risks)
+				item := &db.ReportItem{
+					ReportID:   reportID,
+					Section:    "issues",
+					Category:   project.Name,
+					WorkType:   "SI",
+					Content:    content,
+					Period:     "this_week",
+					SortOrder:  count,
+					IsSelected: true,
+				}
+				if _, err := a.database.SaveReportItem(item); err != nil {
+					log.Printf("[PopulateReportFromProjects] Failed to save report item: %v", err)
+				} else {
+					count++
+				}
+			}
+		}
+	}
+
+	log.Printf("[PopulateReportFromProjects] Added %d project items to report %d", count, reportID)
+	return count, nil
+}

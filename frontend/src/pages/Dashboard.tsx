@@ -82,6 +82,14 @@ const STATUS_COLORS: Record<string, string> = {
   closed: 'bg-gray-100 text-gray-600',
 }
 
+function normalizeDate(dateStr: string): string {
+  if (!dateStr) return ''
+  if (dateStr.includes('T')) {
+    return dateStr.split('T')[0]
+  }
+  return dateStr
+}
+
 export default function Dashboard() {
   const navigate = useNavigate()
   const [loading, setLoading] = useState(true)
@@ -118,7 +126,7 @@ export default function Dashboard() {
 
       setMembers(membersData || [])
       setProjects(projectsData || [])
-      setReports((reportsData || []).slice(0, 4))
+      setReports((reportsData || []).slice(0, 2))
       setClients(clientsData || [])
       setCurrentWeek(weekData)
 
@@ -297,7 +305,7 @@ export default function Dashboard() {
                 </div>
                 <div>
                   <h3 className="font-semibold text-slate-800">SI 가동률</h3>
-                  <p className="text-xs text-slate-500">{snapshot?.weekStart || ''} ~ {snapshot?.weekEnd || ''}</p>
+                  <p className="text-xs text-slate-500">{normalizeDate(snapshot?.weekStart || '')} ~ {normalizeDate(snapshot?.weekEnd || '')}</p>
                 </div>
               </div>
               <div className="text-center">
@@ -359,7 +367,7 @@ export default function Dashboard() {
                       className="flex items-center justify-between p-2 bg-slate-50 rounded-lg cursor-pointer hover:bg-slate-100 transition-colors"
                     >
                       <span className="text-sm text-slate-700">
-                        {report.weekStart} ~ {report.weekEnd}
+                        {normalizeDate(report.weekStart)} ~ {normalizeDate(report.weekEnd)}
                       </span>
                       <span
                         className={`text-xs px-2 py-0.5 rounded-full ${

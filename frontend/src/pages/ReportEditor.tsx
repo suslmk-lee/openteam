@@ -10,6 +10,7 @@ import {
   CheckCircle,
   RefreshCw,
   Pencil,
+  FileSpreadsheet,
 } from 'lucide-react'
 import {
   GetReportItems,
@@ -19,6 +20,7 @@ import {
   ExportWeeklyReport,
   GetProjectCategories,
   PreprocessReportItemsWithAI,
+  OpenFile,
 } from '../../wailsjs/go/main/App'
 
 interface ReportItem {
@@ -40,11 +42,13 @@ interface ProjectCategory {
 }
 
 const SECTIONS = [
-  { key: 'project_progress', label: '프로젝트 진행사항' },
-  { key: 'business_dev', label: '사업개발/영업' },
-  { key: 'attendance', label: '근태' },
-  { key: 'hiring', label: '인력채용' },
-  { key: 'other', label: '기타' },
+  { key: 'project_progress', label: '프로젝트 진행사항', period: 'this_week' },
+  { key: 'next_week_plan', label: '차주 계획', period: 'next_week' },
+  { key: 'issues', label: '이슈/리스크', period: 'this_week' },
+  { key: 'business_dev', label: '사업개발/영업', period: 'this_week' },
+  { key: 'attendance', label: '근태', period: 'this_week' },
+  { key: 'hiring', label: '인력채용', period: 'this_week' },
+  { key: 'other', label: '기타', period: 'this_week' },
 ]
 
 const PERIODS = [
@@ -62,6 +66,7 @@ export default function ReportEditor() {
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editContent, setEditContent] = useState('')
   const [saveStatus, setSaveStatus] = useState<string | null>(null)
+  const [exportedFilePath, setExportedFilePath] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
   const [preprocessing, setPreprocessing] = useState(false)
   const [activePeriod, setActivePeriod] = useState('this_week')
@@ -161,13 +166,24 @@ export default function ReportEditor() {
       const outputPath = await ExportWeeklyReport(reportId)
       if (outputPath) {
         await loadData()
-        showStatus(`Excel 파일이 생성되었습니다: ${outputPath}`)
+        setExportedFilePath(outputPath)
+        showStatus('Excel 파일이 생성되었습니다')
       }
     } catch (err) {
       console.error('Failed to export:', err)
-      showStatus('Excel 내보내기에 실패했습니다')
+      showStatus('Excel 내보내기 실패했습니다')
     } finally {
       setExporting(false)
+    }
+  }
+
+  async function handleOpenExportedFile() {
+    if (!exportedFilePath) return
+    try {
+      await OpenFile(exportedFilePath)
+    } catch (err) {
+      console.error('Failed to open file:', err)
+      showStatus('파일을 열 수 없습니다')
     }
   }
 
@@ -183,6 +199,10 @@ export default function ReportEditor() {
 
   function getItemsBySection(section: string) {
     return items.filter(item => item.section === section && (item.period || 'this_week') === activePeriod)
+  }
+
+  function shouldShowSection(sectionPeriod?: string) {
+    return !sectionPeriod || sectionPeriod === activePeriod
   }
 
   return (
@@ -203,9 +223,20 @@ export default function ReportEditor() {
         </div>
         <div className="flex items-center gap-3">
           {saveStatus && (
-            <div className="flex items-center gap-2 text-sm text-green-600 bg-green-50 px-3 py-1.5 rounded-lg">
-              <CheckCircle size={16} />
-              {saveStatus}
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 text-sm text-green-600 bg-green-50 px-3 py-1.5 rounded-lg">
+                <CheckCircle size={16} />
+                {saveStatus}
+              </div>
+              {exportedFilePath && (
+                <button
+                  onClick={handleOpenExportedFile}
+                  className="flex items-center gap-2 px-3 py-1.5 text-sm bg-blue-100 text-blue-700 hover:bg-blue-200 rounded-lg transition-colors"
+                >
+                  <FileSpreadsheet size={16} />
+                  파일 열기
+                </button>
+              )}
             </div>
           )}
           <button
@@ -255,6 +286,7 @@ export default function ReportEditor() {
           </div>
 
           {SECTIONS.map(section => {
+            if (!shouldShowSection(section.period)) return null
             const sectionItems = getItemsBySection(section.key)
             return (
               <div key={section.key} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
@@ -310,14 +342,16 @@ export default function ReportEditor() {
                                 {item.category}
                               </span>
                             )}
-                            <select
-                              value={item.workType || 'si'}
-                              onChange={e => handleWorkTypeChange(item, e.target.value)}
-                              className="text-xs border border-slate-200 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                            >
-                              <option value="sm">SM</option>
-                              <option value="si">SI</option>
-                            </select>
+                            {(section.key === 'project_progress' || section.key === 'business_dev') && item.workType && (
+                              <select
+                                value={item.workType || 'si'}
+                                onChange={e => handleWorkTypeChange(item, e.target.value)}
+                                className="text-xs border border-slate-200 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              >
+                                <option value="sm">SM</option>
+                                <option value="si">SI</option>
+                              </select>
+                            )}
                           </div>
 
                           {editingId === item.id ? (
@@ -340,19 +374,21 @@ export default function ReportEditor() {
                                   </option>
                                 ))}
                               </select>
-                              <select
-                                value={item.workType || 'si'}
-                                onChange={e => {
-                                  const updated = { ...item, workType: e.target.value }
-                                  setItems(prev =>
-                                    prev.map(i => (i.id === item.id ? updated : i))
-                                  )
-                                }}
-                                className="text-xs border border-slate-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                              >
-                                <option value="sm">SM</option>
-                                <option value="si">SI</option>
-                              </select>
+                              {(section.key === 'project_progress' || section.key === 'business_dev') && item.workType && (
+                                <select
+                                  value={item.workType || 'si'}
+                                  onChange={e => {
+                                    const updated = { ...item, workType: e.target.value }
+                                    setItems(prev =>
+                                      prev.map(i => (i.id === item.id ? updated : i))
+                                    )
+                                  }}
+                                  className="text-xs border border-slate-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                >
+                                  <option value="sm">SM</option>
+                                  <option value="si">SI</option>
+                                </select>
+                              )}
 
                               {/* Content textarea */}
                               <textarea

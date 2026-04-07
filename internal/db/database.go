@@ -182,18 +182,7 @@ func (d *Database) migrate() error {
 			ON member_assignments(team_member_id, start_date, end_date)`,
 		`CREATE INDEX IF NOT EXISTS idx_member_assignments_project_period
 			ON member_assignments(project_id, start_date, end_date)`,
-		// SI Project Detail tables for weekly reporting
-		`CREATE TABLE IF NOT EXISTS si_project_details (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			user_id INTEGER REFERENCES users(id),
-			project_id INTEGER REFERENCES projects(id) UNIQUE,
-			project_type TEXT,
-			pm_name TEXT,
-			total_mm REAL DEFAULT 0,
-			current_phase TEXT,
-			progress_rate INTEGER DEFAULT 0,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-		)`,
+		// SI Weekly Reporting tables (si_project_details and si_project_members migrated to projects/member_assignments)
 		`CREATE TABLE IF NOT EXISTS si_weekly_reports (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			user_id INTEGER REFERENCES users(id),
@@ -207,19 +196,7 @@ func (d *Database) migrate() error {
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			UNIQUE(user_id, project_id, week_start)
 		)`,
-		`CREATE TABLE IF NOT EXISTS si_project_members (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			user_id INTEGER REFERENCES users(id),
-			project_id INTEGER REFERENCES projects(id),
-			team_member_id INTEGER REFERENCES team_members(id),
-			role TEXT,
-			allocation_mm REAL DEFAULT 0,
-			start_date DATE,
-			end_date DATE,
-			UNIQUE(user_id, project_id, team_member_id)
-		)`,
 		`CREATE INDEX IF NOT EXISTS idx_si_weekly_reports_project_week ON si_weekly_reports(project_id, week_start)`,
-		`CREATE INDEX IF NOT EXISTS idx_si_project_members_project ON si_project_members(project_id)`,
 		// Common Code Management tables
 		`CREATE TABLE IF NOT EXISTS code_groups (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -281,6 +258,234 @@ func (d *Database) migrate() error {
 	if _, err := d.conn.Exec("UPDATE report_items SET period = 'next_week' WHERE section = 'next_week' AND period = 'this_week'"); err != nil {
 		return fmt.Errorf("failed to migrate next_week period: %w", err)
 	}
+
+	// Migrate si_project_details.current_phase to projects.status if status is empty or old format
+	if err := d.migrateProjectStatusFromCurrentPhase(); err != nil {
+		return fmt.Errorf("failed to migrate project status from current_phase: %w", err)
+	}
+
+	// Add role column to member_assignments for si_project_members integration
+	if err := d.ensureColumnExists("member_assignments", "role", "ALTER TABLE member_assignments ADD COLUMN role TEXT"); err != nil {
+		return err
+	}
+
+	// Migrate si_project_members to member_assignments
+	if err := d.migrateSIProjectMembersToAssignments(); err != nil {
+		return fmt.Errorf("failed to migrate si_project_members to member_assignments: %w", err)
+	}
+
+	// Migrate si_project_details to projects table
+	if err := d.migrateSIProjectDetailsToProjects(); err != nil {
+		return fmt.Errorf("failed to migrate si_project_details to projects: %w", err)
+	}
+
+	return nil
+}
+
+func (d *Database) migrateProjectStatusFromCurrentPhase() error {
+	// Check if si_project_details table exists
+	var tableExists int
+	err := d.conn.QueryRow("SELECT 1 FROM sqlite_master WHERE type='table' AND name='si_project_details'").Scan(&tableExists)
+	if err == sql.ErrNoRows {
+		return nil // Table doesn't exist yet, nothing to migrate
+	}
+	if err != nil {
+		return fmt.Errorf("failed to check si_project_details existence: %w", err)
+	}
+
+	// Check if current_phase column exists
+	var colExists int
+	err = d.conn.QueryRow(`
+		SELECT 1 FROM pragma_table_info('si_project_details') WHERE name='current_phase'
+	`).Scan(&colExists)
+	if err == sql.ErrNoRows {
+		return nil // Column doesn't exist, nothing to migrate
+	}
+	if err != nil {
+		return fmt.Errorf("failed to check current_phase column: %w", err)
+	}
+
+	// Migrate: copy current_phase to projects.status where projects.status is empty or old value
+	log.Println("[Migration] Migrating si_project_details.current_phase to projects.status...")
+	result, err := d.conn.Exec(`
+		UPDATE projects 
+		SET status = COALESCE(
+			(SELECT current_phase FROM si_project_details WHERE si_project_details.project_id = projects.id),
+			status
+		)
+		WHERE status IS NULL OR status = '' OR status IN ('preparing', 'poc_proposal', 'in_development', 'in_operation', 'closed')
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to migrate current_phase to status: %w", err)
+	}
+	if rows, _ := result.RowsAffected(); rows > 0 {
+		log.Printf("[Migration] Updated %d projects with status from current_phase", rows)
+	}
+
+	// For any remaining projects with old status values, set to default
+	result, err = d.conn.Exec(`
+		UPDATE projects 
+		SET status = '제안/POC'
+		WHERE status IS NULL OR status = '' OR status IN ('preparing', 'poc_proposal', 'in_development', 'in_operation', 'closed')
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to set default status: %w", err)
+	}
+	if rows, _ := result.RowsAffected(); rows > 0 {
+		log.Printf("[Migration] Set default status for %d projects", rows)
+	}
+
+	// Mark current_phase column for future removal by renaming it
+	// (SQLite doesn't support DROP COLUMN directly, we'll ignore it in code)
+	log.Println("[Migration] Migration complete. current_phase column will be ignored.")
+	return nil
+}
+
+func (d *Database) migrateSIProjectMembersToAssignments() error {
+	// Check if si_project_members table exists
+	var tableExists int
+	err := d.conn.QueryRow("SELECT 1 FROM sqlite_master WHERE type='table' AND name='si_project_members'").Scan(&tableExists)
+	if err == sql.ErrNoRows {
+		return nil // Table doesn't exist, nothing to migrate
+	}
+	if err != nil {
+		return fmt.Errorf("failed to check si_project_members existence: %w", err)
+	}
+
+	// Check if already migrated (check for any existing data in member_assignments with role)
+	var count int
+	err = d.conn.QueryRow("SELECT COUNT(*) FROM member_assignments WHERE role IS NOT NULL AND role != ''").Scan(&count)
+	if err != nil {
+		return fmt.Errorf("failed to check member_assignments role count: %w", err)
+	}
+	if count > 0 {
+		log.Println("[Migration] member_assignments already has role data, skipping si_project_members migration")
+		return nil
+	}
+
+	// Migrate si_project_members to member_assignments
+	log.Println("[Migration] Migrating si_project_members to member_assignments...")
+	rows, err := d.conn.Query(`
+		SELECT user_id, project_id, team_member_id, role, allocation_mm, start_date, end_date
+		FROM si_project_members
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to query si_project_members: %w", err)
+	}
+	defer rows.Close()
+
+	migrated := 0
+	for rows.Next() {
+		var userID, projectID, teamMemberID int64
+		var role string
+		var allocationMM float64
+		var startDate, endDate sql.NullString
+
+		if err := rows.Scan(&userID, &projectID, &teamMemberID, &role, &allocationMM, &startDate, &endDate); err != nil {
+			log.Printf("[Migration] Failed to scan si_project_members row: %v", err)
+			continue
+		}
+
+		// Check if this assignment already exists in member_assignments
+		var existingID int64
+		err := d.conn.QueryRow(
+			"SELECT id FROM member_assignments WHERE user_id=? AND project_id=? AND team_member_id=?",
+			userID, projectID, teamMemberID,
+		).Scan(&existingID)
+
+		if err == nil {
+			// Update existing assignment with role and convert allocation_mm to allocation_percent
+			_, err = d.conn.Exec(
+				"UPDATE member_assignments SET role=?, allocation_percent=?, start_date=?, end_date=? WHERE id=?",
+				role, int64(allocationMM*100), startDate.String, endDate.String, existingID,
+			)
+			if err != nil {
+				log.Printf("[Migration] Failed to update member_assignments %d: %v", existingID, err)
+				continue
+			}
+		} else {
+			// Insert new assignment
+			_, err = d.conn.Exec(
+				`INSERT INTO member_assignments (user_id, team_member_id, project_id, allocation_percent, start_date, end_date, role, work_mode)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, '')`,
+				userID, teamMemberID, projectID, int64(allocationMM*100), startDate.String, endDate.String, role,
+			)
+			if err != nil {
+				log.Printf("[Migration] Failed to insert member_assignments: %v", err)
+				continue
+			}
+		}
+		migrated++
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Printf("[Migration] Row iteration error: %v", err)
+	}
+
+	log.Printf("[Migration] Migrated %d si_project_members to member_assignments", migrated)
+	return nil
+}
+
+func (d *Database) migrateSIProjectDetailsToProjects() error {
+	// Check if si_project_details table exists
+	var tableExists int
+	err := d.conn.QueryRow("SELECT 1 FROM sqlite_master WHERE type='table' AND name='si_project_details'").Scan(&tableExists)
+	if err == sql.ErrNoRows {
+		return nil // Table doesn't exist, nothing to migrate
+	}
+	if err != nil {
+		return fmt.Errorf("failed to check si_project_details existence: %w", err)
+	}
+
+	// Add columns to projects table if they don't exist
+	columns := []struct {
+		name string
+		sql  string
+	}{
+		{"project_type", "ALTER TABLE projects ADD COLUMN project_type TEXT"},
+		{"pm_name", "ALTER TABLE projects ADD COLUMN pm_name TEXT"},
+		{"total_mm", "ALTER TABLE projects ADD COLUMN total_mm REAL DEFAULT 0"},
+		{"progress_rate", "ALTER TABLE projects ADD COLUMN progress_rate INTEGER DEFAULT 0"},
+	}
+
+	for _, col := range columns {
+		if err := d.ensureColumnExists("projects", col.name, col.sql); err != nil {
+			return fmt.Errorf("failed to add column %s: %w", col.name, err)
+		}
+	}
+
+	// Migrate data from si_project_details to projects
+	log.Println("[Migration] Migrating si_project_details to projects...")
+	result, err := d.conn.Exec(`
+		UPDATE projects 
+		SET project_type = COALESCE(
+			(SELECT project_type FROM si_project_details WHERE si_project_details.project_id = projects.id),
+			project_type
+		),
+		pm_name = COALESCE(
+			(SELECT pm_name FROM si_project_details WHERE si_project_details.project_id = projects.id),
+			pm_name
+		),
+		total_mm = COALESCE(
+			(SELECT total_mm FROM si_project_details WHERE si_project_details.project_id = projects.id),
+			total_mm
+		),
+		progress_rate = COALESCE(
+			(SELECT progress_rate FROM si_project_details WHERE si_project_details.project_id = projects.id),
+			progress_rate
+		)
+		WHERE EXISTS (SELECT 1 FROM si_project_details WHERE si_project_details.project_id = projects.id)
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to migrate si_project_details to projects: %w", err)
+	}
+
+	if rows, _ := result.RowsAffected(); rows > 0 {
+		log.Printf("[Migration] Migrated %d si_project_details to projects", rows)
+	}
+
+	// Mark si_project_details for removal (SQLite doesn't support DROP COLUMN, we'll ignore the table)
+	log.Println("[Migration] Migration complete. si_project_details table will be ignored.")
 	return nil
 }
 

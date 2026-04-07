@@ -83,8 +83,8 @@ type TeamMember struct {
 }
 
 type Project struct {
-	ID          int64     `json:"id"`
-	UserID      int64     `json:"userId"`
+	ID           int64     `json:"id"`
+	UserID       int64     `json:"userId"`
 	TeamType    string    `json:"teamType"`
 	ClientID    int64     `json:"clientId"`
 	Name        string    `json:"name"`
@@ -94,6 +94,11 @@ type Project struct {
 	StartDate   string    `json:"startDate"`
 	EndDate     *string   `json:"endDate"`
 	CreatedAt   time.Time `json:"createdAt"`
+	// SI Project Detail fields (migrated from si_project_details table)
+	ProjectType  string  `json:"projectType"`  // 직영, 당선, 신대방동, 거제 등
+	PMName       string  `json:"pmName"`       // 프로젝트 책임자/PM
+	TotalMM      float64 `json:"totalMM"`      // 총 투입 M/M
+	ProgressRate int     `json:"progressRate"` // 진행율 %
 }
 
 type MemberAssignment struct {
@@ -135,6 +140,7 @@ type AttendanceRecord struct {
 	ID                int64     `json:"id"`
 	UserID            int64     `json:"userId"`
 	TeamMemberID      int64     `json:"teamMemberId"`
+	TeamMemberName    string    `json:"teamMemberName"` // From JOIN with team_members
 	RecordDate        string    `json:"recordDate"`
 	Type              string    `json:"type"`
 	CheckInTime       *string   `json:"checkInTime"`

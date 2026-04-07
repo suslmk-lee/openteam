@@ -51,6 +51,7 @@ export namespace db {
 	    id: number;
 	    userId: number;
 	    teamMemberId: number;
+	    teamMemberName: string;
 	    recordDate: string;
 	    type: string;
 	    checkInTime?: string;
@@ -70,6 +71,7 @@ export namespace db {
 	        this.id = source["id"];
 	        this.userId = source["userId"];
 	        this.teamMemberId = source["teamMemberId"];
+	        this.teamMemberName = source["teamMemberName"];
 	        this.recordDate = source["recordDate"];
 	        this.type = source["type"];
 	        this.checkInTime = source["checkInTime"];
@@ -311,6 +313,10 @@ export namespace db {
 	    endDate?: string;
 	    // Go type: time
 	    createdAt: any;
+	    projectType: string;
+	    pmName: string;
+	    totalMM: number;
+	    progressRate: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new Project(source);
@@ -329,6 +335,10 @@ export namespace db {
 	        this.startDate = source["startDate"];
 	        this.endDate = source["endDate"];
 	        this.createdAt = this.convertValues(source["createdAt"], null);
+	        this.projectType = source["projectType"];
+	        this.pmName = source["pmName"];
+	        this.totalMM = source["totalMM"];
+	        this.progressRate = source["progressRate"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -394,6 +404,10 @@ export namespace db {
 	    endDate?: string;
 	    // Go type: time
 	    createdAt: any;
+	    projectType: string;
+	    pmName: string;
+	    totalMM: number;
+	    progressRate: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new ProjectWithClient(source);
@@ -412,6 +426,10 @@ export namespace db {
 	        this.startDate = source["startDate"];
 	        this.endDate = source["endDate"];
 	        this.createdAt = this.convertValues(source["createdAt"], null);
+	        this.projectType = source["projectType"];
+	        this.pmName = source["pmName"];
+	        this.totalMM = source["totalMM"];
+	        this.progressRate = source["progressRate"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

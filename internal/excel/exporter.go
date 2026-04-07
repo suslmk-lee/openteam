@@ -38,17 +38,18 @@ type ReportItem struct {
 
 // templateLayout describes the discovered structure of the 주간업무 sheet
 type templateLayout struct {
-	sheetName    string
-	titleRow     int // row with the week title (usually 1)
-	headerRow    int // row with column headers (usually 2)
-	contentStart int // first content row (usually 3)
-	contentEnd   int // last content row
-	colPrevWeek  int // column for 전주 실적 (usually C=3)
-	colThisWeek  int // column for 금주 계획 (usually D=4)
-	colNote      int // column for 비고 (usually E=5)
-	sectionRows  []int // rows that are section headers (contain [xxx] markers)
-	smHeaderRow  int
-	siHeaderRow  int
+	sheetName       string
+	titleRow        int // row with the week title (usually 1)
+	headerRow       int // row with column headers (usually 2)
+	contentStart    int // first content row (usually 3)
+	contentEnd      int // last content row
+	colPrevWeek     int // column for 전주 실적 (usually C=3)
+	colThisWeek     int // column for 금주 계획 (usually D=4)
+	colNote         int // column for 비고 (usually E=5)
+	sectionRows     []int // rows that are section headers (contain [xxx] markers)
+	smHeaderRow     int
+	siHeaderRow     int
+	otherHeaderRow  int // row with [기타] or 기타 section header
 }
 
 func ExportWeeklyReport(templatePath, outputDir string, data *ReportData) (string, error) {
@@ -206,6 +207,9 @@ func discoverLayout(f *excelize.File) (*templateLayout, error) {
 			}
 			if strings.Contains(trimmed, "주요업무") && strings.Contains(strings.ToUpper(trimmed), "SI") {
 				layout.siHeaderRow = rowNum
+			}
+			if strings.Contains(trimmed, "기타") && (strings.Contains(trimmed, "근태") || strings.Contains(trimmed, "인력채용")) {
+				layout.otherHeaderRow = rowNum
 			}
 
 			if strings.Contains(cell, "[") && strings.Contains(cell, "]") {
@@ -416,46 +420,112 @@ func shiftAndWriteContent(f *excelize.File, layout *templateLayout, data *Report
 		f.SetCellValue(sn, thisCell, "") // Clear 금주
 	}
 
-	// Step 2: Collect all items and split by work type (SM/SI)
-	allItems := []ReportItem{}
+	// Step 2: Group items by section name to determine where to write
+	sectionItems := make(map[string][]ReportItem)
 	for _, section := range data.Sections {
-		allItems = append(allItems, section.Items...)
+		sectionItems[section.Name] = section.Items
 	}
-	log.Printf("[excel] Total items to write: %d from %d sections", len(allItems), len(data.Sections))
 
+	// Get items for each section type
 	smItems := []ReportItem{}
 	siItems := []ReportItem{}
-	for _, item := range allItems {
-		log.Printf("[excel] Item: Category=%s, WorkType=%s, ThisWeek=%.20s...", item.Category, item.WorkType, item.ThisWeek)
-		if strings.EqualFold(strings.TrimSpace(item.WorkType), "sm") {
-			smItems = append(smItems, item)
-		} else {
-			siItems = append(siItems, item)
+	otherItems := []ReportItem{}
+
+	// Collect items by work type and section
+	// Use a map to track processed items to avoid duplicates (based on content hash)
+	processedItemKeys := make(map[string]bool)
+	getItemKey := func(item ReportItem) string {
+		// Normalize all whitespace (remove extra spaces, tabs, newlines)
+		thisWeek := strings.TrimSpace(item.ThisWeek)
+		nextWeek := strings.TrimSpace(item.NextWeek)
+		note := strings.TrimSpace(item.Note)
+		// Also remove internal extra whitespace
+		thisWeek = strings.Join(strings.Fields(thisWeek), " ")
+		nextWeek = strings.Join(strings.Fields(nextWeek), " ")
+		note = strings.Join(strings.Fields(note), " ")
+		return item.Category + "|" + item.WorkType + "|" + thisWeek + "|" + nextWeek + "|" + note
+	}
+	
+	for _, section := range data.Sections {
+		// Sections that should go to 기타 (other) section
+		if section.Name == "other" || section.Name == "attendance" || section.Name == "hiring" {
+			for _, item := range section.Items {
+				key := getItemKey(item)
+				if !processedItemKeys[key] {
+					otherItems = append(otherItems, item)
+					processedItemKeys[key] = true
+					log.Printf("[excel] Adding to other: %s", key[:min(60, len(key))])
+				} else {
+					log.Printf("[excel] DUPLICATE SKIPPED in other: %s", key[:min(60, len(key))])
+				}
+			}
+			continue
+		}
+		for _, item := range section.Items {
+			// Skip if already processed (based on content)
+			key := getItemKey(item)
+			if processedItemKeys[key] {
+				log.Printf("[excel] DUPLICATE SKIPPED: %s", key[:min(60, len(key))])
+				continue
+			}
+			processedItemKeys[key] = true
+			log.Printf("[excel] Adding to %s: %s", item.WorkType, key[:min(60, len(key))])
+			
+			workType := strings.TrimSpace(item.WorkType)
+			if workType == "" {
+				// Empty workType goes to other section
+				otherItems = append(otherItems, item)
+			} else if strings.EqualFold(workType, "sm") {
+				smItems = append(smItems, item)
+			} else {
+				siItems = append(siItems, item)
+			}
 		}
 	}
-	log.Printf("[excel] SM items: %d, SI items: %d", len(smItems), len(siItems))
+
+	log.Printf("[excel] Items: SM=%d, SI=%d, Other=%d", len(smItems), len(siItems), len(otherItems))
 
 	// Build writable row pools
 	allWritableRows := collectWritableRows(layout.contentStart, layout.contentEnd, sectionRowSet)
 	smWritableRows := []int{}
 	siWritableRows := []int{}
+	otherWritableRows := []int{}
 
+	// Determine row ranges based on header positions
 	if layout.smHeaderRow > 0 && layout.siHeaderRow > 0 && layout.siHeaderRow > layout.smHeaderRow {
 		smWritableRows = collectWritableRows(layout.smHeaderRow+1, layout.siHeaderRow-1, sectionRowSet)
+	}
+
+	if layout.siHeaderRow > 0 && layout.otherHeaderRow > 0 && layout.otherHeaderRow > layout.siHeaderRow {
+		siWritableRows = collectWritableRows(layout.siHeaderRow+1, layout.otherHeaderRow-1, sectionRowSet)
+		otherWritableRows = collectWritableRows(layout.otherHeaderRow+1, layout.contentEnd, sectionRowSet)
+	} else if layout.siHeaderRow > 0 {
+		// No other section header found - SI items go below SI header
 		siWritableRows = collectWritableRows(layout.siHeaderRow+1, layout.contentEnd, sectionRowSet)
 	}
 
-	if len(smWritableRows) == 0 || len(siWritableRows) == 0 {
-		log.Printf("[excel] SM/SI ranges not detected, falling back to global writable rows")
+	// Fallback if ranges not detected properly
+	if len(smWritableRows) == 0 && len(siWritableRows) == 0 {
+		log.Printf("[excel] Section ranges not detected, falling back to global writable rows")
+		// Write all items to available rows
+		allItems := append(append(smItems, siItems...), otherItems...)
 		writeItemsToRows(f, sn, layout, allItems, allWritableRows)
 		return
 	}
 
-	log.Printf("[excel] Writing items by work type: SM=%d rows=%d, SI=%d rows=%d",
-		len(smItems), len(smWritableRows), len(siItems), len(siWritableRows))
-
-	writeItemsToRows(f, sn, layout, smItems, smWritableRows)
-	writeItemsToRows(f, sn, layout, siItems, siWritableRows)
+	// Write items to their respective sections
+	if len(smItems) > 0 && len(smWritableRows) > 0 {
+		log.Printf("[excel] Writing %d SM items to %d rows", len(smItems), len(smWritableRows))
+		writeItemsToRows(f, sn, layout, smItems, smWritableRows)
+	}
+	if len(siItems) > 0 && len(siWritableRows) > 0 {
+		log.Printf("[excel] Writing %d SI items to %d rows", len(siItems), len(siWritableRows))
+		writeItemsToRows(f, sn, layout, siItems, siWritableRows)
+	}
+	if len(otherItems) > 0 && len(otherWritableRows) > 0 {
+		log.Printf("[excel] Writing %d Other items to %d rows", len(otherItems), len(otherWritableRows))
+		writeItemsToRows(f, sn, layout, otherItems, otherWritableRows)
+	}
 }
 
 func collectWritableRows(start, end int, sectionRowSet map[int]bool) []int {
@@ -470,6 +540,7 @@ func collectWritableRows(start, end int, sectionRowSet map[int]bool) []int {
 
 func writeItemsToRows(f *excelize.File, sheetName string, layout *templateLayout, items []ReportItem, rows []int) {
 	log.Printf("[excel] writeItemsToRows: writing %d items to %d rows (sheet=%s)", len(items), len(rows), sheetName)
+	
 	for i, item := range items {
 		if i >= len(rows) {
 			log.Printf("[excel] Warning: more items (%d) than writable rows (%d), some items skipped", len(items), len(rows))
@@ -477,34 +548,164 @@ func writeItemsToRows(f *excelize.File, sheetName string, layout *templateLayout
 		}
 		row := rows[i]
 
-		thisCell, _ := excelize.CoordinatesToCellName(layout.colThisWeek, row)
-		content := item.ThisWeek
-		if content == "" {
-			content = item.Category
-		}
-		log.Printf("[excel] Writing item %d to row %d, cell %s: %.30s...", i, row, thisCell, content)
-		err := f.SetCellValue(sheetName, thisCell, content)
-		if err != nil {
-			log.Printf("[excel] Error writing to cell %s: %v", thisCell, err)
-		}
-
-		// Write NextWeek or Note to 비고 column
-		noteContent := item.Note
-		if item.NextWeek != "" {
-			if noteContent != "" {
-				noteContent = "[차주] " + item.NextWeek + " / " + noteContent
+		// Write 전주 실적 (ThisWeek) to colPrevWeek
+		if item.ThisWeek != "" {
+			prevCell, _ := excelize.CoordinatesToCellName(layout.colPrevWeek, row)
+			err := writeRichTextWithBoldFirstLine(f, sheetName, prevCell, item.ThisWeek)
+			if err != nil {
+				log.Printf("[excel] Error writing ThisWeek rich text to cell %s: %v", prevCell, err)
 			} else {
-				noteContent = "[차주] " + item.NextWeek
+				log.Printf("[excel] Writing item %d (전주) to row %d, cell %s: %.30s...", i, row, prevCell, item.ThisWeek)
+				applyCellWrapText(f, sheetName, prevCell)
 			}
 		}
-		if noteContent != "" {
+
+		// Write 금주 계획 (NextWeek) to colThisWeek
+		if item.NextWeek != "" {
+			thisCell, _ := excelize.CoordinatesToCellName(layout.colThisWeek, row)
+			err := writeRichTextWithBoldFirstLine(f, sheetName, thisCell, item.NextWeek)
+			if err != nil {
+				log.Printf("[excel] Error writing NextWeek rich text to cell %s: %v", thisCell, err)
+			} else {
+				log.Printf("[excel] Writing item %d (금주) to row %d, cell %s: %.30s...", i, row, thisCell, item.NextWeek)
+				applyCellWrapText(f, sheetName, thisCell)
+			}
+		}
+
+		// Write Note to 비고 column
+		if item.Note != "" {
 			noteCell, _ := excelize.CoordinatesToCellName(layout.colNote, row)
-			err := f.SetCellValue(sheetName, noteCell, noteContent)
+			// Use SetCellStr to prevent Excel from auto-detecting hyperlinks
+			err := f.SetCellStr(sheetName, noteCell, item.Note)
 			if err != nil {
 				log.Printf("[excel] Error writing note to cell %s: %v", noteCell, err)
+			} else {
+				// Apply wrap text while preserving existing style
+				applyWrapTextStyle(f, sheetName, noteCell)
 			}
 		}
 	}
+}
+
+// applyWrapTextStyle adds wrap text to a cell while preserving its existing style (including background color)
+// and resetting hyperlink-like formatting (blue color, underline)
+func applyWrapTextStyle(f *excelize.File, sheetName, cell string) {
+	// Get current cell style
+	styleID, err := f.GetCellStyle(sheetName, cell)
+	if err != nil {
+		log.Printf("[excel] Warning: could not get cell style for %s: %v", cell, err)
+		return
+	}
+	
+	// Get style details
+	style, err := f.GetStyle(styleID)
+	if err != nil {
+		log.Printf("[excel] Warning: could not get style details for ID %d: %v", styleID, err)
+		return
+	}
+	
+	// Add wrap text to alignment while preserving all other style properties
+	if style.Alignment == nil {
+		style.Alignment = &excelize.Alignment{}
+	}
+	style.Alignment.WrapText = true
+	
+	// Reset font to prevent hyperlink-like appearance (blue color, underline, bold, italic)
+	if style.Font == nil {
+		style.Font = &excelize.Font{}
+	}
+	// Use default black color, remove underline, bold, and italic
+	style.Font.Color = "#000000"
+	style.Font.Underline = "none"
+	style.Font.Bold = false
+	style.Font.Italic = false
+	
+	// Create new style with wrap text and reset font
+	newStyleID, err := f.NewStyle(style)
+	if err != nil {
+		log.Printf("[excel] Warning: could not create wrap style for %s: %v", cell, err)
+		return
+	}
+	
+	// Apply the new style
+	if err := f.SetCellStyle(sheetName, cell, cell, newStyleID); err != nil {
+		log.Printf("[excel] Warning: could not apply wrap style to %s: %v", cell, err)
+	}
+}
+
+// writeRichTextWithBoldFirstLine writes content with the first line in bold and rest in regular style
+func writeRichTextWithBoldFirstLine(f *excelize.File, sheetName, cell, content string) error {
+	lines := strings.Split(content, "\n")
+	if len(lines) == 0 {
+		return nil
+	}
+	
+	// Build rich text runs
+	runs := []excelize.RichTextRun{}
+	
+	// First line in bold
+	firstLine := lines[0]
+	if firstLine != "" {
+		runs = append(runs, excelize.RichTextRun{
+			Text: firstLine,
+			Font: &excelize.Font{
+				Bold:  true,
+				Color: "#000000",
+			},
+		})
+	}
+	
+	// Rest of the content in regular style
+	if len(lines) > 1 {
+		rest := strings.Join(lines[1:], "\n")
+		if rest != "" {
+			// Add newline before rest if we have a first line
+			if firstLine != "" {
+				rest = "\n" + rest
+			}
+			runs = append(runs, excelize.RichTextRun{
+				Text: rest,
+				Font: &excelize.Font{
+					Bold:  false,
+					Color: "#000000",
+				},
+			})
+		}
+	}
+	
+	if len(runs) > 0 {
+		return f.SetCellRichText(sheetName, cell, runs)
+	}
+	return nil
+}
+
+// applyCellWrapText applies only wrap text style to a cell (for rich text cells)
+func applyCellWrapText(f *excelize.File, sheetName, cell string) {
+	// Get current cell style
+	styleID, err := f.GetCellStyle(sheetName, cell)
+	if err != nil {
+		return
+	}
+	
+	// Get style details
+	style, err := f.GetStyle(styleID)
+	if err != nil {
+		return
+	}
+	
+	// Add wrap text to alignment
+	if style.Alignment == nil {
+		style.Alignment = &excelize.Alignment{}
+	}
+	style.Alignment.WrapText = true
+	
+	// Create new style with wrap text only (preserve font settings from rich text)
+	newStyleID, err := f.NewStyle(style)
+	if err != nil {
+		return
+	}
+	
+	f.SetCellStyle(sheetName, cell, cell, newStyleID)
 }
 
 // UtilizationMemberData represents a team member's utilization data
@@ -740,4 +941,12 @@ func CopyTemplate(templatePath, outputDir, weekLabel string) (string, error) {
 	}
 
 	return outputPath, nil
+}
+
+// min returns the minimum of two integers
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

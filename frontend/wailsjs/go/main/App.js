@@ -26,6 +26,14 @@ export function AddReportItem(arg1, arg2, arg3, arg4, arg5, arg6) {
   return window['go']['main']['App']['AddReportItem'](arg1, arg2, arg3, arg4, arg5, arg6);
 }
 
+export function AddSIPhase(arg1) {
+  return window['go']['main']['App']['AddSIPhase'](arg1);
+}
+
+export function AddSIProjectType(arg1) {
+  return window['go']['main']['App']['AddSIProjectType'](arg1);
+}
+
 export function AuthGmailAccount(arg1) {
   return window['go']['main']['App']['AuthGmailAccount'](arg1);
 }
@@ -66,12 +74,20 @@ export function DeleteReportItem(arg1) {
   return window['go']['main']['App']['DeleteReportItem'](arg1);
 }
 
+export function DeleteSIPhase(arg1) {
+  return window['go']['main']['App']['DeleteSIPhase'](arg1);
+}
+
 export function DeleteSIProject(arg1) {
   return window['go']['main']['App']['DeleteSIProject'](arg1);
 }
 
 export function DeleteSIProjectMember(arg1) {
   return window['go']['main']['App']['DeleteSIProjectMember'](arg1);
+}
+
+export function DeleteSIProjectType(arg1) {
+  return window['go']['main']['App']['DeleteSIProjectType'](arg1);
 }
 
 export function DeleteTeamMember(arg1) {
@@ -138,10 +154,6 @@ export function GetSIPhases() {
   return window['go']['main']['App']['GetSIPhases']();
 }
 
-export function GetSIProjectStatuses() {
-  return window['go']['main']['App']['GetSIProjectStatuses']();
-}
-
 export function GetSIProjectTypes() {
   return window['go']['main']['App']['GetSIProjectTypes']();
 }
@@ -196,6 +208,10 @@ export function ListTeamMembers() {
 
 export function ListWeeklyReports() {
   return window['go']['main']['App']['ListWeeklyReports']();
+}
+
+export function OpenFile(arg1) {
+  return window['go']['main']['App']['OpenFile'](arg1);
 }
 
 export function PopulateReportFromProjects(arg1, arg2, arg3) {

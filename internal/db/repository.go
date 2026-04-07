@@ -253,11 +253,17 @@ func (d *Database) SaveReportItem(item *ReportItem) (int64, error) {
 		item.Period = "this_week"
 	}
 	if item.ID > 0 {
+		log.Printf("[DB SaveReportItem] Updating item %d: content=%.50s...", item.ID, item.Content)
 		_, err := d.conn.Exec(
 			"UPDATE report_items SET section=?, category=?, work_type=?, content=?, period=?, sort_order=?, is_selected=? WHERE id=?",
 			item.Section, item.Category, item.WorkType, item.Content, item.Period, item.SortOrder, item.IsSelected, item.ID,
 		)
-		return item.ID, err
+		if err != nil {
+			log.Printf("[DB SaveReportItem] Update failed for item %d: %v", item.ID, err)
+			return 0, err
+		}
+		log.Printf("[DB SaveReportItem] Successfully updated item %d", item.ID)
+		return item.ID, nil
 	}
 	res, err := d.conn.Exec(
 		"INSERT INTO report_items (report_id, activity_id, section, category, work_type, content, period, sort_order, is_selected) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -550,17 +556,32 @@ func (d *Database) SaveProject(p *Project) (int64, error) {
 }
 
 func (d *Database) ListProjectsWithClient(userID int64, teamType string) ([]ProjectWithClient, error) {
+	var query string
+	var args []interface{}
+	
 	if teamType == "" {
-		teamType = "si"
+		// Fetch all projects (both SI and SM)
+		query = `
+			SELECT p.id, p.user_id, p.team_type, p.client_id, p.name, p.client_name, p.status, p.description, p.start_date, p.end_date, p.created_at,
+			       c.name as client_display_name
+			FROM projects p
+			LEFT JOIN clients c ON c.id = p.client_id
+			WHERE p.user_id = ?
+			ORDER BY p.created_at DESC`
+		args = []interface{}{userID}
+	} else {
+		// Fetch only specific team type
+		query = `
+			SELECT p.id, p.user_id, p.team_type, p.client_id, p.name, p.client_name, p.status, p.description, p.start_date, p.end_date, p.created_at,
+			       c.name as client_display_name
+			FROM projects p
+			LEFT JOIN clients c ON c.id = p.client_id
+			WHERE p.user_id = ? AND p.team_type = ?
+			ORDER BY p.created_at DESC`
+		args = []interface{}{userID, teamType}
 	}
-	query := `
-		SELECT p.id, p.user_id, p.team_type, p.client_id, p.name, p.client_name, p.status, p.description, p.start_date, p.end_date, p.created_at,
-		       c.name as client_display_name
-		FROM projects p
-		LEFT JOIN clients c ON c.id = p.client_id
-		WHERE p.user_id = ? AND p.team_type = ?
-		ORDER BY p.created_at DESC`
-	rows, err := d.conn.Query(query, userID, teamType)
+	
+	rows, err := d.conn.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -875,6 +896,53 @@ func (d *Database) DeleteAttendanceRecord(userID, recordID int64) error {
 	return err
 }
 
+// GetAttendanceRecords retrieves individual attendance records for the week with dates
+func (d *Database) GetAttendanceRecords(userID int64, startDate, endDate string) ([]AttendanceRecord, error) {
+	log.Printf("[DB GetAttendanceRecords] userID=%d, startDate=%s, endDate=%s", userID, startDate, endDate)
+	
+	query := `
+		SELECT 
+			ar.id,
+			ar.user_id,
+			ar.team_member_id,
+			tm.name as team_member_name,
+			ar.record_date,
+			ar.type,
+			ar.check_in_time,
+			ar.check_out_time,
+			ar.notes,
+			ar.integration_source,
+			ar.external_id,
+			ar.created_at
+		FROM attendance_records ar
+		JOIN team_members tm ON tm.id = ar.team_member_id
+		WHERE ar.user_id = ?
+		  AND ar.record_date >= ? AND ar.record_date <= ?
+		ORDER BY ar.record_date, tm.name
+	`
+	
+	rows, err := d.conn.Query(query, userID, startDate, endDate)
+	if err != nil {
+		log.Printf("[DB GetAttendanceRecords] Query error: %v", err)
+		return nil, err
+	}
+	defer rows.Close()
+	
+	var records []AttendanceRecord
+	for rows.Next() {
+		var r AttendanceRecord
+		if err := rows.Scan(&r.ID, &r.UserID, &r.TeamMemberID, &r.TeamMemberName,
+			&r.RecordDate, &r.Type, &r.CheckInTime, &r.CheckOutTime, &r.Notes,
+			&r.IntegrationSource, &r.ExternalID, &r.CreatedAt); err != nil {
+			log.Printf("[DB GetAttendanceRecords] Scan error: %v", err)
+			return nil, err
+		}
+		records = append(records, r)
+	}
+	log.Printf("[DB GetAttendanceRecords] Returning %d records", len(records))
+	return records, nil
+}
+
 func (d *Database) GetAttendanceSummary(userID int64, startDate, endDate string) ([]AttendanceSummary, error) {
 	log.Printf("[DB GetAttendanceSummary] userID=%d, startDate=%s, endDate=%s", userID, startDate, endDate)
 	
@@ -942,35 +1010,29 @@ func (d *Database) ExecRaw(query string, args ...interface{}) error {
 // --- SI Project Weekly Reporting ---
 
 func (d *Database) SaveSIProjectDetail(detail *SIProjectDetail) (int64, error) {
-	if detail.ID > 0 {
-		_, err := d.conn.Exec(
-			`UPDATE si_project_details 
-			 SET project_type=?, pm_name=?, total_mm=?, current_phase=?, progress_rate=?
-			 WHERE id=? AND user_id=?`,
-			detail.ProjectType, detail.PMName, detail.TotalMM, detail.CurrentPhase, detail.ProgressRate,
-			detail.ID, detail.UserID,
-		)
-		return detail.ID, err
-	}
-	res, err := d.conn.Exec(
-		`INSERT INTO si_project_details (user_id, project_id, project_type, pm_name, total_mm, current_phase, progress_rate) 
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		detail.UserID, detail.ProjectID, detail.ProjectType, detail.PMName, detail.TotalMM, detail.CurrentPhase, detail.ProgressRate,
+	// Update projects table directly with all SI project details
+	_, err := d.conn.Exec(
+		`UPDATE projects 
+		 SET project_type=?, pm_name=?, total_mm=?, status=?, progress_rate=?
+		 WHERE id=? AND user_id=?`,
+		detail.ProjectType, detail.PMName, detail.TotalMM, detail.CurrentPhase, detail.ProgressRate,
+		detail.ProjectID, detail.UserID,
 	)
 	if err != nil {
 		return 0, err
 	}
-	return res.LastInsertId()
+	return detail.ProjectID, nil
 }
 
 func (d *Database) GetSIProjectDetail(userID, projectID int64) (*SIProjectDetail, error) {
 	row := d.conn.QueryRow(
-		`SELECT id, user_id, project_id, project_type, pm_name, total_mm, current_phase, progress_rate, created_at 
-		 FROM si_project_details WHERE user_id=? AND project_id=?`,
+		`SELECT id, user_id, COALESCE(project_type, ''), COALESCE(pm_name, ''), COALESCE(total_mm, 0), status, COALESCE(progress_rate, 0), created_at 
+		 FROM projects WHERE user_id=? AND id=?`,
 		userID, projectID,
 	)
 	var detail SIProjectDetail
-	if err := row.Scan(&detail.ID, &detail.UserID, &detail.ProjectID, &detail.ProjectType, 
+	detail.ProjectID = projectID
+	if err := row.Scan(&detail.ID, &detail.UserID, &detail.ProjectType, 
 		&detail.PMName, &detail.TotalMM, &detail.CurrentPhase, &detail.ProgressRate, &detail.CreatedAt); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -1021,19 +1083,22 @@ func (d *Database) GetSIWeeklyReport(userID, projectID int64, weekStart string) 
 }
 
 func (d *Database) SaveSIProjectMember(member *SIProjectMember) (int64, error) {
+	// Convert allocation_mm to allocation_percent for storage
+	allocationPercent := member.AllocationMM * 100
+
 	if member.ID > 0 {
 		_, err := d.conn.Exec(
-			`UPDATE si_project_members SET role=?, allocation_mm=?, start_date=?, end_date=?
+			`UPDATE member_assignments SET role=?, allocation_percent=?, start_date=?, end_date=?
 			 WHERE id=? AND user_id=?`,
-			member.Role, member.AllocationMM, member.StartDate, member.EndDate,
+			member.Role, allocationPercent, member.StartDate, member.EndDate,
 			member.ID, member.UserID,
 		)
 		return member.ID, err
 	}
 	res, err := d.conn.Exec(
-		`INSERT INTO si_project_members (user_id, project_id, team_member_id, role, allocation_mm, start_date, end_date) 
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		member.UserID, member.ProjectID, member.TeamMemberID, member.Role, member.AllocationMM, member.StartDate, member.EndDate,
+		`INSERT INTO member_assignments (user_id, team_member_id, project_id, allocation_percent, start_date, end_date, role, work_mode) 
+		 VALUES (?, ?, ?, ?, ?, ?, ?, '')`,
+		member.UserID, member.TeamMemberID, member.ProjectID, allocationPercent, member.StartDate, member.EndDate, member.Role,
 	)
 	if err != nil {
 		return 0, err
@@ -1043,8 +1108,8 @@ func (d *Database) SaveSIProjectMember(member *SIProjectMember) (int64, error) {
 
 func (d *Database) ListSIProjectMembers(userID, projectID int64) ([]SIProjectMember, error) {
 	rows, err := d.conn.Query(
-		`SELECT pm.id, pm.user_id, pm.project_id, pm.team_member_id, tm.name, pm.role, pm.allocation_mm, pm.start_date, pm.end_date
-		 FROM si_project_members pm
+		`SELECT pm.id, pm.user_id, pm.project_id, pm.team_member_id, tm.name, COALESCE(pm.role, '') as role, pm.allocation_percent, pm.start_date, pm.end_date
+		 FROM member_assignments pm
 		 JOIN team_members tm ON tm.id = pm.team_member_id
 		 WHERE pm.user_id=? AND pm.project_id=?
 		 ORDER BY tm.name`,
@@ -1058,44 +1123,64 @@ func (d *Database) ListSIProjectMembers(userID, projectID int64) ([]SIProjectMem
 	var members []SIProjectMember
 	for rows.Next() {
 		var m SIProjectMember
+		var allocationPercent float64
 		if err := rows.Scan(&m.ID, &m.UserID, &m.ProjectID, &m.TeamMemberID, &m.MemberName, 
-			&m.Role, &m.AllocationMM, &m.StartDate, &m.EndDate); err != nil {
+			&m.Role, &allocationPercent, &m.StartDate, &m.EndDate); err != nil {
 			return nil, err
 		}
+		// Convert allocation_percent to allocation_mm for backward compatibility
+		m.AllocationMM = allocationPercent / 100
 		members = append(members, m)
 	}
 	return members, nil
 }
 
 func (d *Database) DeleteSIProjectMember(userID, memberID int64) error {
-	_, err := d.conn.Exec("DELETE FROM si_project_members WHERE id=? AND user_id=?", memberID, userID)
+	_, err := d.conn.Exec("DELETE FROM member_assignments WHERE id=? AND user_id=?", memberID, userID)
 	return err
 }
 
 func (d *Database) GetSIProjectView(userID, projectID int64, weekStart, weekEnd string) (*SIProjectView, error) {
-	// Get base project
+	// Get project with all SI details in one query
 	row := d.conn.QueryRow(
-		`SELECT id, user_id, team_type, client_id, name, client_name, status, description, start_date, end_date, created_at
+		`SELECT id, user_id, team_type, client_id, name, client_name, status, description, 
+		        start_date, end_date, created_at, 
+		        COALESCE(project_type, '') as project_type, 
+		        COALESCE(pm_name, '') as pm_name, 
+		        COALESCE(total_mm, 0) as total_mm, 
+		        COALESCE(progress_rate, 0) as progress_rate
 		 FROM projects WHERE id=? AND user_id=?`,
 		projectID, userID,
 	)
 	var view SIProjectView
+	var detail SIProjectDetail
 	if err := row.Scan(&view.Project.ID, &view.Project.UserID, &view.Project.TeamType, &view.Project.ClientID,
 		&view.Project.Name, &view.Project.ClientName, &view.Project.Status, &view.Project.Description,
-		&view.Project.StartDate, &view.Project.EndDate, &view.Project.CreatedAt); err != nil {
+		&view.Project.StartDate, &view.Project.EndDate, &view.Project.CreatedAt,
+		&detail.ProjectType, &detail.PMName, &detail.TotalMM, &detail.ProgressRate); err != nil {
+		log.Printf("[GetSIProjectView] Failed to scan project %d: %v", projectID, err)
 		return nil, err
 	}
-
-	// Get detail
-	detail, _ := d.GetSIProjectDetail(userID, projectID)
-	view.Detail = detail
+	
+	// Build detail from projects table data
+	detail.ID = view.Project.ID
+	detail.UserID = view.Project.UserID
+	detail.ProjectID = view.Project.ID
+	detail.CurrentPhase = view.Project.Status
+	view.Detail = &detail
 
 	// Get members
-	members, _ := d.ListSIProjectMembers(userID, projectID)
+	members, err := d.ListSIProjectMembers(userID, projectID)
+	if err != nil {
+		log.Printf("[GetSIProjectView] Failed to list members for project %d: %v", projectID, err)
+	}
 	view.Members = members
 
 	// Get weekly report for this week
-	weeklyReport, _ := d.GetSIWeeklyReport(userID, projectID, weekStart)
+	weeklyReport, err := d.GetSIWeeklyReport(userID, projectID, weekStart)
+	if err != nil {
+		log.Printf("[GetSIProjectView] Failed to get weekly report for project %d: %v", projectID, err)
+	}
 	view.WeeklyReport = weeklyReport
 
 	return &view, nil

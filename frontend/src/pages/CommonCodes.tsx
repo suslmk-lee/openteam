@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 
-type CodeGroupKey = 'position_types' | 'employment_types'
+type CodeGroupKey = 'position_types' | 'employment_types' | 'project_types' | 'project_phases'
 
 const GROUP_META: Record<CodeGroupKey, { title: string; description: string }> = {
   position_types: {
@@ -12,13 +12,25 @@ const GROUP_META: Record<CodeGroupKey, { title: string; description: string }> =
     title: '고용형태',
     description: '팀원 고용형태 목록을 관리합니다.',
   },
+  project_types: {
+    title: '프로젝트 유형',
+    description: '프로젝트 상세 유형(직영, 당선 등)을 관리합니다.',
+  },
+  project_phases: {
+    title: '프로젝트 단계',
+    description: '프로젝트 현재 진행 단계를 관리합니다.',
+  },
 }
 
 export default function CommonCodes() {
   const [positionTypes, setPositionTypes] = useState<string[]>([])
   const [employmentTypes, setEmploymentTypes] = useState<string[]>([])
+  const [projectTypes, setProjectTypes] = useState<string[]>([])
+  const [projectPhases, setProjectPhases] = useState<string[]>([])
   const [newPosition, setNewPosition] = useState('')
   const [newEmployment, setNewEmployment] = useState('')
+  const [newProjectType, setNewProjectType] = useState('')
+  const [newProjectPhase, setNewProjectPhase] = useState('')
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
@@ -28,12 +40,16 @@ export default function CommonCodes() {
   async function loadAll() {
     setLoading(true)
     try {
-      const [positions, employments] = await Promise.all([
+      const [positions, employments, projects, phases] = await Promise.all([
         (window as any).go?.main?.App?.GetPositionTypes?.(),
         (window as any).go?.main?.App?.GetEmploymentTypes?.(),
+        (window as any).go?.main?.App?.GetSIProjectTypes?.(),
+        (window as any).go?.main?.App?.GetSIPhases?.(),
       ])
       setPositionTypes(Array.isArray(positions) ? positions : [])
       setEmploymentTypes(Array.isArray(employments) ? employments : [])
+      setProjectTypes(Array.isArray(projects) ? projects : [])
+      setProjectPhases(Array.isArray(phases) ? phases : [])
     } finally {
       setLoading(false)
     }
@@ -46,9 +62,15 @@ export default function CommonCodes() {
     if (group === 'position_types') {
       await (window as any).go?.main?.App?.AddPositionType?.(trimmed)
       setNewPosition('')
-    } else {
+    } else if (group === 'employment_types') {
       await (window as any).go?.main?.App?.AddEmploymentType?.(trimmed)
       setNewEmployment('')
+    } else if (group === 'project_types') {
+      await (window as any).go?.main?.App?.AddSIProjectType?.(trimmed)
+      setNewProjectType('')
+    } else {
+      await (window as any).go?.main?.App?.AddSIPhase?.(trimmed)
+      setNewProjectPhase('')
     }
 
     await loadAll()
@@ -60,8 +82,12 @@ export default function CommonCodes() {
 
     if (group === 'position_types') {
       await (window as any).go?.main?.App?.DeletePositionType?.(value)
-    } else {
+    } else if (group === 'employment_types') {
       await (window as any).go?.main?.App?.DeleteEmploymentType?.(value)
+    } else if (group === 'project_types') {
+      await (window as any).go?.main?.App?.DeleteSIProjectType?.(value)
+    } else {
+      await (window as any).go?.main?.App?.DeleteSIPhase?.(value)
     }
 
     await loadAll()
@@ -72,7 +98,7 @@ export default function CommonCodes() {
       <header className="h-14 border-b border-slate-200 bg-white flex items-center justify-between px-6 shrink-0">
         <div>
           <h2 className="text-lg font-semibold text-slate-800">공통코드 관리</h2>
-          <p className="text-xs text-slate-500">직급체계와 고용형태를 직접 관리합니다.</p>
+          <p className="text-xs text-slate-500">직급체계, 고용형태, 프로젝트 유형, 프로젝트 단계를 직접 관리합니다.</p>
         </div>
         <button
           onClick={() => void loadAll()}
@@ -84,7 +110,7 @@ export default function CommonCodes() {
       </header>
 
       <div className="flex-1 overflow-y-auto p-6">
-        <div className="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-6">
           <CodeGroupCard
             title={GROUP_META.position_types.title}
             description={GROUP_META.position_types.description}
@@ -105,6 +131,28 @@ export default function CommonCodes() {
             onInputChange={setNewEmployment}
             onAdd={() => void handleAdd('employment_types', newEmployment)}
             onDelete={(value) => void handleDelete('employment_types', value)}
+          />
+
+          <CodeGroupCard
+            title={GROUP_META.project_types.title}
+            description={GROUP_META.project_types.description}
+            values={projectTypes}
+            inputValue={newProjectType}
+            inputPlaceholder="예: 신규지점 / 해외"
+            onInputChange={setNewProjectType}
+            onAdd={() => void handleAdd('project_types', newProjectType)}
+            onDelete={(value) => void handleDelete('project_types', value)}
+          />
+
+          <CodeGroupCard
+            title={GROUP_META.project_phases.title}
+            description={GROUP_META.project_phases.description}
+            values={projectPhases}
+            inputValue={newProjectPhase}
+            inputPlaceholder="예: UAT / 롤백"
+            onInputChange={setNewProjectPhase}
+            onAdd={() => void handleAdd('project_phases', newProjectPhase)}
+            onDelete={(value) => void handleDelete('project_phases', value)}
           />
         </div>
       </div>

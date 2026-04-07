@@ -15,6 +15,10 @@ export function AddProjectCategory(arg1:string):Promise<void>;
 
 export function AddReportItem(arg1:number,arg2:string,arg3:string,arg4:string,arg5:any,arg6:string):Promise<db.ReportItem>;
 
+export function AddSIPhase(arg1:string):Promise<void>;
+
+export function AddSIProjectType(arg1:string):Promise<void>;
+
 export function AuthGmailAccount(arg1:string):Promise<string>;
 
 export function CheckGmailAuth(arg1:string):Promise<main.StatusResult>;
@@ -35,9 +39,13 @@ export function DeleteProjectCategory(arg1:number):Promise<void>;
 
 export function DeleteReportItem(arg1:number):Promise<void>;
 
+export function DeleteSIPhase(arg1:string):Promise<void>;
+
 export function DeleteSIProject(arg1:number):Promise<void>;
 
 export function DeleteSIProjectMember(arg1:number):Promise<void>;
+
+export function DeleteSIProjectType(arg1:string):Promise<void>;
 
 export function DeleteTeamMember(arg1:number):Promise<void>;
 
@@ -71,8 +79,6 @@ export function GetReportItems(arg1:number):Promise<Array<db.ReportItem>>;
 
 export function GetSIPhases():Promise<Array<string>>;
 
-export function GetSIProjectStatuses():Promise<Array<string>>;
-
 export function GetSIProjectTypes():Promise<Array<string>>;
 
 export function GetSIProjectView(arg1:number,arg2:string,arg3:string):Promise<db.SIProjectView>;
@@ -100,6 +106,8 @@ export function ListSIProjects():Promise<Array<db.ProjectWithClient>>;
 export function ListTeamMembers():Promise<Array<db.TeamMember>>;
 
 export function ListWeeklyReports():Promise<Array<db.WeeklyReport>>;
+
+export function OpenFile(arg1:string):Promise<void>;
 
 export function PopulateReportFromProjects(arg1:number,arg2:string,arg3:string):Promise<number>;
 

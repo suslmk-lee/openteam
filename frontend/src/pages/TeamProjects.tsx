@@ -2,13 +2,12 @@ import { useEffect, useState } from 'react'
 import {
   GetCurrentWeek,
   GetWeekByOffset,
-  GetSIProjectStatuses,
-  GetSIWeeklySnapshot,
   GetClientStatuses,
+  GetSIWeeklySnapshot,
   ListMemberAssignments,
-  ListSIProjects,
   ListTeamMembers,
   ListClients,
+  ListSIProjects,
   SaveMemberAssignment,
   SaveSIProject,
   SaveClient,
@@ -78,13 +77,7 @@ interface WeekInfo {
   label: string
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  preparing: '준비중',
-  poc_proposal: 'POC/제안',
-  in_development: '개발중',
-  in_operation: '운영중',
-  closed: '종료',
-}
+const STATUS_LABELS: Record<string, string> = {}
 
 const CLIENT_STATUS_LABELS: Record<string, string> = {
   existing: '기존',
@@ -146,6 +139,7 @@ export default function TeamProjects() {
   const [projectStatus, setProjectStatus] = useState('preparing')
   const [projectStartDate, setProjectStartDate] = useState('')
   const [projectEndDate, setProjectEndDate] = useState('')
+  const [projectTeamType, setProjectTeamType] = useState<'si' | 'sm'>('si')
 
   const [assignmentMemberId, setAssignmentMemberId] = useState<number>(0)
   const [assignmentProjectId, setAssignmentProjectId] = useState<number>(0)
@@ -168,20 +162,19 @@ export default function TeamProjects() {
       setWeek(currentWeek)
       setAssignmentStartDate(currentWeek.weekStart)
       setProjectStartDate(currentWeek.weekStart)
-      const [statusList, clientStatusList, typeList, phaseList, roleList] = await Promise.all([
-        GetSIProjectStatuses(),
+      const [clientStatusList, typeList, phaseList, roleList] = await Promise.all([
         GetClientStatuses(),
         GetSIProjectTypes(),
         GetSIPhases(),
         GetSIRoles(),
       ])
-      setStatuses(statusList)
+      setStatuses(phaseList) // 공통코드 프로젝트 단계를 상태로 사용
       setClientStatuses(clientStatusList)
       setProjectTypes(typeList)
       setPhases(phaseList)
       setRoles(roleList)
-      if (statusList.length > 0) {
-        setProjectStatus(statusList[0])
+      if (phaseList.length > 0) {
+        setProjectStatus(phaseList[0])
       }
       await loadData(currentWeek.weekStart, currentWeek.weekEnd)
     })()
@@ -213,6 +206,7 @@ export default function TeamProjects() {
       id: 0,
       clientId: projectClientId,
       name: projectName.trim(),
+      teamType: projectTeamType,
       status: projectStatus,
       description: '',
       startDate: projectStartDate || week?.weekStart || '',
@@ -220,6 +214,7 @@ export default function TeamProjects() {
     } as any)
     setProjectName('')
     setProjectClientId(0)
+    setProjectTeamType('si')
     setProjectStartDate('')
     setProjectEndDate('')
     if (week) await loadData(week.weekStart, week.weekEnd)
@@ -300,24 +295,53 @@ export default function TeamProjects() {
     setShowMembersModal(true)
   }
 
+  // Filter projects that overlap with the current week
+  const filteredProjects = projects.filter(project => {
+    if (!week) return true
+    const weekStart = week.weekStart
+    const weekEnd = week.weekEnd
+    const projectStart = project.startDate
+    const projectEnd = project.endDate
+    
+    // If project has no start date, include it
+    if (!projectStart) return true
+    
+    // Project starts after week ends -> exclude
+    if (projectStart > weekEnd) return false
+    
+    // Project ends before week starts -> exclude
+    if (projectEnd && projectEnd < weekStart) return false
+    
+    return true
+  })
+
   async function openProjectEdit(project: Project) {
     setSelectedProject(project)
     setShowEditModal(true)
   }
 
-  async function handleSaveProjectEdit(name: string, clientId: number, status: string, startDate: string, endDate: string) {
+  async function handleSaveProjectEdit(name: string, clientId: number, status: string, startDate: string, endDate: string, teamType: string) {
     if (!selectedProject) return
+    // Normalize dates to YYYY-MM-DD format (remove time component if present)
+    const normalizeDate = (dateStr: string): string => {
+      if (!dateStr) return ''
+      // If date is in ISO 8601 format (2026-01-01T00:00:00Z), extract just the date part
+      if (dateStr.includes('T')) {
+        return dateStr.split('T')[0]
+      }
+      return dateStr
+    }
     await SaveSIProject({
       id: selectedProject.id,
       userId: 1,
-      teamType: (selectedProject as any).teamType || 'si',
+      teamType: teamType,
       clientId,
       name,
       clientName: clients.find(c => c.id === clientId)?.name || '',
       status,
       description: (selectedProject as any).description || '',
-      startDate,
-      endDate,
+      startDate: normalizeDate(startDate),
+      endDate: normalizeDate(endDate),
       createdAt: (selectedProject as any).createdAt
     } as any)
     setShowEditModal(false)
@@ -453,7 +477,7 @@ export default function TeamProjects() {
             <div className="bg-white border border-slate-200 rounded-xl p-4">
               <p className="text-xs text-slate-500">진행중인 프로젝트</p>
               <p className="text-2xl font-semibold text-blue-600">
-                {projects.filter(p => p.status !== 'closed').length}
+                {projects.filter(p => p.status !== '종료').length}
               </p>
             </div>
             <div className="bg-white border border-slate-200 rounded-xl p-4">
@@ -465,7 +489,7 @@ export default function TeamProjects() {
           {/* Projects */}
           <section className="bg-white border border-slate-200 rounded-xl p-4">
             <h3 className="text-sm font-semibold text-slate-700 mb-3">프로젝트 등록</h3>
-            <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-2">
               <input
                 className="px-3 py-2 border border-slate-200 rounded-lg text-sm"
                 placeholder="프로젝트명"
@@ -487,7 +511,7 @@ export default function TeamProjects() {
                 </select>
                 <button
                   onClick={() => setShowClientModal(true)}
-                  className="px-2 py-2 text-sm bg-slate-100 hover:bg-slate-200 rounded-lg"
+                  className="px-2 py-2 text-sm bg-slate-100 hover:bg-slate-200 rounded-lg shrink-0"
                   title="신규 고객사 추가"
                 >
                   <Plus size={16} />
@@ -495,10 +519,18 @@ export default function TeamProjects() {
               </div>
               <select
                 className="px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                value={projectTeamType}
+                onChange={e => setProjectTeamType(e.target.value as 'si' | 'sm')}
+              >
+                <option value="si">SI</option>
+                <option value="sm">SM</option>
+              </select>
+              <select
+                className="px-3 py-2 border border-slate-200 rounded-lg text-sm"
                 value={projectStatus}
                 onChange={e => setProjectStatus(e.target.value)}
               >
-                {statuses.map(s => <option key={s} value={s}>{STATUS_LABELS[s] || s}</option>)}
+                {phases.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
               <input
                 type="date"
@@ -507,25 +539,27 @@ export default function TeamProjects() {
                 onChange={e => setProjectStartDate(e.target.value)}
                 placeholder="시작일"
               />
-              <input
-                type="date"
-                className="px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                value={projectEndDate}
-                onChange={e => setProjectEndDate(e.target.value)}
-                placeholder="완료기한"
-              />
-              <button
-                onClick={handleAddProject}
-                disabled={!projectName.trim() || !projectClientId}
-                className="px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-              >
-                등록
-              </button>
+              <div className="flex gap-2">
+                <input
+                  type="date"
+                  className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  value={projectEndDate}
+                  onChange={e => setProjectEndDate(e.target.value)}
+                  placeholder="완료기한"
+                />
+                <button
+                  onClick={handleAddProject}
+                  disabled={!projectName.trim() || !projectClientId}
+                  className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 shrink-0"
+                >
+                  등록
+                </button>
+              </div>
             </div>
 
-            <h3 className="text-sm font-semibold text-slate-700 mt-6 mb-3">프로젝트 목록 ({projects.length}개)</h3>
-            {projects.length === 0 ? (
-              <p className="text-sm text-slate-500 py-4 text-center">등록된 프로젝트가 없습니다.</p>
+            <h3 className="text-sm font-semibold text-slate-700 mt-6 mb-3">프로젝트 목록 ({filteredProjects.length}개)</h3>
+            {filteredProjects.length === 0 ? (
+              <p className="text-sm text-slate-500 py-4 text-center">해당 기간에 진행 중인 프로젝트가 없습니다.</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -533,15 +567,16 @@ export default function TeamProjects() {
                     <tr className="border-b border-slate-100">
                       <th className="text-left py-2 px-3 text-slate-600 font-medium">프로젝트명</th>
                       <th className="text-left py-2 px-3 text-slate-600 font-medium">고객사</th>
+                      <th className="text-left py-2 px-3 text-slate-600 font-medium">타입</th>
                       <th className="text-left py-2 px-3 text-slate-600 font-medium">기간</th>
                       <th className="text-left py-2 px-3 text-slate-600 font-medium">상태</th>
                       <th className="text-right py-2 px-3 text-slate-600 font-medium">관리</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {projects.map(project => {
+                    {filteredProjects.map(project => {
                       const clientStatus = getClientStatus(project.clientId)
-                      const isOverdue = project.endDate && new Date(project.endDate) < new Date() && project.status !== 'closed'
+                      const isOverdue = project.endDate && new Date(project.endDate) < new Date() && project.status !== '종료'
                       return (
                         <tr key={project.id} className="border-b border-slate-50 hover:bg-slate-50">
                           <td className="py-2 px-3">
@@ -551,8 +586,13 @@ export default function TeamProjects() {
                             </div>
                           </td>
                           <td className="py-2 px-3 text-slate-600">{project.clientName || '-'}</td>
+                          <td className="py-2 px-3">
+                            <span className={`text-xs px-2 py-0.5 rounded ${project.teamType === 'sm' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>
+                              {project.teamType?.toUpperCase() || 'SI'}
+                            </span>
+                          </td>
                           <td className="py-2 px-3 text-slate-500 text-xs">
-                            {project.startDate || '-'} ~ {project.endDate || '미정'}
+                            {formatDateOnly(project.startDate) || '-'} ~ {formatDateOnly(project.endDate) || '미정'}
                           </td>
                           <td className="py-2 px-3">
                             <select
@@ -563,7 +603,7 @@ export default function TeamProjects() {
                                 if (week) await loadData(week.weekStart, week.weekEnd)
                               }}
                             >
-                              {statuses.map(s => <option key={s} value={s}>{STATUS_LABELS[s] || s}</option>)}
+                              {phases.map(s => <option key={s} value={s}>{s}</option>)}
                             </select>
                           </td>
                           <td className="py-2 px-3 text-right">
@@ -630,7 +670,7 @@ export default function TeamProjects() {
                 onChange={e => setAssignmentProjectId(Number(e.target.value))}
               >
                 <option value={0}>프로젝트 선택</option>
-                {projects.filter(p => p.status !== 'closed').map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                {projects.filter(p => p.status !== '종료').map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
               <input
                 type="number"
@@ -661,11 +701,11 @@ export default function TeamProjects() {
           {/* Project Assignment Status */}
           <section className="bg-white border border-slate-200 rounded-xl p-4">
             <h3 className="text-sm font-semibold text-slate-700 mb-3">프로젝트별 투입 현황</h3>
-            {projects.filter(p => p.status !== 'closed').length === 0 ? (
+            {projects.filter(p => p.status !== '종료').length === 0 ? (
               <p className="text-sm text-slate-500 py-4 text-center">진행 중인 프로젝트가 없습니다.</p>
             ) : (
               <div className="space-y-4">
-                {projects.filter(p => p.status !== 'closed').map(project => {
+                {projects.filter(p => p.status !== '종료').map(project => {
                   const projectAssignments = assignments.filter(a => a.projectId === project.id)
                   return (
                     <div key={project.id} className="border border-slate-200 rounded-lg overflow-hidden">
@@ -885,7 +925,7 @@ export default function TeamProjects() {
         <ProjectEditModal
           project={selectedProject}
           clients={clients}
-          statuses={statuses}
+          phases={phases}
           onSave={handleSaveProjectEdit}
           onClose={() => setShowEditModal(false)}
         />
@@ -899,17 +939,27 @@ export default function TeamProjects() {
 interface ProjectEditModalProps {
   project: Project
   clients: Client[]
-  statuses: string[]
-  onSave: (name: string, clientId: number, status: string, startDate: string, endDate: string) => void
+  phases: string[]
+  onSave: (name: string, clientId: number, status: string, startDate: string, endDate: string, teamType: string) => void
   onClose: () => void
 }
 
-function ProjectEditModal({ project, clients, statuses, onSave, onClose }: ProjectEditModalProps) {
+function ProjectEditModal({ project, clients, phases, onSave, onClose }: ProjectEditModalProps) {
+  // Helper to normalize date format for input type="date"
+  const normalizeDate = (dateStr: string): string => {
+    if (!dateStr) return ''
+    if (dateStr.includes('T')) {
+      return dateStr.split('T')[0]
+    }
+    return dateStr
+  }
+
   const [name, setName] = useState(project.name)
   const [clientId, setClientId] = useState(project.clientId)
   const [status, setStatus] = useState(project.status)
-  const [startDate, setStartDate] = useState(project.startDate || '')
-  const [endDate, setEndDate] = useState(project.endDate || '')
+  const [startDate, setStartDate] = useState(normalizeDate(project.startDate || ''))
+  const [endDate, setEndDate] = useState(normalizeDate(project.endDate || ''))
+  const [teamType, setTeamType] = useState(project.teamType || 'si')
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -943,13 +993,24 @@ function ProjectEditModal({ project, clients, statuses, onSave, onClose }: Proje
             </select>
           </div>
           <div>
-            <label className="block text-sm text-slate-600 mb-1">프로젝트 상태</label>
+            <label className="block text-sm text-slate-600 mb-1">프로젝트 타입</label>
+            <select 
+              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" 
+              value={teamType} 
+              onChange={e => setTeamType(e.target.value)}
+            >
+              <option value="si">SI</option>
+              <option value="sm">SM</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm text-slate-600 mb-1">프로젝트 단계</label>
             <select 
               className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" 
               value={status} 
               onChange={e => setStatus(e.target.value)}
             >
-              {statuses.map(s => <option key={s} value={s}>{STATUS_LABELS[s] || s}</option>)}
+              {phases.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -976,7 +1037,7 @@ function ProjectEditModal({ project, clients, statuses, onSave, onClose }: Proje
         <div className="px-6 py-4 border-t border-slate-200 flex gap-2">
           <button onClick={onClose} className="flex-1 px-4 py-2 text-sm bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200">취소</button>
           <button 
-            onClick={() => onSave(name, clientId, status, startDate, endDate)} 
+            onClick={() => onSave(name, clientId, status, startDate, endDate, teamType)} 
             disabled={!name.trim() || !clientId}
             className="flex-1 px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
           >
@@ -1111,11 +1172,23 @@ interface ProjectDetailModalProps {
 }
 
 function ProjectDetailModal({ project, detail, members, projectTypes, phases, onSave, onClose }: ProjectDetailModalProps) {
+  // Use project.status as the source of truth for current phase
   const [projectType, setProjectType] = useState(detail?.projectType || projectTypes[0] || '')
   const [pmName, setPmName] = useState(detail?.pmName || '')
   const [totalMM, setTotalMM] = useState(detail?.totalMM || 0)
-  const [currentPhase, setCurrentPhase] = useState(detail?.currentPhase || phases[0] || '')
+  const [currentPhase, setCurrentPhase] = useState(project.status || phases[0] || '')
   const [progressRate, setProgressRate] = useState(detail?.progressRate || 0)
+  
+  // Sync state when modal opens
+  useEffect(() => {
+    setProjectType(detail?.projectType || projectTypes[0] || '')
+    setPmName(detail?.pmName || '')
+    setTotalMM(detail?.totalMM || 0)
+    // Always use project.status as the current phase
+    const validPhase = phases.includes(project.status) ? project.status : phases[0] || ''
+    setCurrentPhase(validPhase)
+    setProgressRate(detail?.progressRate || 0)
+  }, [detail, project.status, projectTypes, phases])
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">

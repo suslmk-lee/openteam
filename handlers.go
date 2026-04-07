@@ -6,8 +6,10 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -17,7 +19,7 @@ import (
 	"openreport/internal/excel"
 	"openreport/internal/integrations"
 
-	"github.com/wailsapp/wails/v2/pkg/runtime"
+	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // --- User ---
@@ -198,7 +200,14 @@ func (a *App) AddReportItem(reportID int64, section, category, content string, a
 }
 
 func (a *App) UpdateReportItem(item db.ReportItem) error {
+	log.Printf("[UpdateReportItem] Updating item %d: content=%.50s..., section=%s, category=%s", 
+		item.ID, item.Content, item.Section, item.Category)
 	_, err := a.database.SaveReportItem(&item)
+	if err != nil {
+		log.Printf("[UpdateReportItem] Failed to save item %d: %v", item.ID, err)
+	} else {
+		log.Printf("[UpdateReportItem] Successfully saved item %d", item.ID)
+	}
 	return err
 }
 
@@ -207,6 +216,18 @@ func (a *App) DeleteReportItem(id int64) error {
 }
 
 func (a *App) AddActivityToReport(reportID int64, activityID int64, section, category string) (*db.ReportItem, error) {
+	// Check if this activity is already added to the report
+	existingItems, err := a.database.ListReportItems(reportID)
+	if err != nil {
+		return nil, err
+	}
+	for _, item := range existingItems {
+		if item.ActivityID != nil && *item.ActivityID == activityID {
+			log.Printf("[AddActivityToReport] Activity %d already exists in report %d, skipping duplicate", activityID, reportID)
+			return nil, fmt.Errorf("이미 추가된 활동입니다")
+		}
+	}
+
 	activities, err := a.database.ListActivities("2000-01-01", "2099-12-31")
 	if err != nil {
 		return nil, err
@@ -296,36 +317,65 @@ func (a *App) PopulateReportFromTeamData(reportID int64) (int, error) {
 		addedCount++
 	}
 
-	// 1. Attendance summary for the week
-	summaries, err := a.database.GetAttendanceSummary(user.ID, report.WeekStart, report.WeekEnd)
+	// 1. Attendance records for the week - show individual dates
+	records, err := a.database.GetAttendanceRecords(user.ID, report.WeekStart, report.WeekEnd)
 	if err != nil {
-		log.Printf("[PopulateReport] Attendance summary error: %v", err)
+		log.Printf("[PopulateReport] Attendance records error: %v", err)
 	} else {
+		// Group by team member
+		memberRecords := make(map[int64][]db.AttendanceRecord)
+		for _, r := range records {
+			memberRecords[r.TeamMemberID] = append(memberRecords[r.TeamMemberID], r)
+		}
+		
+		// Format each member's attendance as date list
 		attendanceLines := []string{}
-		for _, s := range summaries {
-			if s.TotalDays > 0 {
-				parts := []string{}
-				if s.VacationDays > 0 {
-					parts = append(parts, fmt.Sprintf("연차 %d일", s.VacationDays))
+		for _, recs := range memberRecords {
+			if len(recs) == 0 {
+				continue
+			}
+			memberName := recs[0].TeamMemberName
+			
+			// Format dates
+			dateParts := []string{}
+			for _, r := range recs {
+				// Parse date - handle both "2006-01-02" and "2006-01-02T00:00:00Z" formats
+				dateStr := r.RecordDate
+				if idx := strings.Index(dateStr, "T"); idx != -1 {
+					dateStr = dateStr[:idx]
 				}
-				if s.MorningHalfDays > 0 {
-					parts = append(parts, fmt.Sprintf("오전반차 %d건", s.MorningHalfDays))
+				
+				date, parseErr := time.Parse("2006-01-02", dateStr)
+				if parseErr == nil {
+					weekday := []string{"일", "월", "화", "수", "목", "금", "토"}[date.Weekday()]
+					dateStr = fmt.Sprintf("%04d/%02d/%02d(%s)", date.Year(), date.Month(), date.Day(), weekday)
 				}
-				if s.AfternoonHalfDays > 0 {
-					parts = append(parts, fmt.Sprintf("오후반차 %d건", s.AfternoonHalfDays))
+				
+				switch r.Type {
+				case "vacation":
+					dateParts = append(dateParts, dateStr+" 연차")
+				case "morning_half":
+					dateParts = append(dateParts, dateStr+" 오전반차")
+				case "afternoon_half":
+					dateParts = append(dateParts, dateStr+" 오후반차")
 				}
+			}
+			
+			if len(dateParts) > 0 {
+				// Group by member
 				attendanceLines = append(attendanceLines,
-					fmt.Sprintf("%s: %s (합계 %.1f일)", s.TeamMemberName, strings.Join(parts, ", "), s.TotalDays))
+					fmt.Sprintf("%s: %s", memberName, strings.Join(dateParts, ", ")))
 			}
 		}
+		
 		if len(attendanceLines) > 0 {
 			content := strings.Join(attendanceLines, "\n")
-			addItem("attendance", "근태현황", content, "sm", "this_week")
+			addItem("attendance", "근태현황", content, "", "this_week")
 		}
 	}
 
-	// 2. Active SI projects → project_progress section
-	projects, err := a.database.ListProjectsWithClient(user.ID, "si")
+	// 2. Active projects → project_progress section (both SI and SM)
+	projects, err := a.database.ListProjectsWithClient(user.ID, "")
 	if err != nil {
 		log.Printf("[PopulateReport] Projects error: %v", err)
 	} else {
@@ -352,7 +402,12 @@ func (a *App) PopulateReportFromTeamData(reportID int64) (int, error) {
 			if p.Description == "" {
 				content = fmt.Sprintf("[%s] %s (%s)", label, p.Name, client)
 			}
-			addItem("project_progress", p.Name, content, "si", "this_week")
+			// Use project's actual TeamType (si or sm)
+			workType := p.TeamType
+			if workType == "" {
+				workType = "si" // default fallback
+			}
+			addItem("project_progress", p.Name, content, workType, "this_week")
 		}
 	}
 
@@ -790,9 +845,9 @@ func (a *App) getOpenAIConfig() (*openAIIntegrationConfig, error) {
 // --- Excel Template ---
 
 func (a *App) UploadExcelTemplate() (string, error) {
-	selection, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
+	selection, err := wailsRuntime.OpenFileDialog(a.ctx, wailsRuntime.OpenDialogOptions{
 		Title: "Excel 템플릿 선택",
-		Filters: []runtime.FileFilter{
+		Filters: []wailsRuntime.FileFilter{
 			{DisplayName: "Excel Files", Pattern: "*.xlsx;*.xls"},
 		},
 	})
@@ -1026,10 +1081,10 @@ func (a *App) ExportWeeklyReport(reportID int64) (string, error) {
 
 	defaultName := fmt.Sprintf("주간업무일지_%s.xlsx", report.WeekStart)
 
-	savePath, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+	savePath, err := wailsRuntime.SaveFileDialog(a.ctx, wailsRuntime.SaveDialogOptions{
 		Title:           "주간업무일지 저장",
 		DefaultFilename: defaultName,
-		Filters: []runtime.FileFilter{
+		Filters: []wailsRuntime.FileFilter{
 			{DisplayName: "Excel Files", Pattern: "*.xlsx"},
 		},
 	})
@@ -1133,11 +1188,13 @@ func (a *App) DeleteProjectCategory(id int64) error {
 // --- SI Team Ops ---
 
 var validSIProjectStatuses = map[string]bool{
-	"preparing":      true,
-	"poc_proposal":   true,
-	"in_development": true,
-	"in_operation":   true,
-	"closed":         true,
+	"제안/POC":   true,
+	"분석/설계":  true,
+	"개발":       true,
+	"테스트":     true,
+	"오픈":       true,
+	"안정화":     true,
+	"종료":       true,
 }
 
 type commonCodeSeed struct {
@@ -1164,6 +1221,35 @@ var defaultCommonCodeSeeds = []commonCodeSeed{
 			{CodeValue: "정규", CodeLabel: "정규", SortOrder: 0, IsActive: true},
 			{CodeValue: "외주", CodeLabel: "외주", SortOrder: 1, IsActive: true},
 			{CodeValue: "계약", CodeLabel: "계약", SortOrder: 2, IsActive: true},
+		},
+	},
+	{
+		GroupCode:   "project_types",
+		GroupName:   "프로젝트 유형",
+		Description: "프로젝트 상세 유형 분류",
+		Values: []db.CodeValue{
+			{CodeValue: "직영", CodeLabel: "직영", SortOrder: 0, IsActive: true},
+			{CodeValue: "당선", CodeLabel: "당선", SortOrder: 1, IsActive: true},
+			{CodeValue: "신대방동", CodeLabel: "신대방동", SortOrder: 2, IsActive: true},
+			{CodeValue: "거제", CodeLabel: "거제", SortOrder: 3, IsActive: true},
+			{CodeValue: "의왕", CodeLabel: "의왕", SortOrder: 4, IsActive: true},
+			{CodeValue: "판교", CodeLabel: "판교", SortOrder: 5, IsActive: true},
+			{CodeValue: "군포", CodeLabel: "군포", SortOrder: 6, IsActive: true},
+			{CodeValue: "기타", CodeLabel: "기타", SortOrder: 7, IsActive: true},
+		},
+	},
+	{
+		GroupCode:   "project_phases",
+		GroupName:   "프로젝트 단계",
+		Description: "프로젝트 현재 진행 단계",
+		Values: []db.CodeValue{
+			{CodeValue: "제안/POC", CodeLabel: "제안/POC", SortOrder: 0, IsActive: true},
+			{CodeValue: "분석/설계", CodeLabel: "분석/설계", SortOrder: 1, IsActive: true},
+			{CodeValue: "개발", CodeLabel: "개발", SortOrder: 2, IsActive: true},
+			{CodeValue: "테스트", CodeLabel: "테스트", SortOrder: 3, IsActive: true},
+			{CodeValue: "오픈", CodeLabel: "오픈", SortOrder: 4, IsActive: true},
+			{CodeValue: "안정화", CodeLabel: "안정화", SortOrder: 5, IsActive: true},
+			{CodeValue: "종료", CodeLabel: "종료", SortOrder: 6, IsActive: true},
 		},
 	},
 }
@@ -1280,10 +1366,6 @@ func (a *App) removeCommonCodeValue(userID int64, groupCode, value string) error
 	}
 
 	return nil
-}
-
-func (a *App) GetSIProjectStatuses() []string {
-	return []string{"preparing", "poc_proposal", "in_development", "in_operation", "closed"}
 }
 
 func (a *App) ListTeamMembers() ([]db.TeamMember, error) {
@@ -1442,7 +1524,8 @@ func (a *App) ListSIProjects() ([]db.ProjectWithClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	return a.database.ListProjectsWithClient(user.ID, "si")
+	// Fetch all projects (both SI and SM)
+	return a.database.ListProjectsWithClient(user.ID, "")
 }
 
 func (a *App) SaveSIProject(project db.Project) (*db.Project, error) {
@@ -1456,11 +1539,27 @@ func (a *App) SaveSIProject(project db.Project) (*db.Project, error) {
 	if project.ClientID == 0 {
 		return nil, fmt.Errorf("client is required")
 	}
-	if !validSIProjectStatuses[project.Status] {
-		project.Status = "preparing"
+	// Get valid phases from common codes
+	phases, err := a.getCommonCodeValues(user.ID, "project_phases")
+	if err != nil {
+		phases = []string{"제안/POC", "분석/설계", "개발", "테스트", "오픈", "안정화", "종료"}
+	}
+	// Check if status is valid
+	validStatus := false
+	for _, phase := range phases {
+		if project.Status == phase {
+			validStatus = true
+			break
+		}
+	}
+	if !validStatus && len(phases) > 0 {
+		project.Status = phases[0]
 	}
 	project.UserID = user.ID
-	project.TeamType = "si"
+	// Only default to 'si' if teamType is not provided
+	if project.TeamType == "" {
+		project.TeamType = "si"
+	}
 	id, err := a.database.SaveProject(&project)
 	if err != nil {
 		return nil, err
@@ -1470,12 +1569,25 @@ func (a *App) SaveSIProject(project db.Project) (*db.Project, error) {
 }
 
 func (a *App) UpdateSIProjectStatus(projectID int64, status string) error {
-	if !validSIProjectStatuses[status] {
-		return fmt.Errorf("invalid project status: %s", status)
-	}
 	user, err := a.database.GetOrCreateDefaultUser()
 	if err != nil {
 		return err
+	}
+	// Get valid phases from common codes
+	phases, err := a.getCommonCodeValues(user.ID, "project_phases")
+	if err != nil {
+		phases = []string{"제안/POC", "분석/설계", "개발", "테스트", "오픈", "안정화", "종료"}
+	}
+	// Check if status is valid
+	validStatus := false
+	for _, phase := range phases {
+		if status == phase {
+			validStatus = true
+			break
+		}
+	}
+	if !validStatus {
+		return fmt.Errorf("invalid project status: %s", status)
 	}
 	return a.database.UpdateProjectStatus(user.ID, projectID, status)
 }
@@ -1526,11 +1638,65 @@ func (a *App) DeleteMemberAssignment(assignmentID int64) error {
 // --- SI Project Weekly Reporting Handlers ---
 
 func (a *App) GetSIProjectTypes() []string {
-	return []string{"직영", "당선", "신대방동", "거제", "의왕", "판교", "군포", "기타"}
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		log.Printf("[GetSIProjectTypes] failed to load default user: %v", err)
+		return []string{"직영", "당선", "신대방동", "거제", "의왕", "판교", "군포", "기타"}
+	}
+
+	values, err := a.getCommonCodeValues(user.ID, "project_types")
+	if err != nil {
+		log.Printf("[GetSIProjectTypes] failed to load common codes: %v", err)
+		return []string{"직영", "당선", "신대방동", "거제", "의왕", "판교", "군포", "기타"}
+	}
+	return values
+}
+
+func (a *App) AddSIProjectType(value string) error {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return err
+	}
+	return a.addCommonCodeValue(user.ID, "project_types", value)
+}
+
+func (a *App) DeleteSIProjectType(value string) error {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return err
+	}
+	return a.removeCommonCodeValue(user.ID, "project_types", value)
 }
 
 func (a *App) GetSIPhases() []string {
-	return []string{"제안/POC", "분석/설계", "개발", "테스트", "오픈", "안정화", "종료"}
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		log.Printf("[GetSIPhases] failed to load default user: %v", err)
+		return []string{"제안/POC", "분석/설계", "개발", "테스트", "오픈", "안정화", "종료"}
+	}
+
+	values, err := a.getCommonCodeValues(user.ID, "project_phases")
+	if err != nil {
+		log.Printf("[GetSIPhases] failed to load common codes: %v", err)
+		return []string{"제안/POC", "분석/설계", "개발", "테스트", "오픈", "안정화", "종료"}
+	}
+	return values
+}
+
+func (a *App) AddSIPhase(value string) error {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return err
+	}
+	return a.addCommonCodeValue(user.ID, "project_phases", value)
+}
+
+func (a *App) DeleteSIPhase(value string) error {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return err
+	}
+	return a.removeCommonCodeValue(user.ID, "project_phases", value)
 }
 
 func (a *App) GetSIRoles() []string {
@@ -1796,9 +1962,9 @@ func (a *App) CheckGmailAuth(account string) StatusResult {
 }
 
 func (a *App) SetupGogCredentials() (string, error) {
-	selection, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
+	selection, err := wailsRuntime.OpenFileDialog(a.ctx, wailsRuntime.OpenDialogOptions{
 		Title: "Google OAuth Client JSON 파일 선택",
-		Filters: []runtime.FileFilter{
+		Filters: []wailsRuntime.FileFilter{
 			{DisplayName: "JSON Files", Pattern: "*.json"},
 		},
 	})
@@ -1937,6 +2103,21 @@ func (a *App) PopulateReportFromProjects(reportID int64, weekStart, weekEnd stri
 		return 0, err
 	}
 
+	// Get existing report items to check for duplicates
+	existingItems, err := a.database.ListReportItems(reportID)
+	if err != nil {
+		log.Printf("[PopulateReportFromProjects] Failed to list existing items: %v", err)
+		// Continue anyway, just won't have duplicate checking
+	}
+
+	// Build a map of existing content for quick lookup
+	existingContent := make(map[string]bool)
+	for _, item := range existingItems {
+		// Normalize content for comparison (remove project name prefix if exists)
+		content := item.Content
+		existingContent[content] = true
+	}
+
 	// Get all SI projects
 	projects, err := a.database.ListProjectsWithClient(user.ID, "si")
 	if err != nil {
@@ -1946,7 +2127,7 @@ func (a *App) PopulateReportFromProjects(reportID int64, weekStart, weekEnd stri
 	count := 0
 	for _, project := range projects {
 		// Skip closed projects
-		if project.Status == "closed" {
+		if project.Status == "종료" {
 			continue
 		}
 
@@ -1964,60 +2145,78 @@ func (a *App) PopulateReportFromProjects(reportID int64, weekStart, weekEnd stri
 			// Add "금주 진행사항" as a report item
 			if strings.TrimSpace(wr.ThisWeekProgress) != "" {
 				content := fmt.Sprintf("[%s] %s", project.Name, wr.ThisWeekProgress)
-				item := &db.ReportItem{
-					ReportID:   reportID,
-					Section:    "project_progress",
-					Category:   project.Name,
-					WorkType:   "SI",
-					Content:    content,
-					Period:     "this_week",
-					SortOrder:  count,
-					IsSelected: true,
-				}
-				if _, err := a.database.SaveReportItem(item); err != nil {
-					log.Printf("[PopulateReportFromProjects] Failed to save report item: %v", err)
+				// Skip if already exists
+				if existingContent[content] {
+					log.Printf("[PopulateReportFromProjects] Skipping duplicate this_week item for project %s", project.Name)
 				} else {
-					count++
+					item := &db.ReportItem{
+						ReportID:   reportID,
+						Section:    "project_progress",
+						Category:   project.Name,
+						WorkType:   "SI",
+						Content:    content,
+						Period:     "this_week",
+						SortOrder:  count,
+						IsSelected: true,
+					}
+					if _, err := a.database.SaveReportItem(item); err != nil {
+						log.Printf("[PopulateReportFromProjects] Failed to save report item: %v", err)
+					} else {
+						count++
+						existingContent[content] = true // Add to map to prevent duplicates within this run
+					}
 				}
 			}
 
 			// Add "차주 계획" as a report item
 			if strings.TrimSpace(wr.NextWeekPlan) != "" {
 				content := fmt.Sprintf("[%s] %s", project.Name, wr.NextWeekPlan)
-				item := &db.ReportItem{
-					ReportID:   reportID,
-					Section:    "next_week_plan",
-					Category:   project.Name,
-					WorkType:   "SI",
-					Content:    content,
-					Period:     "next_week",
-					SortOrder:  count,
-					IsSelected: true,
-				}
-				if _, err := a.database.SaveReportItem(item); err != nil {
-					log.Printf("[PopulateReportFromProjects] Failed to save report item: %v", err)
+				// Skip if already exists
+				if existingContent[content] {
+					log.Printf("[PopulateReportFromProjects] Skipping duplicate next_week item for project %s", project.Name)
 				} else {
-					count++
+					item := &db.ReportItem{
+						ReportID:   reportID,
+						Section:    "next_week_plan",
+						Category:   project.Name,
+						WorkType:   "SI",
+						Content:    content,
+						Period:     "next_week",
+						SortOrder:  count,
+						IsSelected: true,
+					}
+					if _, err := a.database.SaveReportItem(item); err != nil {
+						log.Printf("[PopulateReportFromProjects] Failed to save report item: %v", err)
+					} else {
+						count++
+						existingContent[content] = true
+					}
 				}
 			}
 
 			// Add "리스크" as a report item if exists
 			if strings.TrimSpace(wr.Risks) != "" {
 				content := fmt.Sprintf("[%s] 리스크: %s", project.Name, wr.Risks)
-				item := &db.ReportItem{
-					ReportID:   reportID,
-					Section:    "issues",
-					Category:   project.Name,
-					WorkType:   "SI",
-					Content:    content,
-					Period:     "this_week",
-					SortOrder:  count,
-					IsSelected: true,
-				}
-				if _, err := a.database.SaveReportItem(item); err != nil {
-					log.Printf("[PopulateReportFromProjects] Failed to save report item: %v", err)
+				// Skip if already exists
+				if existingContent[content] {
+					log.Printf("[PopulateReportFromProjects] Skipping duplicate risks item for project %s", project.Name)
 				} else {
-					count++
+					item := &db.ReportItem{
+						ReportID:   reportID,
+						Section:    "issues",
+						Category:   project.Name,
+						WorkType:   "SI",
+						Content:    content,
+						Period:     "this_week",
+						SortOrder:  count,
+						IsSelected: true,
+					}
+					if _, err := a.database.SaveReportItem(item); err != nil {
+						log.Printf("[PopulateReportFromProjects] Failed to save report item: %v", err)
+					} else {
+						count++
+						existingContent[content] = true
+					}
 				}
 			}
 		}
@@ -2025,4 +2224,30 @@ func (a *App) PopulateReportFromProjects(reportID int64, weekStart, weekEnd stri
 
 	log.Printf("[PopulateReportFromProjects] Added %d project items to report %d", count, reportID)
 	return count, nil
+}
+
+// --- File Operations ---
+
+// OpenFile opens a file with the system's default application
+func (a *App) OpenFile(filePath string) error {
+	if filePath == "" {
+		return fmt.Errorf("file path is empty")
+	}
+
+	// Verify file exists
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		return fmt.Errorf("file does not exist: %s", filePath)
+	}
+
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "windows":
+		cmd = exec.Command("cmd", "/c", "start", "", filePath)
+	case "darwin":
+		cmd = exec.Command("open", filePath)
+	default: // linux and others
+		cmd = exec.Command("xdg-open", filePath)
+	}
+
+	return cmd.Start()
 }

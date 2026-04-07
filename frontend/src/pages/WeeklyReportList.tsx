@@ -4,6 +4,14 @@ import { X, FileText, Calendar, CheckCircle } from 'lucide-react'
 
 const WEEKDAY_NAMES = ['일', '월', '화', '수', '목', '금', '토']
 
+function normalizeDate(dateStr: string): string {
+  if (!dateStr) return ''
+  if (dateStr.includes('T')) {
+    return dateStr.split('T')[0]
+  }
+  return dateStr
+}
+
 function formatDateWithWeekday(dateStr: string | Date): string {
   if (!dateStr) return ''
   const date = new Date(dateStr)
@@ -136,7 +144,7 @@ export default function WeeklyReportList() {
                       </div>
                       <div>
                         <h3 className="font-medium text-slate-800">
-                          {report.weekStart} ~ {report.weekEnd}
+                          {normalizeDate(report.weekStart)} ~ {normalizeDate(report.weekEnd)}
                         </h3>
                         <p className="text-sm text-slate-500 flex items-center gap-1">
                           <Calendar className="w-3 h-3" />
@@ -172,7 +180,7 @@ export default function WeeklyReportList() {
             <div className="h-14 border-b border-slate-200 flex items-center justify-between px-6 shrink-0">
               <div>
                 <h3 className="font-semibold text-slate-800">
-                  주간업무일지 상세 ({selectedReport.weekStart} ~ {selectedReport.weekEnd})
+                  주간업무일지 상세 ({normalizeDate(selectedReport.weekStart)} ~ {normalizeDate(selectedReport.weekEnd)})
                 </h3>
               </div>
               <button

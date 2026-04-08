@@ -38,12 +38,28 @@ export function AuthGmailAccount(arg1) {
   return window['go']['main']['App']['AuthGmailAccount'](arg1);
 }
 
+export function AutoMapLinearMembers() {
+  return window['go']['main']['App']['AutoMapLinearMembers']();
+}
+
+export function CheckClaudeCLI() {
+  return window['go']['main']['App']['CheckClaudeCLI']();
+}
+
 export function CheckGmailAuth(arg1) {
   return window['go']['main']['App']['CheckGmailAuth'](arg1);
 }
 
 export function CheckGogCLI() {
   return window['go']['main']['App']['CheckGogCLI']();
+}
+
+export function ClaudeChat(arg1, arg2) {
+  return window['go']['main']['App']['ClaudeChat'](arg1, arg2);
+}
+
+export function ClaudeChatWithSession(arg1, arg2, arg3) {
+  return window['go']['main']['App']['ClaudeChatWithSession'](arg1, arg2, arg3);
 }
 
 export function DeleteAttendanceRecord(arg1) {
@@ -56,6 +72,10 @@ export function DeleteClient(arg1) {
 
 export function DeleteEmploymentType(arg1) {
   return window['go']['main']['App']['DeleteEmploymentType'](arg1);
+}
+
+export function DeleteIssue(arg1) {
+  return window['go']['main']['App']['DeleteIssue'](arg1);
 }
 
 export function DeleteMemberAssignment(arg1) {
@@ -134,6 +154,18 @@ export function GetIntegrations() {
   return window['go']['main']['App']['GetIntegrations']();
 }
 
+export function GetLinearDashboard() {
+  return window['go']['main']['App']['GetLinearDashboard']();
+}
+
+export function GetLinearTeamMembers() {
+  return window['go']['main']['App']['GetLinearTeamMembers']();
+}
+
+export function GetLinearTeamStates() {
+  return window['go']['main']['App']['GetLinearTeamStates']();
+}
+
 export function GetOrCreateWeeklyReport(arg1, arg2) {
   return window['go']['main']['App']['GetOrCreateWeeklyReport'](arg1, arg2);
 }
@@ -170,6 +202,10 @@ export function GetSIWeeklySnapshot(arg1, arg2) {
   return window['go']['main']['App']['GetSIWeeklySnapshot'](arg1, arg2);
 }
 
+export function GetTeamProfile() {
+  return window['go']['main']['App']['GetTeamProfile']();
+}
+
 export function GetUtilizationByDate(arg1) {
   return window['go']['main']['App']['GetUtilizationByDate'](arg1);
 }
@@ -194,8 +230,16 @@ export function ListClients(arg1, arg2) {
   return window['go']['main']['App']['ListClients'](arg1, arg2);
 }
 
+export function ListIssues(arg1) {
+  return window['go']['main']['App']['ListIssues'](arg1);
+}
+
 export function ListMemberAssignments(arg1, arg2) {
   return window['go']['main']['App']['ListMemberAssignments'](arg1, arg2);
+}
+
+export function ListRetrospectives() {
+  return window['go']['main']['App']['ListRetrospectives']();
 }
 
 export function ListSIProjects() {
@@ -238,8 +282,16 @@ export function SaveIntegration(arg1, arg2, arg3) {
   return window['go']['main']['App']['SaveIntegration'](arg1, arg2, arg3);
 }
 
+export function SaveIssue(arg1) {
+  return window['go']['main']['App']['SaveIssue'](arg1);
+}
+
 export function SaveMemberAssignment(arg1) {
   return window['go']['main']['App']['SaveMemberAssignment'](arg1);
+}
+
+export function SaveRetrospective(arg1) {
+  return window['go']['main']['App']['SaveRetrospective'](arg1);
 }
 
 export function SaveSIProject(arg1) {
@@ -262,8 +314,16 @@ export function SaveTeamMember(arg1) {
   return window['go']['main']['App']['SaveTeamMember'](arg1);
 }
 
+export function ScanClaudeSkills() {
+  return window['go']['main']['App']['ScanClaudeSkills']();
+}
+
 export function SetupGogCredentials() {
   return window['go']['main']['App']['SetupGogCredentials']();
+}
+
+export function SetupTeamProfile(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['SetupTeamProfile'](arg1, arg2, arg3, arg4);
 }
 
 export function SyncAll(arg1, arg2) {
@@ -278,12 +338,24 @@ export function SyncGoogleCalendar(arg1, arg2) {
   return window['go']['main']['App']['SyncGoogleCalendar'](arg1, arg2);
 }
 
+export function UpdateLinearIssue(arg1, arg2) {
+  return window['go']['main']['App']['UpdateLinearIssue'](arg1, arg2);
+}
+
+export function UpdateLinearIssueState(arg1, arg2) {
+  return window['go']['main']['App']['UpdateLinearIssueState'](arg1, arg2);
+}
+
 export function UpdateReportItem(arg1) {
   return window['go']['main']['App']['UpdateReportItem'](arg1);
 }
 
 export function UpdateSIProjectStatus(arg1, arg2) {
   return window['go']['main']['App']['UpdateSIProjectStatus'](arg1, arg2);
+}
+
+export function UpdateTeamProfile(arg1) {
+  return window['go']['main']['App']['UpdateTeamProfile'](arg1);
 }
 
 export function UpdateUser(arg1, arg2) {

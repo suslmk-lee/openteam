@@ -251,6 +251,55 @@ export namespace db {
 		    return a;
 		}
 	}
+	export class Issue {
+	    id: number;
+	    userId: number;
+	    projectId?: number;
+	    title: string;
+	    description: string;
+	    severity: string;
+	    status: string;
+	    assignee: string;
+	    dueDate?: string;
+	    // Go type: time
+	    createdAt: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new Issue(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.userId = source["userId"];
+	        this.projectId = source["projectId"];
+	        this.title = source["title"];
+	        this.description = source["description"];
+	        this.severity = source["severity"];
+	        this.status = source["status"];
+	        this.assignee = source["assignee"];
+	        this.dueDate = source["dueDate"];
+	        this.createdAt = this.convertValues(source["createdAt"], null);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class MemberAssignment {
 	    id: number;
 	    userId: number;
@@ -479,6 +528,51 @@ export namespace db {
 	        this.sortOrder = source["sortOrder"];
 	        this.isSelected = source["isSelected"];
 	    }
+	}
+	export class Retrospective {
+	    id: number;
+	    userId: number;
+	    weekStart: string;
+	    weekEnd: string;
+	    wentWell: string;
+	    toImprove: string;
+	    actionItems: string;
+	    // Go type: time
+	    createdAt: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new Retrospective(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.userId = source["userId"];
+	        this.weekStart = source["weekStart"];
+	        this.weekEnd = source["weekEnd"];
+	        this.wentWell = source["wentWell"];
+	        this.toImprove = source["toImprove"];
+	        this.actionItems = source["actionItems"];
+	        this.createdAt = this.convertValues(source["createdAt"], null);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class SIProjectDetail {
 	    id: number;
@@ -712,6 +806,7 @@ export namespace db {
 	    hireDate: string;
 	    resignDate?: string;
 	    active: boolean;
+	    linearUserId: string;
 	    // Go type: time
 	    createdAt: any;
 	
@@ -731,6 +826,7 @@ export namespace db {
 	        this.hireDate = source["hireDate"];
 	        this.resignDate = source["resignDate"];
 	        this.active = source["active"];
+	        this.linearUserId = source["linearUserId"];
 	        this.createdAt = this.convertValues(source["createdAt"], null);
 	    }
 	
@@ -751,6 +847,30 @@ export namespace db {
 		    }
 		    return a;
 		}
+	}
+	export class TeamProfile {
+	    teamType: string;
+	    teamName: string;
+	    userName: string;
+	    memberCount: number;
+	    setupDone: boolean;
+	    linearApiKey: string;
+	    linearTeamId: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new TeamProfile(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.teamType = source["teamType"];
+	        this.teamName = source["teamName"];
+	        this.userName = source["userName"];
+	        this.memberCount = source["memberCount"];
+	        this.setupDone = source["setupDone"];
+	        this.linearApiKey = source["linearApiKey"];
+	        this.linearTeamId = source["linearTeamId"];
+	    }
 	}
 	export class User {
 	    id: number;
@@ -886,6 +1006,341 @@ export namespace main {
 		    }
 		    return a;
 		}
+	}
+	export class ClaudeChatResult {
+	    reply: string;
+	    sessionId: string;
+	    model: string;
+	    numTurns: number;
+	    inputTokens: number;
+	    outputTokens: number;
+	    cacheReadTokens: number;
+	    cacheCreateTokens: number;
+	    costUsd: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new ClaudeChatResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.reply = source["reply"];
+	        this.sessionId = source["sessionId"];
+	        this.model = source["model"];
+	        this.numTurns = source["numTurns"];
+	        this.inputTokens = source["inputTokens"];
+	        this.outputTokens = source["outputTokens"];
+	        this.cacheReadTokens = source["cacheReadTokens"];
+	        this.cacheCreateTokens = source["cacheCreateTokens"];
+	        this.costUsd = source["costUsd"];
+	    }
+	}
+	export class LinearCycle {
+	    id: string;
+	    name: string;
+	    number: number;
+	    startsAt: string;
+	    endsAt: string;
+	    completedAt?: string;
+	    issueCount: number;
+	    completedIssueCount: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new LinearCycle(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.number = source["number"];
+	        this.startsAt = source["startsAt"];
+	        this.endsAt = source["endsAt"];
+	        this.completedAt = source["completedAt"];
+	        this.issueCount = source["issueCount"];
+	        this.completedIssueCount = source["completedIssueCount"];
+	    }
+	}
+	export class LinearIssueProject {
+	    id: string;
+	    name: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new LinearIssueProject(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	    }
+	}
+	export class LinearIssueLabel {
+	    id: string;
+	    name: string;
+	    color: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new LinearIssueLabel(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.color = source["color"];
+	    }
+	}
+	export class LinearIssueLabelNodes {
+	    nodes: LinearIssueLabel[];
+	
+	    static createFrom(source: any = {}) {
+	        return new LinearIssueLabelNodes(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.nodes = this.convertValues(source["nodes"], LinearIssueLabel);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class LinearIssueAssignee {
+	    id: string;
+	    name: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new LinearIssueAssignee(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	    }
+	}
+	export class LinearIssueState {
+	    id: string;
+	    name: string;
+	    color: string;
+	    type: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new LinearIssueState(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.color = source["color"];
+	        this.type = source["type"];
+	    }
+	}
+	export class LinearIssue {
+	    id: string;
+	    title: string;
+	    identifier: string;
+	    priority: number;
+	    state: LinearIssueState;
+	    assignee?: LinearIssueAssignee;
+	    url: string;
+	    createdAt: string;
+	    updatedAt: string;
+	    dueDate?: string;
+	    description: string;
+	    estimate?: number;
+	    labels?: LinearIssueLabelNodes;
+	    project?: LinearIssueProject;
+	
+	    static createFrom(source: any = {}) {
+	        return new LinearIssue(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.title = source["title"];
+	        this.identifier = source["identifier"];
+	        this.priority = source["priority"];
+	        this.state = this.convertValues(source["state"], LinearIssueState);
+	        this.assignee = this.convertValues(source["assignee"], LinearIssueAssignee);
+	        this.url = source["url"];
+	        this.createdAt = source["createdAt"];
+	        this.updatedAt = source["updatedAt"];
+	        this.dueDate = source["dueDate"];
+	        this.description = source["description"];
+	        this.estimate = source["estimate"];
+	        this.labels = this.convertValues(source["labels"], LinearIssueLabelNodes);
+	        this.project = this.convertValues(source["project"], LinearIssueProject);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class LinearProject {
+	    id: string;
+	    name: string;
+	    state: string;
+	    progress: number;
+	    url: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new LinearProject(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.state = source["state"];
+	        this.progress = source["progress"];
+	        this.url = source["url"];
+	    }
+	}
+	export class LinearDashboardData {
+	    projects: LinearProject[];
+	    issues: LinearIssue[];
+	    cycles: LinearCycle[];
+	    issueCounts: Record<string, number>;
+	
+	    static createFrom(source: any = {}) {
+	        return new LinearDashboardData(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.projects = this.convertValues(source["projects"], LinearProject);
+	        this.issues = this.convertValues(source["issues"], LinearIssue);
+	        this.cycles = this.convertValues(source["cycles"], LinearCycle);
+	        this.issueCounts = source["issueCounts"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
+	
+	
+	
+	
+	
+	export class LinearIssueUpdateInput {
+	    stateId?: string;
+	    priority?: number;
+	    dueDate?: string;
+	    assigneeId?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new LinearIssueUpdateInput(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.stateId = source["stateId"];
+	        this.priority = source["priority"];
+	        this.dueDate = source["dueDate"];
+	        this.assigneeId = source["assigneeId"];
+	    }
+	}
+	
+	export class LinearTeamMember {
+	    id: string;
+	    name: string;
+	    email: string;
+	    displayName: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new LinearTeamMember(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.email = source["email"];
+	        this.displayName = source["displayName"];
+	    }
+	}
+	export class LinearWorkflowState {
+	    id: string;
+	    name: string;
+	    color: string;
+	    type: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new LinearWorkflowState(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.color = source["color"];
+	        this.type = source["type"];
+	    }
+	}
+	export class SkillCommand {
+	    skill: string;
+	    cmd: string;
+	    desc: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new SkillCommand(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.skill = source["skill"];
+	        this.cmd = source["cmd"];
+	        this.desc = source["desc"];
+	    }
 	}
 	export class StatusResult {
 	    ok: boolean;

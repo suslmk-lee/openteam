@@ -416,14 +416,14 @@ func (d *Database) DeleteProjectCategory(id int64) error {
 func (d *Database) SaveTeamMember(m *TeamMember) (int64, error) {
 	if m.ID > 0 {
 		_, err := d.conn.Exec(
-			"UPDATE team_members SET name=?, position=?, email=?, role=?, employment_type=?, active=?, hire_date=?, resign_date=? WHERE id=? AND user_id=?",
-			m.Name, m.Position, m.Email, m.Role, m.EmploymentType, m.Active, m.HireDate, m.ResignDate, m.ID, m.UserID,
+			"UPDATE team_members SET name=?, position=?, email=?, role=?, employment_type=?, active=?, hire_date=?, resign_date=?, linear_user_id=? WHERE id=? AND user_id=?",
+			m.Name, m.Position, m.Email, m.Role, m.EmploymentType, m.Active, m.HireDate, m.ResignDate, m.LinearUserID, m.ID, m.UserID,
 		)
 		return m.ID, err
 	}
 	res, err := d.conn.Exec(
-		"INSERT INTO team_members (user_id, name, position, email, role, employment_type, active, hire_date, resign_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		m.UserID, m.Name, m.Position, m.Email, m.Role, m.EmploymentType, m.Active, m.HireDate, m.ResignDate,
+		"INSERT INTO team_members (user_id, name, position, email, role, employment_type, active, hire_date, resign_date, linear_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		m.UserID, m.Name, m.Position, m.Email, m.Role, m.EmploymentType, m.Active, m.HireDate, m.ResignDate, m.LinearUserID,
 	)
 	if err != nil {
 		return 0, err
@@ -433,7 +433,7 @@ func (d *Database) SaveTeamMember(m *TeamMember) (int64, error) {
 
 func (d *Database) ListTeamMembers(userID int64) ([]TeamMember, error) {
 	rows, err := d.conn.Query(
-		"SELECT id, user_id, name, position, email, role, employment_type, active, hire_date, resign_date, created_at FROM team_members WHERE user_id = ? ORDER BY active DESC, name ASC",
+		"SELECT id, user_id, name, position, email, role, employment_type, active, hire_date, resign_date, COALESCE(linear_user_id,''), created_at FROM team_members WHERE user_id = ? ORDER BY active DESC, name ASC",
 		userID,
 	)
 	if err != nil {
@@ -447,7 +447,7 @@ func (d *Database) ListTeamMembers(userID int64) ([]TeamMember, error) {
 		var active int64
 		var hireDate sql.NullString
 		var resignDate sql.NullString
-		if err := rows.Scan(&m.ID, &m.UserID, &m.Name, &m.Position, &m.Email, &m.Role, &m.EmploymentType, &active, &hireDate, &resignDate, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.UserID, &m.Name, &m.Position, &m.Email, &m.Role, &m.EmploymentType, &active, &hireDate, &resignDate, &m.LinearUserID, &m.CreatedAt); err != nil {
 			return nil, err
 		}
 		m.Active = active == 1
@@ -1276,4 +1276,158 @@ func (d *Database) ListCodeValuesByGroup(userID int64, groupCode string) ([]Code
 		values = append(values, v)
 	}
 	return values, nil
+}
+
+// --- TeamProfile ---
+
+func (d *Database) GetTeamProfile(userID int64) (*TeamProfile, error) {
+	profile := &TeamProfile{}
+	var setupDone int
+	var memberCount int
+
+	err := d.conn.QueryRow(
+		"SELECT name, team, COALESCE(setup_done,0), COALESCE(member_count,0) FROM users WHERE id = ?", userID,
+	).Scan(&profile.UserName, &profile.TeamName, &setupDone, &memberCount)
+	if err != nil {
+		return nil, err
+	}
+	profile.SetupDone = setupDone == 1
+	profile.MemberCount = memberCount
+
+	// Load team_type from team_type_configs
+	var teamType, linearAPIKey, linearTeamID string
+	err = d.conn.QueryRow(
+		"SELECT team_type, COALESCE(linear_api_key,''), COALESCE(linear_team_id,'') FROM team_type_configs WHERE user_id = ? ORDER BY id DESC LIMIT 1", userID,
+	).Scan(&teamType, &linearAPIKey, &linearTeamID)
+	if err == sql.ErrNoRows {
+		profile.TeamType = ""
+	} else if err != nil {
+		return nil, err
+	} else {
+		profile.TeamType = teamType
+		profile.LinearAPIKey = linearAPIKey
+		profile.LinearTeamID = linearTeamID
+	}
+	return profile, nil
+}
+
+func (d *Database) SaveTeamProfile(userID int64, p *TeamProfile) error {
+	setupDoneInt := 0
+	if p.SetupDone {
+		setupDoneInt = 1
+	}
+	_, err := d.conn.Exec(
+		"UPDATE users SET name = ?, team = ?, setup_done = ?, member_count = ? WHERE id = ?",
+		p.UserName, p.TeamName, setupDoneInt, p.MemberCount, userID,
+	)
+	if err != nil {
+		return err
+	}
+	// Always delete all existing rows for this user and re-insert.
+	// This handles team_type changes (si_business → si_field etc.)
+	// because UNIQUE(user_id, team_type) means changing type = new row, not update.
+	if _, err = d.conn.Exec("DELETE FROM team_type_configs WHERE user_id = ?", userID); err != nil {
+		return err
+	}
+	_, err = d.conn.Exec(
+		"INSERT INTO team_type_configs (user_id, team_type, linear_api_key, linear_team_id) VALUES (?, ?, ?, ?)",
+		userID, p.TeamType, p.LinearAPIKey, p.LinearTeamID,
+	)
+	return err
+}
+
+// --- Issues ---
+
+func (d *Database) ListIssues(userID int64, statusFilter string) ([]Issue, error) {
+	query := "SELECT id, user_id, project_id, title, description, severity, status, assignee, due_date, created_at FROM issues WHERE user_id = ?"
+	args := []interface{}{userID}
+	if statusFilter != "" {
+		query += " AND status = ?"
+		args = append(args, statusFilter)
+	}
+	query += " ORDER BY created_at DESC"
+
+	rows, err := d.conn.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var issues []Issue
+	for rows.Next() {
+		var iss Issue
+		if err := rows.Scan(&iss.ID, &iss.UserID, &iss.ProjectID, &iss.Title, &iss.Description, &iss.Severity, &iss.Status, &iss.Assignee, &iss.DueDate, &iss.CreatedAt); err != nil {
+			return nil, err
+		}
+		issues = append(issues, iss)
+	}
+	return issues, nil
+}
+
+func (d *Database) SaveIssue(iss *Issue) (int64, error) {
+	if iss.ID == 0 {
+		res, err := d.conn.Exec(
+			"INSERT INTO issues (user_id, project_id, title, description, severity, status, assignee, due_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+			iss.UserID, iss.ProjectID, iss.Title, iss.Description, iss.Severity, iss.Status, iss.Assignee, iss.DueDate,
+		)
+		if err != nil {
+			return 0, err
+		}
+		return res.LastInsertId()
+	}
+	_, err := d.conn.Exec(
+		"UPDATE issues SET title=?, description=?, severity=?, status=?, assignee=?, due_date=? WHERE id=? AND user_id=?",
+		iss.Title, iss.Description, iss.Severity, iss.Status, iss.Assignee, iss.DueDate, iss.ID, iss.UserID,
+	)
+	return iss.ID, err
+}
+
+func (d *Database) DeleteIssue(userID, issueID int64) error {
+	_, err := d.conn.Exec("DELETE FROM issues WHERE id = ? AND user_id = ?", issueID, userID)
+	return err
+}
+
+// --- Retrospectives ---
+
+func (d *Database) ListRetrospectives(userID int64) ([]Retrospective, error) {
+	rows, err := d.conn.Query(
+		"SELECT id, user_id, week_start, week_end, went_well, to_improve, action_items, created_at FROM retrospectives WHERE user_id = ? ORDER BY week_start DESC",
+		userID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var retros []Retrospective
+	for rows.Next() {
+		var r Retrospective
+		if err := rows.Scan(&r.ID, &r.UserID, &r.WeekStart, &r.WeekEnd, &r.WentWell, &r.ToImprove, &r.ActionItems, &r.CreatedAt); err != nil {
+			return nil, err
+		}
+		retros = append(retros, r)
+	}
+	return retros, nil
+}
+
+func (d *Database) SaveRetrospective(r *Retrospective) (int64, error) {
+	if r.ID == 0 {
+		res, err := d.conn.Exec(
+			`INSERT INTO retrospectives (user_id, week_start, week_end, went_well, to_improve, action_items)
+			 VALUES (?, ?, ?, ?, ?, ?)
+			 ON CONFLICT(user_id, week_start) DO UPDATE SET
+			   week_end=excluded.week_end, went_well=excluded.went_well,
+			   to_improve=excluded.to_improve, action_items=excluded.action_items`,
+			r.UserID, r.WeekStart, r.WeekEnd, r.WentWell, r.ToImprove, r.ActionItems,
+		)
+		if err != nil {
+			return 0, err
+		}
+		return res.LastInsertId()
+	}
+	_, err := d.conn.Exec(
+		"UPDATE retrospectives SET went_well=?, to_improve=?, action_items=? WHERE id=? AND user_id=?",
+		r.WentWell, r.ToImprove, r.ActionItems, r.ID, r.UserID,
+	)
+	return r.ID, err
 }

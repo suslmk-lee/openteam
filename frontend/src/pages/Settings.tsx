@@ -7,6 +7,7 @@ import {
   Plus,
   Trash2,
   FileSpreadsheet,
+  GitBranch,
 } from 'lucide-react'
 import {
   GetCurrentUser,
@@ -21,7 +22,9 @@ import {
   CheckGogCLI,
   SetupGogCredentials,
   CheckGmailAuth,
+  UpdateTeamProfile,
 } from '../../wailsjs/go/main/App'
+import { useTeamProfile } from '../contexts/TeamProfileContext'
 
 interface Integration {
   id: number
@@ -53,7 +56,7 @@ const TOOL_OPTIONS = [
   { type: 'jira', label: 'Jira', description: 'REST API' },
 ]
 
-type SettingsSection = 'user' | 'template' | 'integrations' | 'categories'
+type SettingsSection = 'user' | 'template' | 'integrations' | 'categories' | 'team-profile'
 
 export default function Settings({ section = 'user' }: { section?: SettingsSection }) {
   const [userName, setUserName] = useState('')
@@ -73,9 +76,31 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
   const [openAIModel, setOpenAIModel] = useState('gpt-4o-mini')
   const [openAIEnabled, setOpenAIEnabled] = useState(false)
 
+  // Linear settings
+  const [linearApiKey, setLinearApiKey] = useState('')
+  const [linearTeamId, setLinearTeamId] = useState('')
+
+  // Team profile
+  const { profile: teamProfile, reload: reloadProfile } = useTeamProfile()
+  const [profileTeamType, setProfileTeamType] = useState('')
+  const [profileTeamName, setProfileTeamName] = useState('')
+  const [profileUserName, setProfileUserName] = useState('')
+  const [profileMemberCount, setProfileMemberCount] = useState(4)
+
   useEffect(() => {
     loadSettings()
   }, [])
+
+  useEffect(() => {
+    if (teamProfile) {
+      setProfileTeamType(teamProfile.teamType || '')
+      setProfileTeamName(teamProfile.teamName || '')
+      setProfileUserName(teamProfile.userName || '')
+      setProfileMemberCount(teamProfile.memberCount || 4)
+      setLinearApiKey(teamProfile.linearApiKey || '')
+      setLinearTeamId(teamProfile.linearTeamId || '')
+    }
+  }, [teamProfile])
 
   async function loadSettings() {
     try {
@@ -195,6 +220,7 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
     template: 'Excel 템플릿',
     integrations: '협업툴 연동',
     categories: '프로젝트 카테고리',
+    'team-profile': '팀 프로필',
   }
 
   return (
@@ -524,6 +550,137 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
               >
                 <Plus size={16} />
                 추가
+              </button>
+            </div>
+          </section>
+          )}
+
+          {/* Linear Settings (shown in integrations section) */}
+          {section === 'integrations' && (
+          <section className="bg-white border border-slate-200 rounded-xl p-6">
+            <div className="flex items-center gap-3 mb-2">
+              <GitBranch size={18} className="text-violet-500" />
+              <h3 className="text-base font-semibold text-slate-800">Linear 연동</h3>
+            </div>
+            <p className="text-xs text-slate-500 mb-4">
+              현장 SI팀·소규모팀에서 Linear 이슈/태스크를 읽기 전용으로 표시합니다. API Key는 로컬 DB에 저장됩니다.
+            </p>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm text-slate-600 mb-1">Linear API Key</label>
+                <input
+                  type="password"
+                  placeholder="lin_api_..."
+                  value={linearApiKey}
+                  onChange={e => setLinearApiKey(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="text-xs text-slate-400 mt-1">Linear &gt; Settings &gt; API &gt; Personal API Keys</p>
+              </div>
+              <div>
+                <label className="block text-sm text-slate-600 mb-1">Team ID (선택)</label>
+                <input
+                  type="text"
+                  placeholder="팀 ID (비워두면 개인 이슈만 표시)"
+                  value={linearTeamId}
+                  onChange={e => setLinearTeamId(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="text-xs text-slate-400 mt-1">Linear &gt; Settings &gt; Teams &gt; Team URL의 마지막 부분</p>
+              </div>
+              <button
+                onClick={async () => {
+                  try {
+                    if (!teamProfile) return
+                    await UpdateTeamProfile({
+                      ...teamProfile,
+                      linearApiKey: linearApiKey.trim(),
+                      linearTeamId: linearTeamId.trim(),
+                    } as any)
+                    await reloadProfile()
+                    showStatus('Linear 설정이 저장되었습니다')
+                  } catch (err) {
+                    console.error('Failed to save Linear config:', err)
+                  }
+                }}
+                className="px-4 py-2 text-sm bg-violet-600 text-white hover:bg-violet-700 rounded-lg transition-colors"
+              >
+                Linear 설정 저장
+              </button>
+            </div>
+          </section>
+          )}
+
+          {/* Team Profile section */}
+          {section === 'team-profile' && (
+          <section className="bg-white border border-slate-200 rounded-xl p-6">
+            <h3 className="text-base font-semibold text-slate-800 mb-4">팀 프로필 관리</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">팀 유형</label>
+                <select
+                  value={profileTeamType}
+                  onChange={e => setProfileTeamType(e.target.value)}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="si_business">SI 사업팀</option>
+                  <option value="si_field">현장 SI팀 (PM/PL)</option>
+                  <option value="small_team">소규모팀 (3~4인)</option>
+                </select>
+                <p className="text-xs text-slate-400 mt-1">팀 유형을 변경하면 사이드바 메뉴와 대시보드가 전환됩니다. 기존 데이터는 유지됩니다.</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">팀 이름</label>
+                <input
+                  type="text"
+                  value={profileTeamName}
+                  onChange={e => setProfileTeamName(e.target.value)}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">팀장 이름</label>
+                <input
+                  type="text"
+                  value={profileUserName}
+                  onChange={e => setProfileUserName(e.target.value)}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">팀 인원수</label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="range"
+                    min={1}
+                    max={30}
+                    value={profileMemberCount}
+                    onChange={e => setProfileMemberCount(Number(e.target.value))}
+                    className="flex-1"
+                  />
+                  <span className="w-12 text-center font-semibold text-slate-700 bg-slate-100 rounded-lg py-1 text-sm">{profileMemberCount}명</span>
+                </div>
+              </div>
+              <button
+                onClick={async () => {
+                  try {
+                    if (!teamProfile) return
+                    await UpdateTeamProfile({
+                      ...teamProfile,
+                      teamType: profileTeamType,
+                      teamName: profileTeamName,
+                      userName: profileUserName,
+                      memberCount: profileMemberCount,
+                    } as any)
+                    await reloadProfile()
+                    showStatus('팀 프로필이 저장되었습니다')
+                  } catch (err) {
+                    console.error('Failed to save team profile:', err)
+                  }
+                }}
+                className="px-4 py-2 text-sm bg-blue-600 text-white hover:bg-blue-700 rounded-lg transition-colors"
+              >
+                팀 프로필 저장
               </button>
             </div>
           </section>

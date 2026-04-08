@@ -21,15 +21,25 @@ export function AddSIProjectType(arg1:string):Promise<void>;
 
 export function AuthGmailAccount(arg1:string):Promise<string>;
 
+export function AutoMapLinearMembers():Promise<number>;
+
+export function CheckClaudeCLI():Promise<Record<string, any>>;
+
 export function CheckGmailAuth(arg1:string):Promise<main.StatusResult>;
 
 export function CheckGogCLI():Promise<main.StatusResult>;
+
+export function ClaudeChat(arg1:string,arg2:string):Promise<string>;
+
+export function ClaudeChatWithSession(arg1:string,arg2:string,arg3:string):Promise<main.ClaudeChatResult>;
 
 export function DeleteAttendanceRecord(arg1:number):Promise<void>;
 
 export function DeleteClient(arg1:number):Promise<void>;
 
 export function DeleteEmploymentType(arg1:string):Promise<void>;
+
+export function DeleteIssue(arg1:number):Promise<void>;
 
 export function DeleteMemberAssignment(arg1:number):Promise<void>;
 
@@ -69,6 +79,12 @@ export function GetExcelTemplate():Promise<db.ExcelTemplate>;
 
 export function GetIntegrations():Promise<Array<db.Integration>>;
 
+export function GetLinearDashboard():Promise<main.LinearDashboardData>;
+
+export function GetLinearTeamMembers():Promise<Array<main.LinearTeamMember>>;
+
+export function GetLinearTeamStates():Promise<Array<main.LinearWorkflowState>>;
+
 export function GetOrCreateWeeklyReport(arg1:string,arg2:string):Promise<db.WeeklyReport>;
 
 export function GetPositionTypes():Promise<Array<string>>;
@@ -87,6 +103,8 @@ export function GetSIRoles():Promise<Array<string>>;
 
 export function GetSIWeeklySnapshot(arg1:string,arg2:string):Promise<db.SIWeeklySnapshot>;
 
+export function GetTeamProfile():Promise<db.TeamProfile>;
+
 export function GetUtilizationByDate(arg1:string):Promise<Array<db.UtilizationMemberRow>>;
 
 export function GetWeekActivities(arg1:string,arg2:string):Promise<Array<main.ActivityWithSource>>;
@@ -99,7 +117,11 @@ export function ListAttendanceRecords(arg1:number,arg2:string,arg3:string):Promi
 
 export function ListClients(arg1:string,arg2:boolean):Promise<Array<db.Client>>;
 
+export function ListIssues(arg1:string):Promise<Array<db.Issue>>;
+
 export function ListMemberAssignments(arg1:string,arg2:string):Promise<Array<db.MemberAssignment>>;
+
+export function ListRetrospectives():Promise<Array<db.Retrospective>>;
 
 export function ListSIProjects():Promise<Array<db.ProjectWithClient>>;
 
@@ -121,7 +143,11 @@ export function SaveClient(arg1:db.Client):Promise<db.Client>;
 
 export function SaveIntegration(arg1:string,arg2:string,arg3:boolean):Promise<void>;
 
+export function SaveIssue(arg1:db.Issue):Promise<number>;
+
 export function SaveMemberAssignment(arg1:db.MemberAssignment):Promise<db.MemberAssignment>;
+
+export function SaveRetrospective(arg1:db.Retrospective):Promise<number>;
 
 export function SaveSIProject(arg1:db.Project):Promise<db.Project>;
 
@@ -133,7 +159,11 @@ export function SaveSIWeeklyReport(arg1:db.SIWeeklyReport):Promise<db.SIWeeklyRe
 
 export function SaveTeamMember(arg1:db.TeamMember):Promise<db.TeamMember>;
 
+export function ScanClaudeSkills():Promise<Array<main.SkillCommand>>;
+
 export function SetupGogCredentials():Promise<string>;
+
+export function SetupTeamProfile(arg1:string,arg2:string,arg3:string,arg4:number):Promise<void>;
 
 export function SyncAll(arg1:string,arg2:string):Promise<Array<main.SyncResult>>;
 
@@ -141,9 +171,15 @@ export function SyncGmail(arg1:string,arg2:string):Promise<main.SyncResult>;
 
 export function SyncGoogleCalendar(arg1:string,arg2:string):Promise<main.SyncResult>;
 
+export function UpdateLinearIssue(arg1:string,arg2:main.LinearIssueUpdateInput):Promise<void>;
+
+export function UpdateLinearIssueState(arg1:string,arg2:string):Promise<void>;
+
 export function UpdateReportItem(arg1:db.ReportItem):Promise<void>;
 
 export function UpdateSIProjectStatus(arg1:number,arg2:string):Promise<void>;
+
+export function UpdateTeamProfile(arg1:db.TeamProfile):Promise<void>;
 
 export function UpdateUser(arg1:string,arg2:string):Promise<void>;
 

@@ -1,11 +1,14 @@
-import { useEffect, useState } from 'react'
-import { Plus } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Plus, Link2, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react'
 import {
   ListTeamMembers,
   SaveTeamMember,
   DeleteTeamMember,
   GetPositionTypes,
 } from '../../wailsjs/go/main/App'
+import * as AppModuleStatic from '../../wailsjs/go/main/App'
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const AutoMapLinearMembers: () => Promise<number> = (AppModuleStatic as any).AutoMapLinearMembers ?? (() => Promise.resolve(0))
 
 interface TeamMember {
   id: number
@@ -17,6 +20,7 @@ interface TeamMember {
   active: boolean
   hireDate: string
   resignDate?: string
+  linearUserId?: string
 }
 
 function formatDateOnly(value?: string) {
@@ -53,6 +57,12 @@ export default function TeamMembers() {
   const [positionTypes, setPositionTypes] = useState<string[]>([])
   const [employmentTypes, setEmploymentTypes] = useState<string[]>([])
   const [showAddModal, setShowAddModal] = useState(false)
+  const [autoMapping, setAutoMapping] = useState(false)
+  const [autoMapResult, setAutoMapResult] = useState<string | null>(null)
+  // inline linear id editing: memberId → draft value
+  const [linearIdEdits, setLinearIdEdits] = useState<Record<number, string>>({})
+  const [savingLinearId, setSavingLinearId] = useState<Record<number, boolean>>({})
+  const autoMapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [memberName, setMemberName] = useState('')
   const [memberPosition, setMemberPosition] = useState('')
@@ -161,13 +171,40 @@ export default function TeamMembers() {
           <h2 className="text-lg font-semibold text-slate-800">팀원 관리</h2>
           <p className="text-xs text-slate-500">팀원 등록 및 직급/메일/역할 관리</p>
         </div>
-        <button
-          onClick={loadMembers}
-          disabled={loading}
-          className="px-3 py-1.5 text-sm bg-slate-100 hover:bg-slate-200 rounded-lg disabled:opacity-50"
-        >
-          {loading ? '로딩 중...' : '새로고침'}
-        </button>
+        <div className="flex items-center gap-2">
+          {autoMapResult && (
+            <span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded-lg">{autoMapResult}</span>
+          )}
+          <button
+            onClick={async () => {
+              setAutoMapping(true)
+              setAutoMapResult(null)
+              try {
+                const count = await AutoMapLinearMembers()
+                setAutoMapResult(`${count}명 자동 매핑 완료`)
+                await loadMembers()
+                if (autoMapTimerRef.current) clearTimeout(autoMapTimerRef.current)
+                autoMapTimerRef.current = setTimeout(() => setAutoMapResult(null), 4000)
+              } catch (e: any) {
+                setAutoMapResult(`실패: ${String(e)}`)
+              } finally {
+                setAutoMapping(false)
+              }
+            }}
+            disabled={autoMapping}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-violet-50 text-violet-700 border border-violet-200 hover:bg-violet-100 rounded-lg disabled:opacity-50"
+          >
+            {autoMapping ? <Loader2 size={14} className="animate-spin" /> : <Link2 size={14} />}
+            Linear 자동 매핑
+          </button>
+          <button
+            onClick={loadMembers}
+            disabled={loading}
+            className="px-3 py-1.5 text-sm bg-slate-100 hover:bg-slate-200 rounded-lg disabled:opacity-50"
+          >
+            {loading ? '로딩 중...' : '새로고침'}
+          </button>
+        </div>
       </header>
 
       <div className="flex-1 overflow-y-auto p-6">
@@ -200,6 +237,7 @@ export default function TeamMembers() {
                       <th className="text-left py-2 px-3 text-slate-600 font-medium">입사일</th>
                       <th className="text-left py-2 px-3 text-slate-600 font-medium">퇴직일</th>
                       <th className="text-left py-2 px-3 text-slate-600 font-medium">상태</th>
+                      <th className="text-left py-2 px-3 text-slate-600 font-medium">Linear 연결</th>
                       <th className="text-right py-2 px-3 text-slate-600 font-medium">관리</th>
                     </tr>
                   </thead>
@@ -221,6 +259,34 @@ export default function TeamMembers() {
                           }`}>
                             {member.active ? '재직중' : '퇴직'}
                           </span>
+                        </td>
+                        <td className="py-2 px-3">
+                          <div className="flex items-center gap-1">
+                            {member.linearUserId ? (
+                              <CheckCircle2 size={12} className="text-green-500 shrink-0" />
+                            ) : (
+                              <AlertCircle size={12} className="text-slate-300 shrink-0" />
+                            )}
+                            <input
+                              className="w-28 text-xs border border-slate-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-violet-400 font-mono"
+                              placeholder="Linear User ID"
+                              value={linearIdEdits[member.id] ?? member.linearUserId ?? ''}
+                              onChange={e => setLinearIdEdits(prev => ({ ...prev, [member.id]: e.target.value }))}
+                              onBlur={async () => {
+                                const draft = linearIdEdits[member.id]
+                                if (draft === undefined || draft === (member.linearUserId ?? '')) return
+                                setSavingLinearId(prev => ({ ...prev, [member.id]: true }))
+                                try {
+                                  await SaveTeamMember({ ...member, linearUserId: draft } as any)
+                                  setLinearIdEdits(prev => { const n = { ...prev }; delete n[member.id]; return n })
+                                  await loadMembers()
+                                } finally {
+                                  setSavingLinearId(prev => { const n = { ...prev }; delete n[member.id]; return n })
+                                }
+                              }}
+                            />
+                            {savingLinearId[member.id] && <Loader2 size={10} className="animate-spin text-slate-400" />}
+                          </div>
                         </td>
                         <td className="py-2 px-3 text-right">
                           <button

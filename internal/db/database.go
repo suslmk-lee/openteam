@@ -221,6 +221,30 @@ func (d *Database) migrate() error {
 			UNIQUE(user_id, group_code, code_value)
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_code_values_group ON code_values(user_id, group_code)`,
+		`CREATE TABLE IF NOT EXISTS issues (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id INTEGER REFERENCES users(id),
+			project_id INTEGER REFERENCES projects(id),
+			title TEXT NOT NULL,
+			description TEXT,
+			severity TEXT DEFAULT 'medium',
+			status TEXT DEFAULT 'open',
+			assignee TEXT,
+			due_date DATE,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_issues_user_status ON issues(user_id, status)`,
+		`CREATE TABLE IF NOT EXISTS retrospectives (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id INTEGER REFERENCES users(id),
+			week_start DATE NOT NULL,
+			week_end DATE NOT NULL,
+			went_well TEXT,
+			to_improve TEXT,
+			action_items TEXT,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(user_id, week_start)
+		)`,
 	}
 
 	for _, m := range migrations {
@@ -279,6 +303,72 @@ func (d *Database) migrate() error {
 		return fmt.Errorf("failed to migrate si_project_details to projects: %w", err)
 	}
 
+	// Add team profile columns to users table
+	if err := d.ensureColumnExists("users", "setup_done", "ALTER TABLE users ADD COLUMN setup_done INTEGER DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := d.ensureColumnExists("users", "member_count", "ALTER TABLE users ADD COLUMN member_count INTEGER DEFAULT 0"); err != nil {
+		return err
+	}
+	// Add Linear config columns to team_type_configs
+	if err := d.ensureColumnExists("team_type_configs", "linear_api_key", "ALTER TABLE team_type_configs ADD COLUMN linear_api_key TEXT"); err != nil {
+		return err
+	}
+	if err := d.ensureColumnExists("team_type_configs", "linear_team_id", "ALTER TABLE team_type_configs ADD COLUMN linear_team_id TEXT"); err != nil {
+		return err
+	}
+	// Add Linear user mapping to team_members
+	if err := d.ensureColumnExists("team_members", "linear_user_id", "ALTER TABLE team_members ADD COLUMN linear_user_id TEXT DEFAULT ''"); err != nil {
+		return err
+	}
+
+	// Auto-migrate existing users: if a user has data (members or projects) but setup_done=0,
+	// mark them as si_business so they don't get forced through onboarding.
+	if err := d.migrateExistingUsersToSIBusiness(); err != nil {
+		log.Printf("[migrate] migrateExistingUsersToSIBusiness: %v", err)
+	}
+
+	return nil
+}
+
+func (d *Database) migrateExistingUsersToSIBusiness() error {
+	// Find users who have setup_done=0 but already have team members or projects
+	rows, err := d.conn.Query(`
+		SELECT DISTINCT u.id FROM users u
+		WHERE COALESCE(u.setup_done, 0) = 0
+		  AND (
+		    EXISTS (SELECT 1 FROM team_members WHERE user_id = u.id LIMIT 1)
+		    OR EXISTS (SELECT 1 FROM projects WHERE user_id = u.id LIMIT 1)
+		    OR EXISTS (SELECT 1 FROM clients WHERE user_id = u.id LIMIT 1)
+		  )
+	`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	var userIDs []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return err
+		}
+		userIDs = append(userIDs, id)
+	}
+	rows.Close()
+
+	for _, uid := range userIDs {
+		// Mark setup_done
+		if _, err := d.conn.Exec("UPDATE users SET setup_done = 1 WHERE id = ?", uid); err != nil {
+			log.Printf("[migrate] failed to set setup_done for user %d: %v", uid, err)
+			continue
+		}
+		// Insert si_business config if not exists
+		_, _ = d.conn.Exec(`
+			INSERT OR IGNORE INTO team_type_configs (user_id, team_type, linear_api_key, linear_team_id)
+			VALUES (?, 'si_business', '', '')`, uid)
+		log.Printf("[migrate] Auto-migrated user %d to si_business", uid)
+	}
 	return nil
 }
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -2227,6 +2228,450 @@ func (a *App) PopulateReportFromProjects(reportID int64, weekStart, weekEnd stri
 }
 
 // --- File Operations ---
+
+// --- TeamProfile ---
+
+func (a *App) GetTeamProfile() (*db.TeamProfile, error) {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return nil, err
+	}
+	return a.database.GetTeamProfile(user.ID)
+}
+
+func (a *App) SetupTeamProfile(teamType, teamName, userName string, memberCount int) error {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return err
+	}
+	profile := &db.TeamProfile{
+		TeamType:    teamType,
+		TeamName:    teamName,
+		UserName:    userName,
+		MemberCount: memberCount,
+		SetupDone:   true,
+	}
+	return a.database.SaveTeamProfile(user.ID, profile)
+}
+
+func (a *App) UpdateTeamProfile(profile db.TeamProfile) error {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return err
+	}
+	profile.SetupDone = true
+	return a.database.SaveTeamProfile(user.ID, &profile)
+}
+
+// --- Issues ---
+
+func (a *App) ListIssues(statusFilter string) ([]db.Issue, error) {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return nil, err
+	}
+	issues, err := a.database.ListIssues(user.ID, statusFilter)
+	if issues == nil {
+		issues = []db.Issue{}
+	}
+	return issues, err
+}
+
+func (a *App) SaveIssue(issue db.Issue) (int64, error) {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return 0, err
+	}
+	issue.UserID = user.ID
+	return a.database.SaveIssue(&issue)
+}
+
+func (a *App) DeleteIssue(issueID int64) error {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return err
+	}
+	return a.database.DeleteIssue(user.ID, issueID)
+}
+
+// --- Retrospectives ---
+
+func (a *App) ListRetrospectives() ([]db.Retrospective, error) {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return nil, err
+	}
+	retros, err := a.database.ListRetrospectives(user.ID)
+	if retros == nil {
+		retros = []db.Retrospective{}
+	}
+	return retros, err
+}
+
+func (a *App) SaveRetrospective(retro db.Retrospective) (int64, error) {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return 0, err
+	}
+	retro.UserID = user.ID
+	return a.database.SaveRetrospective(&retro)
+}
+
+// --- Linear API Proxy ---
+
+type LinearIssueState struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Color string `json:"color"`
+	Type  string `json:"type"`
+}
+
+type LinearIssueLabel struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Color string `json:"color"`
+}
+
+type LinearIssueLabelNodes struct {
+	Nodes []LinearIssueLabel `json:"nodes"`
+}
+
+type LinearIssueAssignee struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type LinearIssueProject struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type LinearIssue struct {
+	ID         string           `json:"id"`
+	Title      string           `json:"title"`
+	Identifier string           `json:"identifier"`
+	Priority   int              `json:"priority"`
+	State      LinearIssueState `json:"state"`
+	Assignee    *LinearIssueAssignee   `json:"assignee"`
+	URL         string                 `json:"url"`
+	CreatedAt   string                 `json:"createdAt"`
+	UpdatedAt   string                 `json:"updatedAt"`
+	DueDate     *string                `json:"dueDate"`
+	Description string                 `json:"description"`
+	Estimate    *float64               `json:"estimate"`
+	Labels      *LinearIssueLabelNodes `json:"labels"`
+	Project     *LinearIssueProject    `json:"project"`
+}
+
+type LinearProject struct {
+	ID       string  `json:"id"`
+	Name     string  `json:"name"`
+	State    string  `json:"state"`
+	Progress float64 `json:"progress"`
+	URL      string  `json:"url"`
+}
+
+type LinearCycle struct {
+	ID           string  `json:"id"`
+	Name         string  `json:"name"`
+	Number       int     `json:"number"`
+	StartsAt     string  `json:"startsAt"`
+	EndsAt       string  `json:"endsAt"`
+	CompletedAt  *string `json:"completedAt"`
+	IssueCount   int     `json:"issueCount"`
+	CompletedIssueCount int `json:"completedIssueCount"`
+}
+
+type LinearDashboardData struct {
+	Projects   []LinearProject `json:"projects"`
+	Issues     []LinearIssue   `json:"issues"`
+	Cycles     []LinearCycle   `json:"cycles"`
+	IssueCounts map[string]int  `json:"issueCounts"`
+}
+
+func (a *App) GetLinearDashboard() (*LinearDashboardData, error) {
+	profile, err := a.GetTeamProfile()
+	if err != nil {
+		return nil, fmt.Errorf("팀 프로필을 불러올 수 없습니다")
+	}
+	if profile.LinearAPIKey == "" {
+		return nil, fmt.Errorf("Linear API Key가 설정되지 않았습니다")
+	}
+	return fetchLinearDashboard(profile.LinearAPIKey, profile.LinearTeamID)
+}
+
+func fetchLinearDashboard(apiKey, teamID string) (*LinearDashboardData, error) {
+	return callLinearAPI(apiKey, teamID)
+}
+
+func (a *App) GetLinearTeamStates() ([]LinearWorkflowState, error) {
+	profile, err := a.GetTeamProfile()
+	if err != nil || profile.LinearAPIKey == "" {
+		return nil, fmt.Errorf("Linear API Key가 설정되지 않았습니다")
+	}
+	return GetLinearTeamStates(profile.LinearAPIKey, profile.LinearTeamID)
+}
+
+func (a *App) UpdateLinearIssueState(issueID, stateID string) error {
+	profile, err := a.GetTeamProfile()
+	if err != nil || profile.LinearAPIKey == "" {
+		return fmt.Errorf("Linear API Key가 설정되지 않았습니다")
+	}
+	return UpdateLinearIssueState(profile.LinearAPIKey, issueID, stateID)
+}
+
+func (a *App) GetLinearTeamMembers() ([]LinearTeamMember, error) {
+	profile, err := a.GetTeamProfile()
+	if err != nil || profile.LinearAPIKey == "" {
+		return nil, fmt.Errorf("Linear API Key가 설정되지 않았습니다")
+	}
+	return GetLinearTeamMembers(profile.LinearAPIKey, profile.LinearTeamID)
+}
+
+// AutoMapLinearMembers matches app team members to Linear members by email then name,
+// saves the linear_user_id, and returns the count of newly mapped members.
+func (a *App) AutoMapLinearMembers() (int, error) {
+	profile, err := a.GetTeamProfile()
+	if err != nil || profile.LinearAPIKey == "" {
+		return 0, fmt.Errorf("Linear API Key가 설정되지 않았습니다")
+	}
+	linearMembers, err := GetLinearTeamMembers(profile.LinearAPIKey, profile.LinearTeamID)
+	if err != nil {
+		return 0, err
+	}
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return 0, err
+	}
+	appMembers, err := a.database.ListTeamMembers(user.ID)
+	if err != nil {
+		return 0, err
+	}
+
+	// Build lookup maps from Linear members
+	byEmail := map[string]LinearTeamMember{}
+	byName := map[string]LinearTeamMember{}
+	for _, lm := range linearMembers {
+		if lm.Email != "" {
+			byEmail[strings.ToLower(strings.TrimSpace(lm.Email))] = lm
+		}
+		byName[strings.ToLower(strings.TrimSpace(lm.Name))] = lm
+		if lm.DisplayName != "" {
+			byName[strings.ToLower(strings.TrimSpace(lm.DisplayName))] = lm
+		}
+	}
+
+	mapped := 0
+	for _, am := range appMembers {
+		if am.LinearUserID != "" {
+			continue // already mapped
+		}
+		var match *LinearTeamMember
+		if am.Email != "" {
+			if lm, ok := byEmail[strings.ToLower(strings.TrimSpace(am.Email))]; ok {
+				match = &lm
+			}
+		}
+		if match == nil {
+			if lm, ok := byName[strings.ToLower(strings.TrimSpace(am.Name))]; ok {
+				match = &lm
+			}
+		}
+		if match != nil {
+			am.LinearUserID = match.ID
+			if _, err := a.database.SaveTeamMember(&am); err != nil {
+				log.Printf("[AutoMapLinearMembers] save failed for %s: %v", am.Name, err)
+				continue
+			}
+			mapped++
+		}
+	}
+	return mapped, nil
+}
+
+func (a *App) UpdateLinearIssue(issueID string, input LinearIssueUpdateInput) error {
+	profile, err := a.GetTeamProfile()
+	if err != nil || profile.LinearAPIKey == "" {
+		return fmt.Errorf("Linear API Key가 설정되지 않았습니다")
+	}
+	return UpdateLinearIssue(profile.LinearAPIKey, issueID, input)
+}
+
+// CheckClaudeCLI returns whether the `claude` CLI is installed and its version string.
+func (a *App) CheckClaudeCLI() map[string]interface{} {
+	cmd := exec.Command("claude", "--version")
+	out, err := cmd.Output()
+	if err != nil {
+		return map[string]interface{}{"ok": false, "version": ""}
+	}
+	return map[string]interface{}{"ok": true, "version": strings.TrimSpace(string(out))}
+}
+
+// ClaudeChat is kept for backward compatibility; delegates to ClaudeChatWithSession with no session.
+func (a *App) ClaudeChat(prompt, systemContext string) (string, error) {
+	res, err := a.ClaudeChatWithSession(prompt, systemContext, "")
+	return res.Reply, err
+}
+
+// ClaudeChatResult holds the reply text and metadata returned by ClaudeChatWithSession.
+type ClaudeChatResult struct {
+	Reply        string  `json:"reply"`
+	SessionID    string  `json:"sessionId"`
+	Model        string  `json:"model"`
+	NumTurns     int     `json:"numTurns"`
+	InputTokens  int     `json:"inputTokens"`
+	OutputTokens int     `json:"outputTokens"`
+	CacheRead    int     `json:"cacheReadTokens"`
+	CacheCreate  int     `json:"cacheCreateTokens"`
+	CostUSD      float64 `json:"costUsd"`
+}
+
+// ClaudeChatWithSession sends a prompt to the local `claude` CLI using stream-json output so that
+// the session_id can be extracted and returned.  Pass a non-empty sessionID to resume a previous
+// conversation with --resume; pass "" to start a fresh session.
+func (a *App) ClaudeChatWithSession(prompt, systemContext, sessionID string) (ClaudeChatResult, error) {
+	fullPrompt := prompt
+	if systemContext != "" {
+		fullPrompt = systemContext + "\n\n---\n\n" + prompt
+	}
+
+	args := []string{}
+	if sessionID != "" {
+		args = append(args, "--resume", sessionID)
+	}
+	args = append(args, "-p", fullPrompt, "--output-format", "stream-json", "--verbose")
+
+	cmd := exec.Command("claude", args...)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		errMsg := strings.TrimSpace(stderr.String())
+		if errMsg == "" {
+			errMsg = err.Error()
+		}
+		return ClaudeChatResult{}, fmt.Errorf("claude CLI 오류: %s", errMsg)
+	}
+
+	// Parse NDJSON output — find the last line with "type":"result" and assistant message for model
+	type usageInfo struct {
+		InputTokens            int `json:"input_tokens"`
+		OutputTokens           int `json:"output_tokens"`
+		CacheReadInputTokens   int `json:"cache_read_input_tokens"`
+		CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
+	}
+	type resultLine struct {
+		Type         string   `json:"type"`
+		Result       string   `json:"result"`
+		SessionID    string   `json:"session_id"`
+		IsError      bool     `json:"is_error"`
+		NumTurns     int      `json:"num_turns"`
+		TotalCostUSD float64  `json:"total_cost_usd"`
+		Usage        usageInfo `json:"usage"`
+	}
+	type assistantLine struct {
+		Type    string `json:"type"`
+		Message struct {
+			Model string `json:"model"`
+		} `json:"message"`
+	}
+	var found resultLine
+	var model string
+	for _, raw := range strings.Split(stdout.String(), "\n") {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		// Try assistant line for model name
+		var aLine assistantLine
+		if err := json.Unmarshal([]byte(raw), &aLine); err == nil && aLine.Type == "assistant" && aLine.Message.Model != "" {
+			model = aLine.Message.Model
+		}
+		var line resultLine
+		if err := json.Unmarshal([]byte(raw), &line); err != nil {
+			continue
+		}
+		if line.Type == "result" {
+			found = line
+		}
+	}
+
+	if found.Type == "" {
+		return ClaudeChatResult{}, fmt.Errorf("claude CLI 응답 파싱 실패")
+	}
+	if found.IsError {
+		return ClaudeChatResult{}, fmt.Errorf("claude CLI 오류: %s", found.Result)
+	}
+	return ClaudeChatResult{
+		Reply:        strings.TrimSpace(found.Result),
+		SessionID:    found.SessionID,
+		Model:        model,
+		NumTurns:     found.NumTurns,
+		InputTokens:  found.Usage.InputTokens,
+		OutputTokens: found.Usage.OutputTokens,
+		CacheRead:    found.Usage.CacheReadInputTokens,
+		CacheCreate:  found.Usage.CacheCreationInputTokens,
+		CostUSD:      found.TotalCostUSD,
+	}, nil
+}
+
+// SkillCommand represents a single slash command discovered in a Claude skill.
+type SkillCommand struct {
+	Skill string `json:"skill"`
+	Cmd   string `json:"cmd"`
+	Desc  string `json:"desc"`
+}
+
+// ScanClaudeSkills scans ~/.claude/skills/ for installed skills and returns
+// a list of slash commands parsed from each skill's SKILL.md file.
+func (a *App) ScanClaudeSkills() []SkillCommand {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	skillsDir := filepath.Join(home, ".claude", "skills")
+	entries, err := os.ReadDir(skillsDir)
+	if err != nil {
+		return nil
+	}
+
+	// Regex: matches lines like `/skillname:cmd` or `/skillname` inside backtick blocks or plain text
+	cmdRe := regexp.MustCompile("(?m)^\\s*[`*-]?\\s*(`?)(/(\\w[\\w-]*(?::\\w[\\w-]*)*))`?\\s*(?:[-—]\\s*(.+))?$")
+
+	var result []SkillCommand
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		skillName := entry.Name()
+		mdPath := filepath.Join(skillsDir, skillName, "SKILL.md")
+		data, err := os.ReadFile(mdPath)
+		if err != nil {
+			continue
+		}
+		matches := cmdRe.FindAllSubmatch(data, -1)
+		seen := map[string]bool{}
+		for _, m := range matches {
+			cmdStr := string(m[2])   // e.g. /ls:list
+			desc := strings.TrimSpace(string(m[4]))
+			if seen[cmdStr] {
+				continue
+			}
+			// Only include commands that belong to this skill (start with /skillname)
+			prefix := "/" + skillName
+			if !strings.HasPrefix(cmdStr, prefix) {
+				continue
+			}
+			seen[cmdStr] = true
+			result = append(result, SkillCommand{
+				Skill: skillName,
+				Cmd:   cmdStr,
+				Desc:  desc,
+			})
+		}
+	}
+	return result
+}
 
 // OpenFile opens a file with the system's default application
 func (a *App) OpenFile(filePath string) error {

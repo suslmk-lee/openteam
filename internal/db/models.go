@@ -79,6 +79,7 @@ type TeamMember struct {
 	HireDate       string    `json:"hireDate"`
 	ResignDate     *string   `json:"resignDate"`
 	Active         bool      `json:"active"`
+	LinearUserID   string    `json:"linearUserId"`
 	CreatedAt      time.Time `json:"createdAt"`
 }
 
@@ -234,6 +235,43 @@ type CodeGroup struct {
 	GroupName   string    `json:"groupName"`
 	Description string    `json:"description"`
 	SortOrder   int       `json:"sortOrder"`
+	CreatedAt   time.Time `json:"createdAt"`
+}
+
+// TeamProfile stores the team type and basic setup info
+type TeamProfile struct {
+	TeamType    string `json:"teamType"`    // si_business, si_field, small_team
+	TeamName    string `json:"teamName"`
+	UserName    string `json:"userName"`
+	MemberCount int    `json:"memberCount"`
+	SetupDone   bool   `json:"setupDone"`
+	LinearAPIKey string `json:"linearApiKey"`
+	LinearTeamID string `json:"linearTeamId"`
+}
+
+// Issue stores issues/risks for si_field team
+type Issue struct {
+	ID          int64     `json:"id"`
+	UserID      int64     `json:"userId"`
+	ProjectID   *int64    `json:"projectId"`
+	Title       string    `json:"title"`
+	Description string    `json:"description"`
+	Severity    string    `json:"severity"`   // critical, high, medium, low
+	Status      string    `json:"status"`     // open, in_progress, resolved, closed
+	Assignee    string    `json:"assignee"`
+	DueDate     *string   `json:"dueDate"`
+	CreatedAt   time.Time `json:"createdAt"`
+}
+
+// Retrospective stores weekly retro for small_team
+type Retrospective struct {
+	ID          int64     `json:"id"`
+	UserID      int64     `json:"userId"`
+	WeekStart   string    `json:"weekStart"`
+	WeekEnd     string    `json:"weekEnd"`
+	WentWell    string    `json:"wentWell"`
+	ToImprove   string    `json:"toImprove"`
+	ActionItems string    `json:"actionItems"`
 	CreatedAt   time.Time `json:"createdAt"`
 }
 

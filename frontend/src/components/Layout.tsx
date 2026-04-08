@@ -1,4 +1,4 @@
-import { Outlet, NavLink } from 'react-router-dom'
+import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard,
   Users,
@@ -14,14 +14,71 @@ import {
   FilePlus,
   Building2,
   ListTree,
+  AlertTriangle,
+  GitBranch,
+  RotateCcw,
+  Kanban,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useTeamProfile } from '../contexts/TeamProfileContext'
 
 export default function Layout() {
   const [collapsed, setCollapsed] = useState(false)
   const [teamMenuOpen, setTeamMenuOpen] = useState(false)
   const [reportMenuOpen, setReportMenuOpen] = useState(false)
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false)
+  const { profile, loading } = useTeamProfile()
+  const navigate = useNavigate()
+
+  // Redirect to onboarding if not setup
+  useEffect(() => {
+    if (loading) return
+    const needsOnboarding = !profile || !profile.setupDone || !profile.teamType
+    if (needsOnboarding) {
+      navigate('/onboarding', { replace: true })
+    }
+  }, [loading, profile, navigate])
+
+  if (loading) return null
+
+  const teamType = profile?.teamType || 'si_business'
+
+  // Team menu items by team type
+  const teamMenuItems = (() => {
+    const base = [
+      { to: '/team/members', icon: <UserCog size={18} />, label: '팀원관리' },
+      { to: '/team/attendance', icon: <Clock size={18} />, label: '근태관리' },
+    ]
+    if (teamType === 'si_business') {
+      return [
+        ...base,
+        { to: '/team/clients', icon: <Building2 size={18} />, label: '고객사관리' },
+        { to: '/team/projects', icon: <Briefcase size={18} />, label: '프로젝트관리' },
+      ]
+    }
+    if (teamType === 'si_field') {
+      return [
+        ...base,
+        { to: '/team/clients', icon: <Building2 size={18} />, label: '고객사관리' },
+        { to: '/team/projects', icon: <Briefcase size={18} />, label: '프로젝트관리' },
+        { to: '/team/issues', icon: <AlertTriangle size={18} />, label: '이슈/리스크' },
+        { to: '/team/linear', icon: <GitBranch size={18} />, label: 'Linear 대시보드' },
+      ]
+    }
+    if (teamType === 'small_team') {
+      return [
+        ...base,
+        { to: '/team/taskboard', icon: <Kanban size={18} />, label: 'Linear 태스크보드' },
+        { to: '/team/retro', icon: <RotateCcw size={18} />, label: '주간 회고' },
+      ]
+    }
+    return base
+  })()
+
+  const teamTypeLabel = teamType === 'si_business' ? 'SI 사업팀'
+    : teamType === 'si_field' ? '현장 SI팀'
+    : teamType === 'small_team' ? '소규모팀'
+    : ''
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -34,9 +91,12 @@ export default function Layout() {
         {/* Logo */}
         <div className="h-14 flex items-center px-4 border-b border-slate-700">
           {!collapsed && (
-            <h1 className="text-lg font-bold text-white tracking-tight">
-              OpenReport
-            </h1>
+            <div>
+              <h1 className="text-base font-bold text-white tracking-tight leading-tight">OpenReport</h1>
+              {teamTypeLabel && (
+                <p className="text-xs text-slate-400 leading-tight">{profile?.teamName || teamTypeLabel}</p>
+              )}
+            </div>
           )}
           {collapsed && (
             <span className="text-lg font-bold text-white mx-auto">OR</span>
@@ -44,7 +104,7 @@ export default function Layout() {
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 py-4 space-y-1 px-2">
+        <nav className="flex-1 py-4 space-y-1 px-2 overflow-y-auto">
           <SidebarLink to="/" icon={<LayoutDashboard size={20} />} label="대시보드" collapsed={collapsed} />
           
           {/* Reports Accordion */}
@@ -91,10 +151,9 @@ export default function Layout() {
             
             {!collapsed && teamMenuOpen && (
               <div className="ml-2 space-y-1 border-l-2 border-slate-700 pl-2">
-                <SidebarLink to="/team/members" icon={<UserCog size={18} />} label="팀원관리" collapsed={false} />
-                <SidebarLink to="/team/attendance" icon={<Clock size={18} />} label="근태관리" collapsed={false} />
-                <SidebarLink to="/team/clients" icon={<Building2 size={18} />} label="고객사관리" collapsed={false} />
-                <SidebarLink to="/team/projects" icon={<Briefcase size={18} />} label="프로젝트관리" collapsed={false} />
+                {teamMenuItems.map(item => (
+                  <SidebarLink key={item.to} to={item.to} icon={item.icon} label={item.label} collapsed={false} />
+                ))}
               </div>
             )}
           </div>
@@ -117,6 +176,7 @@ export default function Layout() {
 
             {!collapsed && settingsMenuOpen && (
               <div className="ml-2 space-y-1 border-l-2 border-slate-700 pl-2">
+                <SidebarLink to="/settings/team-profile" icon={<Users size={18} />} label="팀 프로필" collapsed={false} />
                 <SidebarLink to="/settings/user" icon={<Settings size={18} />} label="사용자 정보" collapsed={false} />
                 <SidebarLink to="/settings/template" icon={<FilePlus size={18} />} label="템플릿" collapsed={false} />
                 <SidebarLink to="/settings/integrations" icon={<Users size={18} />} label="연동 설정" collapsed={false} />

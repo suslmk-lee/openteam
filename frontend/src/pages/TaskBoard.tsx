@@ -3,7 +3,7 @@ import { GetLinearDashboard, GetLinearTeamStates, UpdateLinearIssueState, ListTe
 import * as AppModuleStatic from '../../wailsjs/go/main/App'
 import { useTeamProfile } from '../contexts/TeamProfileContext'
 import { useNavigate } from 'react-router-dom'
-import { Kanban, RefreshCw, ExternalLink, AlertCircle, Settings, X, User, Calendar, Tag, Flag, Loader2, Check, ChevronDown, Link2, Briefcase, AlignLeft, Hash, MessageSquare, Send, Bot, ChevronUp, Minimize2 } from 'lucide-react'
+import { Kanban, RefreshCw, ExternalLink, AlertCircle, Settings, X, User, Calendar, Tag, Flag, Loader2, Check, ChevronDown, Link2, Briefcase, AlignLeft, Hash, MessageSquare, Send, Bot, ChevronUp, Minimize2, Maximize2 } from 'lucide-react'
 
 // Dynamic bindings — cast via any until wails dev regenerates App.d.ts
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -16,6 +16,133 @@ const ClaudeChat: (prompt: string, ctx: string) => Promise<string> = (AppModuleS
 const ClaudeChatWithSession: (prompt: string, ctx: string, sessionID: string) => Promise<{ reply: string; sessionId: string; model: string; numTurns: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreateTokens: number; costUsd: number }> = (AppModuleStatic as any).ClaudeChatWithSession ?? (() => Promise.reject(new Error('ClaudeChatWithSession not available')))
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const ScanClaudeSkills: () => Promise<{ skill: string; cmd: string; desc: string }[]> = (AppModuleStatic as any).ScanClaudeSkills ?? (() => Promise.resolve([]))
+
+// Simple markdown to HTML converter for basic formatting
+function renderMarkdown(text: string): string {
+  if (!text) return ''
+
+  // Step 1: Split into lines and categorize
+  const lines = text.split('\n')
+  const blocks: string[] = []
+  let i = 0
+
+  while (i < lines.length) {
+    const line = lines[i]
+
+    // Code block (```)
+    if (line.startsWith('```')) {
+      const lang = line.slice(3).trim()
+      const codeLines: string[] = []
+      i++
+      while (i < lines.length && !lines[i].startsWith('```')) {
+        codeLines.push(lines[i])
+        i++
+      }
+      const code = escapeHtml(codeLines.join('\n'))
+      blocks.push(`<pre style="background:#f1f5f9;padding:12px;border-radius:8px;overflow-x:auto;margin:8px 0;border:1px solid #e2e8f0"><code style="font-family:'Fira Code',monospace;font-size:12px;color:#334155">${code}</code></pre>`)
+      i++ // skip closing ```
+      continue
+    }
+
+    // Table
+    if (line.startsWith('|') && i + 1 < lines.length && lines[i + 1].includes('|')) {
+      const tableLines: string[] = [line]
+      i++
+      while (i < lines.length && lines[i].trim().startsWith('|')) {
+        tableLines.push(lines[i])
+        i++
+      }
+      blocks.push(renderTableBlock(tableLines))
+      continue
+    }
+
+    // Heading
+    const h1Match = line.match(/^# (.+)$/)
+    const h2Match = line.match(/^## (.+)$/)
+    const h3Match = line.match(/^### (.+)$/)
+    if (h1Match) { blocks.push(`<h1 class="font-bold mt-4 mb-2 text-base">${renderInline(h1Match[1])}</h1>`); i++; continue }
+    if (h2Match) { blocks.push(`<h2 class="font-semibold mt-3 mb-2">${renderInline(h2Match[1])}</h2>`); i++; continue }
+    if (h3Match) { blocks.push(`<h3 class="font-semibold mt-2 mb-1">${renderInline(h3Match[1])}</h3>`); i++; continue }
+
+    // List
+    const listMatch = line.match(/^\s*[-*] (.+)$/)
+    if (listMatch) {
+      const items: string[] = []
+      while (i < lines.length) {
+        const l = lines[i].match(/^\s*[-*] (.+)$/)
+        if (!l) break
+        items.push(`<li class="ml-4">${renderInline(l[1])}</li>`)
+        i++
+        // Skip blank lines between list items
+        while (i < lines.length && lines[i].trim() === '') i++
+      }
+      blocks.push(`<ul class="list-disc my-1 space-y-0">${items.join('')}</ul>`)
+      continue
+    }
+
+    // Regular line (may have inline formatting)
+    if (line.trim()) {
+      blocks.push(`<p class="my-0">${renderInline(line)}</p>`)
+    }
+    i++
+  }
+
+  return blocks.join('')
+}
+
+function renderTableBlock(lines: string[]): string {
+  const header = lines[0]
+  const rows = lines.slice(2) // skip header and separator
+  const headers = header.split('|').map(h => h.trim()).filter(h => h)
+  let html = '<table class="w-full text-xs border-collapse my-1"><thead><tr>'
+  headers.forEach(h => { html += `<th class="border border-slate-300 px-2 py-1 bg-slate-100 text-left font-semibold">${renderInline(h)}</th>` })
+  html += '</tr></thead><tbody>'
+  rows.forEach(row => {
+    const cells = row.split('|').map(c => c.trim()).filter((c, i) => i > 0 && i <= headers.length)
+    html += '<tr>'
+    cells.forEach(c => { html += `<td class="border border-slate-300 px-2 py-1">${renderInline(c)}</td>` })
+    html += '</tr>'
+  })
+  html += '</tbody></table>'
+  return html
+}
+
+function renderInline(text: string): string {
+  // If no backticks, just apply inline formatting
+  if (!text.includes('`')) {
+    return escapeHtml(text)
+      .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g, '<em>$1</em>')
+      .replace(/~~(.+?)~~/g, '<del>$1</del>')
+  }
+  // Split by backticks to handle code segments
+  const parts = text.split('`')
+  let result = ''
+  for (let i = 0; i < parts.length; i++) {
+    if (i % 2 === 0) {
+      // Even index: regular text - apply formatting
+      result += escapeHtml(parts[i])
+        .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.+?)\*/g, '<em>$1</em>')
+        .replace(/~~(.+?)~~/g, '<del>$1</del>')
+    } else {
+      // Odd index: code content between backticks
+      result += `<code style="background:#cbd5e1;padding:2px 5px;border-radius:4px;font-size:0.8em;font-family:'Fira Code',monospace;color:#334155;border:1px solid #94a3b8;">${escapeHtml(parts[i])}</code>`
+    }
+  }
+  return result
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+}
 
 interface LinearIssueLabel {
   id: string
@@ -410,6 +537,8 @@ interface ChatMessage {
 function AiChatPanel({
   issues,
   onClose,
+  isMaximized,
+  onMaximize,
   messages,
   setMessages,
   apiKey,
@@ -422,9 +551,17 @@ function AiChatPanel({
   setClaudeSessionID,
   claudeMeta,
   setClaudeMeta,
+  cumInputTokens,
+  cumOutputTokens,
+  cumCostUsd,
+  setCumInputTokens,
+  setCumOutputTokens,
+  setCumCostUsd,
 }: {
   issues: LinearIssue[]
   onClose: () => void
+  isMaximized: boolean
+  onMaximize: () => void
   messages: ChatMessage[]
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>
   apiKey: string
@@ -437,6 +574,12 @@ function AiChatPanel({
   setClaudeSessionID: (id: string) => void
   claudeMeta: ClaudeMeta | null
   setClaudeMeta: (m: ClaudeMeta | null) => void
+  cumInputTokens: number
+  cumOutputTokens: number
+  cumCostUsd: number
+  setCumInputTokens: (n: number | ((prev: number) => number)) => void
+  setCumOutputTokens: (n: number | ((prev: number) => number)) => void
+  setCumCostUsd: (n: number | ((prev: number) => number)) => void
 }) {
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
@@ -472,6 +615,10 @@ function AiChatPanel({
       const res = await ClaudeChatWithSession(cmd, '', claudeSessionID)
       if (res.sessionId) setClaudeSessionID(res.sessionId)
       setClaudeMeta({ model: res.model, numTurns: res.numTurns, inputTokens: res.inputTokens, outputTokens: res.outputTokens, cacheReadTokens: res.cacheReadTokens, cacheCreateTokens: res.cacheCreateTokens, costUsd: res.costUsd })
+      // Accumulate totals
+      setCumInputTokens(prev => prev + res.inputTokens)
+      setCumOutputTokens(prev => prev + res.outputTokens)
+      setCumCostUsd(prev => prev + res.costUsd)
       const reply = res.reply
       setMessages(prev => [...prev, { role: 'assistant', content: reply }])
     } catch (e: any) {
@@ -485,7 +632,7 @@ function AiChatPanel({
     {
       cmd: '/clear',
       desc: '대화 세션 초기화',
-      run: () => { setMessages([]); setInput(''); setCmdPopup(false); setClaudeSessionID(''); setClaudeMeta(null) },
+      run: () => { setMessages([]); setInput(''); setCmdPopup(false); setClaudeSessionID(''); setClaudeMeta(null); setCumInputTokens(0); setCumOutputTokens(0); setCumCostUsd(0) },
     },
     {
       cmd: '/summary',
@@ -608,6 +755,10 @@ function AiChatPanel({
         const res = await ClaudeChatWithSession(text.trim(), ctx, claudeSessionID)
         if (res.sessionId) setClaudeSessionID(res.sessionId)
         setClaudeMeta({ model: res.model, numTurns: res.numTurns, inputTokens: res.inputTokens, outputTokens: res.outputTokens, cacheReadTokens: res.cacheReadTokens, cacheCreateTokens: res.cacheCreateTokens, costUsd: res.costUsd })
+        // Accumulate totals
+        setCumInputTokens(prev => prev + res.inputTokens)
+        setCumOutputTokens(prev => prev + res.outputTokens)
+        setCumCostUsd(prev => prev + res.costUsd)
         reply = res.reply
       } else {
         const res = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -683,8 +834,11 @@ function AiChatPanel({
             {chatModel === 'claude' && (
               <span className="text-[10px] px-2 py-0.5 bg-violet-100 text-violet-600 rounded-full font-medium">로컬 Claude</span>
             )}
+            <button onClick={onMaximize} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors">
+              {isMaximized ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+            </button>
             <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors">
-              <Minimize2 size={14} />
+              <X size={14} />
             </button>
           </div>
         </div>
@@ -723,12 +877,16 @@ function AiChatPanel({
             className="text-[9px] font-semibold text-violet-600 bg-violet-100 px-1.5 py-0.5 rounded truncate max-w-[140px]"
             title={claudeMeta.model}
           >{claudeMeta.model || '—'}</span>
-          <span className="text-[9px] text-slate-400">턴 {claudeMeta.numTurns}</span>
-          <span className="text-[9px] text-slate-400">in {claudeMeta.inputTokens.toLocaleString()} / out {claudeMeta.outputTokens.toLocaleString()}</span>
-          {claudeMeta.cacheReadTokens > 0 && (
-            <span className="text-[9px] text-emerald-500">캐시 {claudeMeta.cacheReadTokens.toLocaleString()}</span>
-          )}
-          <span className="text-[9px] text-slate-400 ml-auto">${claudeMeta.costUsd.toFixed(4)}</span>
+          <span className="text-[9px] text-slate-400">턴 {Math.ceil(messages.length / 2)}</span>
+          <span
+            style={{ fontFamily: "'Fira Code', monospace" }}
+            className="text-[9px] font-medium text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded"
+          >in {cumInputTokens.toLocaleString()}</span>
+          <span
+            style={{ fontFamily: "'Fira Code', monospace" }}
+            className="text-[9px] font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded"
+          >out {cumOutputTokens.toLocaleString()}</span>
+          <span className="text-[9px] text-slate-400 ml-auto">${cumCostUsd.toFixed(4)}</span>
         </div>
       )}
 
@@ -783,14 +941,15 @@ function AiChatPanel({
               </div>
             )}
             <div
-              className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap ${
+              className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm leading-relaxed ${
                 m.role === 'user'
                   ? 'bg-violet-600 text-white rounded-tr-sm'
                   : 'bg-slate-100 text-slate-700 rounded-tl-sm'
               }`}
-            >
-              {m.content}
-            </div>
+              dangerouslySetInnerHTML={{
+                __html: m.role === 'assistant' ? renderMarkdown(m.content) : renderInline(m.content).replace(/\n/g, '<br/>'),
+              }}
+            />
           </div>
         ))}
         {sending && (
@@ -919,6 +1078,7 @@ export default function TaskBoard() {
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const [countdown, setCountdown] = useState(0)
   const [chatOpen, setChatOpen] = useState(false)
+  const [chatMaximized, setChatMaximized] = useState(false)
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [chatApiKey, setChatApiKey] = useState('')
   const [chatKeyLoaded, setChatKeyLoaded] = useState(false)
@@ -926,6 +1086,10 @@ export default function TaskBoard() {
   const [claudeAvailable, setClaudeAvailable] = useState(false)
   const [claudeSessionID, setClaudeSessionID] = useState('')
   const [claudeMeta, setClaudeMeta] = useState<ClaudeMeta | null>(null)
+  // Cumulative session stats for accurate totals (API only returns current turn values)
+  const [cumInputTokens, setCumInputTokens] = useState(0)
+  const [cumOutputTokens, setCumOutputTokens] = useState(0)
+  const [cumCostUsd, setCumCostUsd] = useState(0)
 
   const hasKey = profile?.linearApiKey
 
@@ -1294,12 +1458,24 @@ export default function TaskBoard() {
 
       {/* ── AI Chat floating panel (always mounted to preserve session) ── */}
       <div
-        className="fixed bottom-20 right-6 z-40 w-[480px] h-[680px] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden"
-        style={chatOpen ? { animation: 'slideUp 0.2s ease-out' } : { display: 'none' }}
+        className="fixed z-40 bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden"
+        style={{
+          transition: 'top 0.35s cubic-bezier(0.4, 0, 0.2, 1), right 0.35s cubic-bezier(0.4, 0, 0.2, 1), bottom 0.35s cubic-bezier(0.4, 0, 0.2, 1), left 0.35s cubic-bezier(0.4, 0, 0.2, 1), width 0.35s cubic-bezier(0.4, 0, 0.2, 1), height 0.35s cubic-bezier(0.4, 0, 0.2, 1)',
+          top: chatMaximized ? 16 : 'calc(100vh - 680px - 24px)',
+          right: chatMaximized ? 16 : 24,
+          bottom: chatMaximized ? 16 : 24,
+          left: chatMaximized ? 16 : 'calc(100vw - 480px - 24px)',
+          width: chatMaximized ? 'calc(100vw - 32px)' : 480,
+          height: chatMaximized ? 'calc(100vh - 32px)' : 680,
+          display: chatOpen ? 'flex' : 'none',
+          animation: chatOpen ? (chatMaximized ? 'fadeIn 0.25s ease-out' : 'slideUp 0.25s ease-out') : undefined,
+        }}
       >
         <AiChatPanel
           issues={issues}
           onClose={() => setChatOpen(false)}
+          isMaximized={chatMaximized}
+          onMaximize={() => setChatMaximized(v => !v)}
           messages={chatMessages}
           setMessages={setChatMessages}
           apiKey={chatApiKey}
@@ -1312,24 +1488,28 @@ export default function TaskBoard() {
           setClaudeSessionID={setClaudeSessionID}
           claudeMeta={claudeMeta}
           setClaudeMeta={setClaudeMeta}
+          cumInputTokens={cumInputTokens}
+          cumOutputTokens={cumOutputTokens}
+          cumCostUsd={cumCostUsd}
+          setCumInputTokens={setCumInputTokens}
+          setCumOutputTokens={setCumOutputTokens}
+          setCumCostUsd={setCumCostUsd}
         />
       </div>
 
-      {/* ── Floating AI button ── */}
-      <button
-        onClick={() => setChatOpen(v => !v)}
-        className={`fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 rounded-2xl shadow-lg transition-all duration-200 ${
-          chatOpen
-            ? 'bg-violet-700 text-white'
-            : 'bg-violet-600 hover:bg-violet-700 text-white'
-        }`}
-      >
-        {chatOpen ? <ChevronUp size={16} /> : <MessageSquare size={16} />}
-        <span className="text-sm font-medium">{chatOpen ? '닫기' : 'AI 채팅'}</span>
-        {!chatOpen && issues.length > 0 && (
-          <span className="bg-white/30 text-white text-[10px] px-1.5 py-0.5 rounded-full leading-none">{issues.length}</span>
-        )}
-      </button>
+      {/* ── Floating AI button (only shown when chat is closed) ── */}
+      {!chatOpen && (
+        <button
+          onClick={() => setChatOpen(true)}
+          className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 rounded-2xl shadow-lg transition-all duration-200 bg-violet-600 hover:bg-violet-700 text-white"
+        >
+          <MessageSquare size={16} />
+          <span className="text-sm font-medium">AI 채팅</span>
+          {issues.length > 0 && (
+            <span className="bg-white/30 text-white text-[10px] px-1.5 py-0.5 rounded-full leading-none">{issues.length}</span>
+          )}
+        </button>
+      )}
     </div>
   )
 }

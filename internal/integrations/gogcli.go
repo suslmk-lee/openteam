@@ -42,13 +42,65 @@ type gmailMessagesResult struct {
 
 // CalendarEvent represents an event from gog cal list --json
 type CalendarEvent struct {
-	ID          string `json:"id"`
-	Summary     string `json:"summary"`
-	Description string `json:"description,omitempty"`
-	Start       string `json:"start"`
-	End         string `json:"end"`
-	Location    string `json:"location,omitempty"`
-	Status      string `json:"status,omitempty"`
+	ID          string          `json:"id"`
+	Summary     string          `json:"summary"`
+	Description string          `json:"description,omitempty"`
+	Start       string          `json:"-"` // Parsed from rawStart
+	End         string          `json:"-"` // Parsed from rawEnd
+	Location    string          `json:"location,omitempty"`
+	Status      string          `json:"status,omitempty"`
+	rawStart    json.RawMessage `json:"start"`
+	rawEnd      json.RawMessage `json:"end"`
+}
+
+// UnmarshalJSON handles both string and object formats for start/end times
+func (e *CalendarEvent) UnmarshalJSON(data []byte) error {
+	type Alias CalendarEvent
+	aux := &struct {
+		*Alias
+		Start json.RawMessage `json:"start"`
+		End   json.RawMessage `json:"end"`
+	}{
+		Alias: (*Alias)(e),
+	}
+
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	// Parse Start field (can be string or object with dateTime/date)
+	e.Start = parseTimeField(aux.Start)
+	// Parse End field (can be string or object with dateTime/date)
+	e.End = parseTimeField(aux.End)
+
+	return nil
+}
+
+// parseTimeField extracts time string from either "2026-04-10T10:00:00Z" or {"dateTime": "..."} or {"date": "..."}
+func parseTimeField(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+
+	// Try parsing as simple string first
+	var strValue string
+	if err := json.Unmarshal(raw, &strValue); err == nil {
+		return strValue
+	}
+
+	// Try parsing as object with dateTime or date field
+	var objValue struct {
+		DateTime string `json:"dateTime"`
+		Date     string `json:"date"`
+	}
+	if err := json.Unmarshal(raw, &objValue); err == nil {
+		if objValue.DateTime != "" {
+			return objValue.DateTime
+		}
+		return objValue.Date
+	}
+
+	return string(raw)
 }
 
 type calendarListResult struct {
@@ -140,23 +192,49 @@ func (g *GogCLI) FetchCalendarEvents(after, before time.Time) ([]CalendarEvent, 
 	return result.Events, nil
 }
 
-// runGog executes the gog CLI with given arguments
+// runGog executes the gog CLI with given arguments (with retry logic)
 func (g *GogCLI) runGog(args ...string) (string, error) {
 	if g.Account != "" {
 		args = append([]string{"--account", g.Account}, args...)
 	}
 
-	cmd := exec.Command("gog", args...)
 	log.Printf("[gogcli] Running: gog %s", strings.Join(args, " "))
 
-	output, err := cmd.CombinedOutput()
-	outStr := strings.TrimSpace(string(output))
+	// Retry logic with exponential backoff
+	maxRetries := 3
+	var lastErr error
+	var output []byte
 
-	if err != nil {
-		return outStr, fmt.Errorf("gog command failed: %w", err)
+	for i := 0; i < maxRetries; i++ {
+		if i > 0 {
+			waitTime := time.Duration(i*2) * time.Second
+			log.Printf("[gogcli] Retry %d/%d after %v...", i, maxRetries, waitTime)
+			time.Sleep(waitTime)
+		}
+
+		cmd := exec.Command("gog", args...)
+		output, lastErr = cmd.CombinedOutput()
+		outStr := strings.TrimSpace(string(output))
+
+		if lastErr == nil {
+			return outStr, nil
+		}
+
+		// Check if it's a retryable HTTP error
+		errStr := string(output)
+		if strings.Contains(errStr, "HTTP/1.1 400 Bad Request") ||
+			strings.Contains(errStr, "idle HTTP channel") ||
+			strings.Contains(errStr, "connection reset") ||
+			strings.Contains(errStr, "timeout") {
+			log.Printf("[gogcli] Retryable error detected: %s", errStr)
+			continue
+		}
+
+		// Non-retryable error, return immediately
+		return outStr, fmt.Errorf("gog command failed: %w (output: %s)", lastErr, outStr)
 	}
 
-	return outStr, nil
+	return strings.TrimSpace(string(output)), fmt.Errorf("gog command failed after %d retries: %w (output: %s)", maxRetries, lastErr, strings.TrimSpace(string(output)))
 }
 
 // StartAuth initiates the OAuth flow for a Gmail account

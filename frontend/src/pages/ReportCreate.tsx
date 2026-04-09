@@ -132,7 +132,7 @@ export default function Dashboard() {
 
   const filteredActivities = selectedSource === 'all'
     ? activities
-    : activities.filter(a => a.sourceIcon === selectedSource || a.source === selectedSource)
+    : activities.filter(a => a.sourceLabel === selectedSource)
 
   const sources = Array.from(new Set(activities.map(a => a.sourceLabel)))
 

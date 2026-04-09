@@ -474,11 +474,13 @@ export default function Dashboard() {
 
           {/* ── Quick Actions ── */}
           <div className="flex gap-3 mb-6">
-            {teamType === 'small_team' ? (
+            {teamType === 'small_team' || teamType === 'personal' ? (
               <>
                 <button onClick={() => navigate('/team/taskboard')}
-                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
-                  <Kanban size={18} /> 태스크보드
+                  className={`flex items-center gap-2 px-4 py-2 text-white rounded-lg transition-colors ${
+                    teamType === 'personal' ? 'bg-purple-600 hover:bg-purple-700' : 'bg-green-600 hover:bg-green-700'
+                  }`}>
+                  <Kanban size={18} /> {teamType === 'personal' ? '개인 태스크보드' : '태스크보드'}
                 </button>
                 <button onClick={() => navigate('/team/retro')}
                   className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors">
@@ -531,8 +533,8 @@ export default function Dashboard() {
               </>
             )}
 
-            {/* small_team */}
-            {teamType === 'small_team' && (
+            {/* small_team / personal */}
+            {(teamType === 'small_team' || teamType === 'personal') && (
               <>
                 <LinearTaskCard linearIssues={linearIssues} navigate={navigate} />
                 <RetroCard retro={latestRetro} navigate={navigate} />
@@ -543,8 +545,8 @@ export default function Dashboard() {
           {/* ── Attendance Detail (all types) ── */}
           <AttendanceTable attendance={attendance} />
 
-          {/* ── small_team: Linear 미설정 안내 ── */}
-          {teamType === 'small_team' && linearIssues.length === 0 && !loading && (
+          {/* ── small_team / personal: Linear 미설정 안내 ── */}
+          {(teamType === 'small_team' || teamType === 'personal') && linearIssues.length === 0 && !loading && (
             <div className="mt-4 flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl p-4">
               <CheckSquare size={18} className="text-amber-500 shrink-0" />
               <p className="text-sm text-amber-700">

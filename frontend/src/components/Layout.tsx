@@ -72,12 +72,19 @@ export default function Layout() {
         { to: '/team/retro', icon: <RotateCcw size={18} />, label: '주간 회고' },
       ]
     }
+    if (teamType === 'personal') {
+      return [
+        { to: '/team/taskboard', icon: <Kanban size={18} />, label: '개인 태스크보드' },
+        { to: '/team/retro', icon: <RotateCcw size={18} />, label: '주간 회고' },
+      ]
+    }
     return base
   })()
 
   const teamTypeLabel = teamType === 'si_business' ? 'SI 사업팀'
     : teamType === 'si_field' ? '현장 SI팀'
     : teamType === 'small_team' ? '소규모팀'
+    : teamType === 'personal' ? '개인용'
     : ''
 
   return (

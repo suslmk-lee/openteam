@@ -27,6 +27,7 @@ type Activity struct {
 	Summary       string    `json:"summary"`
 	RawData       string    `json:"rawData"`
 	ActivityDate  string    `json:"activityDate"`
+	CalendarID    string    `json:"calendarId,omitempty"` // For Google Calendar
 	FetchedAt     time.Time `json:"fetchedAt"`
 }
 
@@ -55,6 +56,7 @@ type ReportItem struct {
 type ExcelTemplate struct {
 	ID            int64     `json:"id"`
 	UserID        int64     `json:"userId"`
+	TeamType      string    `json:"teamType"`
 	Name          string    `json:"name"`
 	FilePath      string    `json:"filePath"`
 	StructureJSON string    `json:"structureJson"`
@@ -84,8 +86,8 @@ type TeamMember struct {
 }
 
 type Project struct {
-	ID           int64     `json:"id"`
-	UserID       int64     `json:"userId"`
+	ID          int64     `json:"id"`
+	UserID      int64     `json:"userId"`
 	TeamType    string    `json:"teamType"`
 	ClientID    int64     `json:"clientId"`
 	Name        string    `json:"name"`
@@ -153,11 +155,11 @@ type AttendanceRecord struct {
 }
 
 type AttendanceSummary struct {
-	TeamMemberID      int64  `json:"teamMemberId"`
-	TeamMemberName    string `json:"teamMemberName"`
-	VacationDays      int    `json:"vacationDays"`
-	MorningHalfDays   int    `json:"morningHalfDays"`
-	AfternoonHalfDays int    `json:"afternoonHalfDays"`
+	TeamMemberID      int64   `json:"teamMemberId"`
+	TeamMemberName    string  `json:"teamMemberName"`
+	VacationDays      int     `json:"vacationDays"`
+	MorningHalfDays   int     `json:"morningHalfDays"`
+	AfternoonHalfDays int     `json:"afternoonHalfDays"`
 	TotalDays         float64 `json:"totalDays"`
 }
 
@@ -181,14 +183,14 @@ type ProjectWithClient struct {
 
 // SIProjectDetail extends Project with SI-specific weekly reporting fields
 type SIProjectDetail struct {
-	ID           int64   `json:"id"`
-	UserID       int64   `json:"userId"`
-	ProjectID    int64   `json:"projectId"`
-	ProjectType  string  `json:"projectType"` // 직영, 당선, 신대방동, 거제 등
-	PMName       string  `json:"pmName"`      // 프로젝트 책임자/PM
-	TotalMM      float64 `json:"totalMM"`     // 총 투입 M/M
-	CurrentPhase string  `json:"currentPhase"` // 현재 진행단계
-	ProgressRate int     `json:"progressRate"` // 진행율 %
+	ID           int64     `json:"id"`
+	UserID       int64     `json:"userId"`
+	ProjectID    int64     `json:"projectId"`
+	ProjectType  string    `json:"projectType"`  // 직영, 당선, 신대방동, 거제 등
+	PMName       string    `json:"pmName"`       // 프로젝트 책임자/PM
+	TotalMM      float64   `json:"totalMM"`      // 총 투입 M/M
+	CurrentPhase string    `json:"currentPhase"` // 현재 진행단계
+	ProgressRate int       `json:"progressRate"` // 진행율 %
 	CreatedAt    time.Time `json:"createdAt"`
 }
 
@@ -213,7 +215,7 @@ type SIProjectMember struct {
 	ProjectID    int64   `json:"projectId"`
 	TeamMemberID int64   `json:"teamMemberId"`
 	MemberName   string  `json:"memberName"`
-	Role         string  `json:"role"`       // 역할 (책임, 선임, 등)
+	Role         string  `json:"role"`         // 역할 (책임, 선임, 등)
 	AllocationMM float64 `json:"allocationMM"` // 투입 M/M
 	StartDate    string  `json:"startDate"`
 	EndDate      *string `json:"endDate"`
@@ -221,10 +223,10 @@ type SIProjectMember struct {
 
 // SIProjectView combines Project + SIProjectDetail + WeeklyReport for UI display
 type SIProjectView struct {
-	Project          Project          `json:"project"`
-	Detail           *SIProjectDetail `json:"detail,omitempty"`
-	Members          []SIProjectMember `json:"members"`
-	WeeklyReport     *SIWeeklyReport  `json:"weeklyReport,omitempty"`
+	Project      Project           `json:"project"`
+	Detail       *SIProjectDetail  `json:"detail,omitempty"`
+	Members      []SIProjectMember `json:"members"`
+	WeeklyReport *SIWeeklyReport   `json:"weeklyReport,omitempty"`
 }
 
 // CodeGroup represents a group of common codes (e.g., position_types, employment_types)
@@ -240,11 +242,11 @@ type CodeGroup struct {
 
 // TeamProfile stores the team type and basic setup info
 type TeamProfile struct {
-	TeamType    string `json:"teamType"`    // si_business, si_field, small_team
-	TeamName    string `json:"teamName"`
-	UserName    string `json:"userName"`
-	MemberCount int    `json:"memberCount"`
-	SetupDone   bool   `json:"setupDone"`
+	TeamType     string `json:"teamType"` // si_business, si_field, small_team
+	TeamName     string `json:"teamName"`
+	UserName     string `json:"userName"`
+	MemberCount  int    `json:"memberCount"`
+	SetupDone    bool   `json:"setupDone"`
 	LinearAPIKey string `json:"linearApiKey"`
 	LinearTeamID string `json:"linearTeamId"`
 }
@@ -256,8 +258,8 @@ type Issue struct {
 	ProjectID   *int64    `json:"projectId"`
 	Title       string    `json:"title"`
 	Description string    `json:"description"`
-	Severity    string    `json:"severity"`   // critical, high, medium, low
-	Status      string    `json:"status"`     // open, in_progress, resolved, closed
+	Severity    string    `json:"severity"` // critical, high, medium, low
+	Status      string    `json:"status"`   // open, in_progress, resolved, closed
 	Assignee    string    `json:"assignee"`
 	DueDate     *string   `json:"dueDate"`
 	CreatedAt   time.Time `json:"createdAt"`

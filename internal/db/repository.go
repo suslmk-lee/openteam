@@ -130,9 +130,9 @@ func (d *Database) ListIntegrations(userID int64) ([]Integration, error) {
 
 func (d *Database) SaveActivity(a *Activity) (int64, error) {
 	res, err := d.conn.Exec(
-		`INSERT OR REPLACE INTO activities (integration_id, source, external_id, title, summary, raw_data, activity_date)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		a.IntegrationID, a.Source, a.ExternalID, a.Title, a.Summary, a.RawData, a.ActivityDate,
+		`INSERT OR REPLACE INTO activities (integration_id, source, external_id, title, summary, raw_data, activity_date, calendar_id)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		a.IntegrationID, a.Source, a.ExternalID, a.Title, a.Summary, a.RawData, a.ActivityDate, a.CalendarID,
 	)
 	if err != nil {
 		return 0, err
@@ -149,9 +149,9 @@ func (d *Database) UpsertActivity(a *Activity) (int64, error) {
 		).Scan(&existingID)
 		if err == nil {
 			_, err := d.conn.Exec(
-				`UPDATE activities SET title = ?, summary = ?, raw_data = ?, activity_date = ?, fetched_at = CURRENT_TIMESTAMP
+				`UPDATE activities SET title = ?, summary = ?, raw_data = ?, activity_date = ?, calendar_id = ?, fetched_at = CURRENT_TIMESTAMP
 				 WHERE id = ?`,
-				a.Title, a.Summary, a.RawData, a.ActivityDate, existingID,
+				a.Title, a.Summary, a.RawData, a.ActivityDate, a.CalendarID, existingID,
 			)
 			return existingID, err
 		}
@@ -160,8 +160,9 @@ func (d *Database) UpsertActivity(a *Activity) (int64, error) {
 }
 
 func (d *Database) ListActivities(weekStart, weekEnd string) ([]Activity, error) {
+	log.Printf("[DB ListActivities] Query range: %s ~ %s", weekStart, weekEnd)
 	rows, err := d.conn.Query(
-		`SELECT id, integration_id, source, external_id, title, summary, raw_data, activity_date, fetched_at
+		`SELECT id, integration_id, source, external_id, title, summary, raw_data, activity_date, calendar_id, fetched_at
 		 FROM activities WHERE activity_date BETWEEN ? AND ? ORDER BY activity_date DESC`,
 		weekStart, weekEnd,
 	)
@@ -171,13 +172,19 @@ func (d *Database) ListActivities(weekStart, weekEnd string) ([]Activity, error)
 	defer rows.Close()
 
 	var activities []Activity
+	calendarCount := 0
 	for rows.Next() {
 		var a Activity
-		if err := rows.Scan(&a.ID, &a.IntegrationID, &a.Source, &a.ExternalID, &a.Title, &a.Summary, &a.RawData, &a.ActivityDate, &a.FetchedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.IntegrationID, &a.Source, &a.ExternalID, &a.Title, &a.Summary, &a.RawData, &a.ActivityDate, &a.CalendarID, &a.FetchedAt); err != nil {
 			return nil, err
 		}
 		activities = append(activities, a)
+		if a.Source == "google_calendar" {
+			calendarCount++
+			log.Printf("[DB ListActivities] Found calendar: ID=%d, Date=%s, Title=%s", a.ID, a.ActivityDate, a.Title)
+		}
 	}
+	log.Printf("[DB ListActivities] Total: %d, Calendar: %d", len(activities), calendarCount)
 	return activities, nil
 }
 
@@ -340,16 +347,19 @@ func (d *Database) DeleteReportItem(id int64) error {
 // --- Excel Templates ---
 
 func (d *Database) SaveExcelTemplate(t *ExcelTemplate) (int64, error) {
+	if t.TeamType == "" {
+		t.TeamType = "default"
+	}
 	if t.ID > 0 {
 		_, err := d.conn.Exec(
-			"UPDATE excel_templates SET name=?, file_path=?, structure_json=? WHERE id=?",
-			t.Name, t.FilePath, t.StructureJSON, t.ID,
+			"UPDATE excel_templates SET name=?, file_path=?, structure_json=?, team_type=? WHERE id=?",
+			t.Name, t.FilePath, t.StructureJSON, t.TeamType, t.ID,
 		)
 		return t.ID, err
 	}
 	res, err := d.conn.Exec(
-		"INSERT INTO excel_templates (user_id, name, file_path, structure_json) VALUES (?, ?, ?, ?)",
-		t.UserID, t.Name, t.FilePath, t.StructureJSON,
+		"INSERT INTO excel_templates (user_id, name, file_path, structure_json, team_type) VALUES (?, ?, ?, ?, ?)",
+		t.UserID, t.Name, t.FilePath, t.StructureJSON, t.TeamType,
 	)
 	if err != nil {
 		return 0, err
@@ -360,11 +370,35 @@ func (d *Database) SaveExcelTemplate(t *ExcelTemplate) (int64, error) {
 func (d *Database) GetExcelTemplate(userID int64) (*ExcelTemplate, error) {
 	t := &ExcelTemplate{}
 	err := d.conn.QueryRow(
-		"SELECT id, user_id, name, file_path, structure_json, created_at FROM excel_templates WHERE user_id = ? ORDER BY id DESC LIMIT 1",
+		"SELECT id, user_id, COALESCE(team_type, 'default'), name, file_path, structure_json, created_at FROM excel_templates WHERE user_id = ? ORDER BY id DESC LIMIT 1",
 		userID,
-	).Scan(&t.ID, &t.UserID, &t.Name, &t.FilePath, &t.StructureJSON, &t.CreatedAt)
+	).Scan(&t.ID, &t.UserID, &t.TeamType, &t.Name, &t.FilePath, &t.StructureJSON, &t.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return t, nil
+}
+
+// GetExcelTemplateByType returns the template for the given teamType.
+// Falls back to 'default' if no teamType-specific template exists.
+func (d *Database) GetExcelTemplateByType(userID int64, teamType string) (*ExcelTemplate, error) {
+	if teamType == "" {
+		teamType = "default"
+	}
+	t := &ExcelTemplate{}
+	err := d.conn.QueryRow(
+		"SELECT id, user_id, COALESCE(team_type, 'default'), name, file_path, structure_json, created_at FROM excel_templates WHERE user_id = ? AND team_type = ? ORDER BY id DESC LIMIT 1",
+		userID, teamType,
+	).Scan(&t.ID, &t.UserID, &t.TeamType, &t.Name, &t.FilePath, &t.StructureJSON, &t.CreatedAt)
+	if err == sql.ErrNoRows {
+		if teamType == "default" {
+			return nil, nil
+		}
+		// fallback to default
+		return d.GetExcelTemplateByType(userID, "default")
 	}
 	if err != nil {
 		return nil, err
@@ -558,7 +592,7 @@ func (d *Database) SaveProject(p *Project) (int64, error) {
 func (d *Database) ListProjectsWithClient(userID int64, teamType string) ([]ProjectWithClient, error) {
 	var query string
 	var args []interface{}
-	
+
 	if teamType == "" {
 		// Fetch all projects (both SI and SM)
 		query = `
@@ -580,7 +614,7 @@ func (d *Database) ListProjectsWithClient(userID int64, teamType string) ([]Proj
 			ORDER BY p.created_at DESC`
 		args = []interface{}{userID, teamType}
 	}
-	
+
 	rows, err := d.conn.Query(query, args...)
 	if err != nil {
 		return nil, err
@@ -859,7 +893,7 @@ func (d *Database) ListAttendanceRecords(userID int64, memberID int64, startDate
 		 FROM attendance_records
 		 WHERE user_id = ?`
 	args := []interface{}{userID}
-	
+
 	if memberID > 0 {
 		query += " AND team_member_id = ?"
 		args = append(args, memberID)
@@ -899,7 +933,7 @@ func (d *Database) DeleteAttendanceRecord(userID, recordID int64) error {
 // GetAttendanceRecords retrieves individual attendance records for the week with dates
 func (d *Database) GetAttendanceRecords(userID int64, startDate, endDate string) ([]AttendanceRecord, error) {
 	log.Printf("[DB GetAttendanceRecords] userID=%d, startDate=%s, endDate=%s", userID, startDate, endDate)
-	
+
 	query := `
 		SELECT 
 			ar.id,
@@ -920,14 +954,14 @@ func (d *Database) GetAttendanceRecords(userID int64, startDate, endDate string)
 		  AND ar.record_date >= ? AND ar.record_date <= ?
 		ORDER BY ar.record_date, tm.name
 	`
-	
+
 	rows, err := d.conn.Query(query, userID, startDate, endDate)
 	if err != nil {
 		log.Printf("[DB GetAttendanceRecords] Query error: %v", err)
 		return nil, err
 	}
 	defer rows.Close()
-	
+
 	var records []AttendanceRecord
 	for rows.Next() {
 		var r AttendanceRecord
@@ -945,7 +979,7 @@ func (d *Database) GetAttendanceRecords(userID int64, startDate, endDate string)
 
 func (d *Database) GetAttendanceSummary(userID int64, startDate, endDate string) ([]AttendanceSummary, error) {
 	log.Printf("[DB GetAttendanceSummary] userID=%d, startDate=%s, endDate=%s", userID, startDate, endDate)
-	
+
 	// 먼저 해당 기간에 근태 기록이 있는지 확인
 	countQuery := `SELECT COUNT(*) FROM attendance_records WHERE user_id = ? AND record_date >= ? AND record_date <= ?`
 	var totalCount int
@@ -955,7 +989,7 @@ func (d *Database) GetAttendanceSummary(userID int64, startDate, endDate string)
 	} else {
 		log.Printf("[DB GetAttendanceSummary] Total records in period: %d", totalCount)
 	}
-	
+
 	query := `
 		SELECT 
 			tm.id as team_member_id,
@@ -1032,7 +1066,7 @@ func (d *Database) GetSIProjectDetail(userID, projectID int64) (*SIProjectDetail
 	)
 	var detail SIProjectDetail
 	detail.ProjectID = projectID
-	if err := row.Scan(&detail.ID, &detail.UserID, &detail.ProjectType, 
+	if err := row.Scan(&detail.ID, &detail.UserID, &detail.ProjectType,
 		&detail.PMName, &detail.TotalMM, &detail.CurrentPhase, &detail.ProgressRate, &detail.CreatedAt); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -1124,7 +1158,7 @@ func (d *Database) ListSIProjectMembers(userID, projectID int64) ([]SIProjectMem
 	for rows.Next() {
 		var m SIProjectMember
 		var allocationPercent float64
-		if err := rows.Scan(&m.ID, &m.UserID, &m.ProjectID, &m.TeamMemberID, &m.MemberName, 
+		if err := rows.Scan(&m.ID, &m.UserID, &m.ProjectID, &m.TeamMemberID, &m.MemberName,
 			&m.Role, &allocationPercent, &m.StartDate, &m.EndDate); err != nil {
 			return nil, err
 		}
@@ -1161,7 +1195,7 @@ func (d *Database) GetSIProjectView(userID, projectID int64, weekStart, weekEnd 
 		log.Printf("[GetSIProjectView] Failed to scan project %d: %v", projectID, err)
 		return nil, err
 	}
-	
+
 	// Build detail from projects table data
 	detail.ID = view.Project.ID
 	detail.UserID = view.Project.UserID

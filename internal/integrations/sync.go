@@ -1,3 +1,4 @@
+// Package integrations provides sync functionality using GWS CLI
 package integrations
 
 import (
@@ -8,11 +9,11 @@ import (
 	"openreport/internal/db"
 )
 
-// SyncGmail fetches sent emails via gogcli and stores them as activities
+// SyncGmail fetches sent/received emails via GWS CLI and stores them as activities
 func SyncGmail(database *db.Database, account string, weekStart, weekEnd time.Time, integrationID int64) (int, error) {
-	cli := &GogCLI{Account: account}
+	cli := &GWSCLI{Account: account}
 
-	// Fetch sent emails (업무 활동의 증거)
+	// Fetch sent emails
 	sent, err := cli.FetchSentEmails(weekStart, weekEnd)
 	if err != nil {
 		return 0, fmt.Errorf("sent email fetch failed: %w", err)
@@ -36,7 +37,10 @@ func SyncGmail(database *db.Database, account string, weekStart, weekEnd time.Ti
 			title = "(제목 없음)"
 		}
 
-		summary := fmt.Sprintf("To: %s", msg.Snippet)
+		summary := fmt.Sprintf("To: %s", msg.To)
+		if msg.Snippet != "" {
+			summary = fmt.Sprintf("To: %s | %s", msg.To, msg.Snippet)
+		}
 
 		activity := &db.Activity{
 			IntegrationID: integrationID,
@@ -89,21 +93,44 @@ func SyncGmail(database *db.Database, account string, weekStart, weekEnd time.Ti
 	return count, nil
 }
 
-// SyncGoogleCalendar fetches calendar events via gogcli and stores them as activities
-func SyncGoogleCalendar(database *db.Database, account string, weekStart, weekEnd time.Time, integrationID int64) (int, error) {
-	cli := &GogCLI{Account: account}
+// SyncGoogleCalendar fetches calendar events from multiple calendars via GWS CLI
+// Supports multiple calendars when calendarConfigs is provided
+func SyncGoogleCalendar(database *db.Database, account string, weekStart, weekEnd time.Time, integrationID int64, calendarConfigs []CalendarConfig) (int, error) {
+	cli := &GWSCLI{Account: account}
 
-	events, err := cli.FetchCalendarEvents(weekStart, weekEnd)
-	if err != nil {
-		return 0, fmt.Errorf("calendar fetch failed: %w", err)
+	var allEvents []CalendarEvent
+
+	// If specific calendars are configured, fetch from each
+	if len(calendarConfigs) > 0 {
+		for _, config := range calendarConfigs {
+			if config.ID == "" {
+				continue
+			}
+			events, err := cli.FetchCalendarEvents(config.ID, weekStart, weekEnd)
+			if err != nil {
+				log.Printf("[sync] Warning: failed to fetch calendar %s: %v", config.ID, err)
+				continue
+			}
+			allEvents = append(allEvents, events...)
+		}
+	} else {
+		// Fallback: fetch from primary calendar
+		events, err := cli.FetchPrimaryCalendarEvents(weekStart, weekEnd)
+		if err != nil {
+			return 0, fmt.Errorf("calendar fetch failed: %w", err)
+		}
+		allEvents = events
 	}
 
 	count := 0
-	for _, evt := range events {
+	for _, evt := range allEvents {
 		actDate := evt.Start
 		if len(actDate) >= 10 {
 			actDate = actDate[:10]
 		}
+
+		log.Printf("[sync] Storing calendar event: ID=%s, Date=%s, Title=%s, Calendar=%s",
+			evt.ID, actDate, evt.Summary, evt.CalendarID)
 
 		activity := &db.Activity{
 			IntegrationID: integrationID,
@@ -113,6 +140,7 @@ func SyncGoogleCalendar(database *db.Database, account string, weekStart, weekEn
 			Summary:       formatCalendarSummary(evt),
 			RawData:       "",
 			ActivityDate:  actDate,
+			CalendarID:    evt.CalendarID,
 		}
 
 		_, err := database.UpsertActivity(activity)
@@ -123,15 +151,24 @@ func SyncGoogleCalendar(database *db.Database, account string, weekStart, weekEn
 		count++
 	}
 
-	log.Printf("[sync] Google Calendar sync complete: %d activities stored", count)
+	log.Printf("[sync] Google Calendar sync complete: %d activities stored from %d calendars", count, len(calendarConfigs))
 	return count, nil
 }
 
-// normalizeDate extracts YYYY-MM-DD from date strings like "2026-04-02 10:17"
+// normalizeDate extracts YYYY-MM-DD from date strings
 func normalizeDate(dateStr string, fallback time.Time) string {
 	if dateStr == "" {
 		return fallback.Format("2006-01-02")
 	}
+	// Try to parse RFC3339 format
+	if t, err := time.Parse(time.RFC3339, dateStr); err == nil {
+		return t.Format("2006-01-02")
+	}
+	// Try to parse HTTP format
+	if t, err := time.Parse(time.RFC1123, dateStr); err == nil {
+		return t.Format("2006-01-02")
+	}
+	// Fallback: extract first 10 chars (YYYY-MM-DD)
 	if len(dateStr) >= 10 {
 		return dateStr[:10]
 	}
@@ -142,6 +179,9 @@ func formatCalendarSummary(evt CalendarEvent) string {
 	parts := []string{}
 	if evt.Start != "" {
 		parts = append(parts, evt.Start)
+	}
+	if evt.End != "" && evt.End != evt.Start {
+		parts = append(parts, "~ "+evt.End)
 	}
 	if evt.Location != "" {
 		parts = append(parts, fmt.Sprintf("장소: %s", evt.Location))

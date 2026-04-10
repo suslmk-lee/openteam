@@ -18,6 +18,9 @@ import {
   GitBranch,
   RotateCcw,
   Kanban,
+  Mail,
+  Calendar,
+  Database,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTeamProfile } from '../contexts/TeamProfileContext'
@@ -26,6 +29,7 @@ export default function Layout() {
   const [collapsed, setCollapsed] = useState(false)
   const [teamMenuOpen, setTeamMenuOpen] = useState(false)
   const [reportMenuOpen, setReportMenuOpen] = useState(false)
+  const [workDataMenuOpen, setWorkDataMenuOpen] = useState(false)
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false)
   const { profile, loading } = useTeamProfile()
   const navigate = useNavigate()
@@ -33,7 +37,7 @@ export default function Layout() {
   // Redirect to onboarding if not setup
   useEffect(() => {
     if (loading) return
-    const needsOnboarding = !profile || !profile.setupDone || !profile.teamType
+    const needsOnboarding = !profile || !profile.setupDone
     if (needsOnboarding) {
       navigate('/onboarding', { replace: true })
     }
@@ -41,7 +45,7 @@ export default function Layout() {
 
   if (loading) return null
 
-  const teamType = profile?.teamType || 'si_business'
+  const teamType = profile?.teamType || 'personal'
 
   // Team menu items by team type
   const teamMenuItems = (() => {
@@ -155,7 +159,7 @@ export default function Layout() {
                 </>
               )}
             </button>
-            
+
             {!collapsed && teamMenuOpen && (
               <div className="ml-2 space-y-1 border-l-2 border-slate-700 pl-2">
                 {teamMenuItems.map(item => (
@@ -164,7 +168,33 @@ export default function Layout() {
               </div>
             )}
           </div>
-          
+
+          {/* Work Data Accordion */}
+          <div className="space-y-1">
+            <button
+              onClick={() => setWorkDataMenuOpen(!workDataMenuOpen)}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                workDataMenuOpen ? 'bg-slate-700 text-white' : 'text-slate-300 hover:bg-slate-700 hover:text-white'
+              } ${collapsed ? 'justify-center' : ''}`}
+            >
+              <Database size={20} />
+              {!collapsed && (
+                <>
+                  <span className="flex-1 text-left">업무데이터</span>
+                  {workDataMenuOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                </>
+              )}
+            </button>
+
+            {!collapsed && workDataMenuOpen && (
+              <div className="ml-2 space-y-1 border-l-2 border-slate-700 pl-2">
+                <SidebarLink to="/workdata/gmail" icon={<Mail size={18} />} label="Gmail" collapsed={false} />
+                <SidebarLink to="/workdata/calendar" icon={<Calendar size={18} />} label="Google Calendar" collapsed={false} />
+              </div>
+            )}
+          </div>
+
+          {/* Settings Accordion */}
           <div className="space-y-1">
             <button
               onClick={() => setSettingsMenuOpen(!settingsMenuOpen)}

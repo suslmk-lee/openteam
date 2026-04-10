@@ -19,6 +19,8 @@ import FieldIssues from './pages/FieldIssues'
 import LinearDashboard from './pages/LinearDashboard'
 import TaskBoard from './pages/TaskBoard'
 import WeeklyRetro from './pages/WeeklyRetro'
+import GmailPage from './pages/GmailPage'
+import CalendarPage from './pages/CalendarPage'
 
 const container = document.getElementById('root')
 const root = createRoot(container!)
@@ -43,6 +45,8 @@ root.render(
             <Route path="/team/taskboard" element={<TaskBoard />} />
             <Route path="/team/retro" element={<WeeklyRetro />} />
             <Route path="/team/common-codes" element={<Navigate to="/settings/common-codes" replace />} />
+            <Route path="/workdata/gmail" element={<GmailPage />} />
+            <Route path="/workdata/calendar" element={<CalendarPage />} />
             <Route path="/settings" element={<Navigate to="/settings/user" replace />} />
             <Route path="/settings/user" element={<Settings section="user" />} />
             <Route path="/settings/template" element={<Settings section="template" />} />

@@ -19,10 +19,13 @@ import {
   GetProjectCategories,
   AddProjectCategory,
   DeleteProjectCategory,
-  CheckGogCLI,
-  SetupGogCredentials,
-  CheckGmailAuth,
+  CheckGWSCLI,
+  SetupGWSAuth,
+  CheckGWSAuth,
+  GetCalendars,
   UpdateTeamProfile,
+  UploadExcelTemplateForType,
+  GetExcelTemplateForType,
 } from '../../wailsjs/go/main/App'
 import { useTeamProfile } from '../contexts/TeamProfileContext'
 
@@ -66,8 +69,10 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
   const [categories, setCategories] = useState<ProjectCategory[]>([])
   const [newCategory, setNewCategory] = useState('')
   const [saveStatus, setSaveStatus] = useState<string | null>(null)
+  const [personalTemplate, setPersonalTemplate] = useState<{ name: string } | null>(null)
+  const [personalTemplateLoading, setPersonalTemplateLoading] = useState(false)
 
-  // gogcli / Gmail state
+  // gws / Gmail state
   const [gogInstalled, setGogInstalled] = useState<boolean | null>(null)
   const [gmailAccount, setGmailAccount] = useState('')
   const [gmailAuthOk, setGmailAuthOk] = useState<boolean | null>(null)
@@ -75,6 +80,25 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
   const [openAIApiKey, setOpenAIApiKey] = useState('')
   const [openAIModel, setOpenAIModel] = useState('gpt-4o-mini')
   const [openAIEnabled, setOpenAIEnabled] = useState(false)
+
+  // Google Calendar settings
+  const [availableCalendars, setAvailableCalendars] = useState<Array<{id: string, summary: string, primary?: boolean}>>([])
+  const [selectedCalendars, setSelectedCalendars] = useState<Array<{id: string, color: string}>>([])
+  const [loadingCalendars, setLoadingCalendars] = useState(false)
+
+  // Predefined calendar colors
+  const CALENDAR_COLORS = [
+    { value: '#3b82f6', label: '파랑' },
+    { value: '#ef4444', label: '빨강' },
+    { value: '#22c55e', label: '초록' },
+    { value: '#f59e0b', label: '주황' },
+    { value: '#8b5cf6', label: '보라' },
+    { value: '#ec4899', label: '분홍' },
+    { value: '#06b6d4', label: '청록' },
+    { value: '#6366f1', label: '남색' },
+    { value: '#84cc16', label: '연두' },
+    { value: '#f97316', label: '오렌지' },
+  ]
 
   // Linear settings
   const [linearApiKey, setLinearApiKey] = useState('')
@@ -99,6 +123,15 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
       setProfileMemberCount(teamProfile.memberCount || 4)
       setLinearApiKey(teamProfile.linearApiKey || '')
       setLinearTeamId(teamProfile.linearTeamId || '')
+
+      // Load personal template if user is personal type
+      if (teamProfile.teamType === 'personal') {
+        GetExcelTemplateForType('personal')
+          .then(tmpl => {
+            setPersonalTemplate(tmpl ? { name: tmpl.name } : null)
+          })
+          .catch(err => console.error('Failed to load personal template:', err))
+      }
     }
   }, [teamProfile])
 
@@ -111,13 +144,17 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
       }
       const tmpl = await GetExcelTemplate()
       if (tmpl) setTemplate(tmpl)
+
+      // Load personal template if user is personal type
+      // This will be loaded when teamProfile is available in useEffect
+
       const ints = await GetIntegrations()
       setIntegrations(ints || [])
       const cats = await GetProjectCategories()
       setCategories(cats || [])
 
-      // Check gogcli
-      const gogStatus = await CheckGogCLI()
+      // Check gws CLI
+      const gogStatus = await CheckGWSCLI()
       setGogInstalled(gogStatus.ok)
 
       // Load existing Gmail account from integration config
@@ -127,9 +164,20 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
           const config = JSON.parse(gmailInt.configJson)
           if (config.account) {
             setGmailAccount(config.account)
-            const authStatus = await CheckGmailAuth(config.account)
+            const authStatus = await CheckGWSAuth()
             setGmailAuthOk(authStatus.ok)
             setGmailAuthMsg(authStatus.message)
+          }
+        } catch {}
+      }
+
+      // Load saved calendar selections from google_calendar integration config
+      const calendarInt = (ints || []).find((i: Integration) => i.toolType === 'google_calendar')
+      if (calendarInt && calendarInt.configJson) {
+        try {
+          const config = JSON.parse(calendarInt.configJson)
+          if (config.calendars && Array.isArray(config.calendars)) {
+            setSelectedCalendars(config.calendars)
           }
         } catch {}
       }
@@ -170,6 +218,23 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
       }
     } catch (err) {
       console.error('Failed to upload template:', err)
+    }
+  }
+
+  async function handleUploadPersonalTemplate() {
+    setPersonalTemplateLoading(true)
+    try {
+      const result = await UploadExcelTemplateForType('personal')
+      if (result) {
+        const tmpl = await GetExcelTemplateForType('personal')
+        setPersonalTemplate(tmpl ? { name: tmpl.name } : null)
+        showStatus('개인용 템플릿이 업로드되었습니다')
+      }
+    } catch (err) {
+      console.error('Personal template upload failed:', err)
+      showStatus('개인용 템플릿 업로드 실패')
+    } finally {
+      setPersonalTemplateLoading(false)
     }
   }
 
@@ -299,6 +364,27 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
               <Upload size={16} />
               {template ? '템플릿 변경' : '템플릿 업로드'}
             </button>
+
+            {teamProfile?.teamType === 'personal' && (
+              <div className="mt-4 pt-4 border-t border-slate-200">
+                <h4 className="text-sm font-medium text-slate-700 mb-2">개인용 템플릿</h4>
+                <p className="text-xs text-slate-400 mb-3">
+                  개인용 전용 템플릿입니다. 없을 경우 기본 템플릿을 사용합니다.
+                </p>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-slate-600 flex-1">
+                    {personalTemplate ? personalTemplate.name : '(업로드 없음 — 기본 템플릿 사용)'}
+                  </span>
+                  <button
+                    onClick={handleUploadPersonalTemplate}
+                    disabled={personalTemplateLoading}
+                    className="px-3 py-1.5 text-sm bg-blue-600 text-white hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50"
+                  >
+                    {personalTemplateLoading ? '업로드 중...' : '업로드'}
+                  </button>
+                </div>
+              </div>
+            )}
           </section>
           )}
 
@@ -368,21 +454,21 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
           </section>
 
           <section className="bg-white border border-slate-200 rounded-xl p-6">
-            <h3 className="text-base font-semibold text-slate-800 mb-4">Google 연동 (gogcli)</h3>
+            <h3 className="text-base font-semibold text-slate-800 mb-4">Google 연동 (gws)</h3>
             <p className="text-xs text-slate-500 mb-4">
-              Gmail, Google Calendar 데이터를 가져오려면 gogcli 설정이 필요합니다.
+              Gmail, Google Calendar 데이터를 가져오려면 gws CLI 설정이 필요합니다.
             </p>
 
-            {/* Step 1: gogcli 설치 상태 */}
+            {/* Step 1: gws CLI 설치 상태 */}
             <div className="space-y-4">
               <div className="flex items-center gap-3 p-3 border border-slate-100 rounded-lg">
                 <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
                   gogInstalled ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'
                 }`}>1</div>
                 <div className="flex-1">
-                  <p className="text-sm font-medium text-slate-800">gogcli 설치</p>
+                  <p className="text-sm font-medium text-slate-800">gws CLI 설치</p>
                   <p className="text-xs text-slate-500">
-                    {gogInstalled === null ? '확인 중...' : gogInstalled ? '✓ 설치됨' : '미설치 — go install github.com/steipete/gogcli/cmd/gog@latest'}
+                    {gogInstalled === null ? '확인 중...' : gogInstalled ? '✓ 설치됨' : '미설치 — npm install -g @googleworkspace/cli'}
                   </p>
                 </div>
                 {gogInstalled ? (
@@ -404,7 +490,7 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
                 <button
                   onClick={async () => {
                     try {
-                      const result = await SetupGogCredentials()
+                      const result = await SetupGWSAuth()
                       if (result) showStatus('OAuth credentials 저장 완료')
                     } catch (err) {
                       console.error('Credentials setup failed:', err)
@@ -425,7 +511,7 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
                   <div className="flex-1">
                     <p className="text-sm font-medium text-slate-800">Gmail 계정 연동</p>
                     <p className="text-xs text-slate-500">
-                      gog auth add 명령으로 인증 후, 계정을 입력하세요
+                      터미널에서 'gws auth setup' 실행 후 저장하세요
                     </p>
                   </div>
                   {gmailAuthOk && <CheckCircle size={18} className="text-green-500" />}
@@ -448,13 +534,13 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
                         // Also save Google Calendar with same account
                         await SaveIntegration('google_calendar', configJson, true)
                         // Check auth
-                        const authStatus = await CheckGmailAuth(gmailAccount.trim())
+                        const authStatus = await CheckGWSAuth()
                         setGmailAuthOk(authStatus.ok)
                         setGmailAuthMsg(authStatus.message)
                         if (authStatus.ok) {
                           showStatus('Gmail 연동이 설정되었습니다')
                         } else {
-                          showStatus('계정 저장됨. 터미널에서 gog auth add ' + gmailAccount.trim() + ' 실행 필요')
+                          showStatus('계정 저장됨. 터미널에서 gws auth login 실행 필요')
                         }
                         const ints = await GetIntegrations()
                         setIntegrations(ints || [])
@@ -471,6 +557,136 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
                 {gmailAuthMsg && (
                   <p className={`ml-9 text-xs ${gmailAuthOk ? 'text-green-600' : 'text-amber-600'}`}>
                     {gmailAuthMsg}
+                  </p>
+                )}
+              </div>
+
+              {/* Step 4: Google Calendar Selection */}
+              <div className="p-3 border border-slate-100 rounded-lg space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold bg-slate-100 text-slate-500">4</div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-slate-800">Google Calendar 선택</p>
+                      <p className="text-xs text-slate-500">
+                        여러 캘린더를 선택하고 색상을 지정하세요
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      if (!gmailAccount.trim()) {
+                        setGmailAuthMsg('먼저 Gmail 계정을 설정해주세요')
+                        return
+                      }
+                      setLoadingCalendars(true)
+                      try {
+                        const calendars = await GetCalendars()
+                        setAvailableCalendars(calendars || [])
+                        // Merge with existing selections - preserve calendars that still exist
+                        const existingIds = new Set(calendars?.map((c: any) => c.id) || [])
+                        const preservedSelections = selectedCalendars.filter(sc => existingIds.has(sc.id))
+                        // Auto-select primary only if no existing selections
+                        const primary = calendars?.find((c: any) => c.primary)
+                        if (primary && preservedSelections.length === 0) {
+                          setSelectedCalendars([{ id: primary.id, color: CALENDAR_COLORS[0].value }])
+                        } else {
+                          setSelectedCalendars(preservedSelections)
+                        }
+                      } catch (err) {
+                        console.error('Failed to load calendars:', err)
+                        setGmailAuthMsg('캘린더 목록을 불러올 수 없습니다')
+                      } finally {
+                        setLoadingCalendars(false)
+                      }
+                    }}
+                    disabled={!gmailAuthOk || loadingCalendars}
+                    className="px-3 py-1.5 text-sm bg-blue-600 text-white hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50"
+                  >
+                    {loadingCalendars ? '불러오는 중...' : '캘린더 목록'}
+                  </button>
+                </div>
+
+                {/* Calendar List with Checkboxes and Color Pickers */}
+                {availableCalendars.length > 0 && (
+                  <div className="ml-9 space-y-2">
+                    <p className="text-xs text-slate-500 mb-2">캘린더를 선택하고 색상을 지정하세요:</p>
+                    <div className="space-y-2 max-h-48 overflow-y-auto border border-slate-200 rounded-lg p-2">
+                      {availableCalendars.map((cal) => {
+                        const isSelected = selectedCalendars.some(sc => sc.id === cal.id)
+                        const selectedCal = selectedCalendars.find(sc => sc.id === cal.id)
+                        return (
+                          <div key={cal.id} className="flex items-center gap-3 p-2 hover:bg-slate-50 rounded">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  // Assign next available color
+                                  const usedColors = selectedCalendars.map(sc => sc.color)
+                                  const availableColor = CALENDAR_COLORS.find(c => !usedColors.includes(c.value))
+                                  const color = availableColor?.value || CALENDAR_COLORS[0].value
+                                  setSelectedCalendars([...selectedCalendars, { id: cal.id, color }])
+                                } else {
+                                  setSelectedCalendars(selectedCalendars.filter(sc => sc.id !== cal.id))
+                                }
+                                // Save to integration config
+                                const configJson = JSON.stringify({
+                                  account: gmailAccount.trim(),
+                                  calendars: e.target.checked
+                                    ? [...selectedCalendars, { id: cal.id, color: selectedCal?.color || CALENDAR_COLORS[0].value }]
+                                    : selectedCalendars.filter(sc => sc.id !== cal.id)
+                                })
+                                SaveIntegration('google_calendar', configJson, true)
+                              }}
+                              className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <span className="flex-1 text-sm text-slate-700">
+                              {cal.summary}
+                              {cal.primary && <span className="ml-2 text-xs text-blue-600">(기본)</span>}
+                            </span>
+                            {isSelected && (
+                              <div className="flex items-center gap-1">
+                                {CALENDAR_COLORS.map((color) => (
+                                  <button
+                                    key={color.value}
+                                    onClick={() => {
+                                      const updated = selectedCalendars.map(sc =>
+                                        sc.id === cal.id ? { ...sc, color: color.value } : sc
+                                      )
+                                      setSelectedCalendars(updated)
+                                      const configJson = JSON.stringify({
+                                        account: gmailAccount.trim(),
+                                        calendars: updated
+                                      })
+                                      SaveIntegration('google_calendar', configJson, true)
+                                    }}
+                                    className={`w-5 h-5 rounded-full border-2 transition-all ${
+                                      selectedCal?.color === color.value
+                                        ? 'border-slate-800 scale-110'
+                                        : 'border-transparent hover:scale-105'
+                                    }`}
+                                    style={{ backgroundColor: color.value }}
+                                    title={color.label}
+                                  />
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                    {selectedCalendars.length === 0 && (
+                      <p className="text-xs text-amber-600">
+                        최소 하나의 캘린더를 선택해주세요
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {availableCalendars.length === 0 && gmailAuthOk && !loadingCalendars && (
+                  <p className="ml-9 text-xs text-slate-500">
+                    "캘린더 목록" 버튼을 클릭하여 사용 가능한 캘린더를 불러오세요
                   </p>
                 )}
               </div>
@@ -623,6 +839,7 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
                   onChange={e => setProfileTeamType(e.target.value)}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
+                  <option value="personal">개인 (Personal)</option>
                   <option value="si_business">SI 사업팀</option>
                   <option value="si_field">현장 SI팀 (PM/PL)</option>
                   <option value="small_team">소규모팀 (3~4인)</option>

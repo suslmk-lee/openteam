@@ -11,6 +11,8 @@ import {
   RefreshCw,
   Pencil,
   FileSpreadsheet,
+  Copy,
+  Sparkles,
 } from 'lucide-react'
 import {
   GetReportItems,
@@ -21,7 +23,11 @@ import {
   GetProjectCategories,
   PreprocessReportItemsWithAI,
   OpenFile,
+  RefineMarkdownWithAI,
 } from '../../wailsjs/go/main/App'
+import ReactMarkdown from 'react-markdown'
+import { generateMarkdown } from '../utils/generateMarkdown'
+import { useTeamProfile } from '../contexts/TeamProfileContext'
 
 interface ReportItem {
   id: number
@@ -71,6 +77,16 @@ export default function ReportEditor() {
   const [preprocessing, setPreprocessing] = useState(false)
   const [activePeriod, setActivePeriod] = useState('this_week')
 
+  const { profile } = useTeamProfile()
+  const teamType = profile?.teamType || 'personal'
+
+  const [activeTab, setActiveTab] = useState<'edit' | 'preview'>('edit')
+  const [markdownText, setMarkdownText] = useState('')
+  const [refinedMarkdown, setRefinedMarkdown] = useState('')
+  const [isRefining, setIsRefining] = useState(false)
+  const [copyMsg, setCopyMsg] = useState<string | null>(null)
+  const [weekInfo, setWeekInfo] = useState<{ weekStart: string; weekEnd: string; label: string } | null>(null)
+
   useEffect(() => {
     initializeEditor()
   }, [reportId])
@@ -91,14 +107,31 @@ export default function ReportEditor() {
 
   async function loadData() {
     try {
-      const [reportItems, cats] = await Promise.all([
+      const promises: any[] = [
         GetReportItems(reportId),
         GetProjectCategories(),
-      ])
+      ]
+
+      const results = await Promise.all(promises)
+      const reportItems = results[0]
+      const cats = results[1]
+
       setItems(reportItems || [])
       setCategories(cats || [])
+
+      // weekInfo fallback (GetWeeklyReport not in bindings)
+      setWeekInfo({ weekStart: '', weekEnd: '', label: '' })
     } catch (err) {
       console.error('Failed to load report data:', err)
+    }
+  }
+
+  function handleTabChange(tab: 'edit' | 'preview') {
+    setActiveTab(tab)
+    if (tab === 'preview') {
+      const md = generateMarkdown(items, teamType, weekInfo || { weekStart: '', weekEnd: '', label: '' })
+      setMarkdownText(md)
+      setRefinedMarkdown('') // 탭 전환 시 AI 결과 초기화
     }
   }
 
@@ -216,7 +249,29 @@ export default function ReportEditor() {
           >
             <ArrowLeft size={18} />
           </button>
-          <h2 className="text-lg font-semibold text-slate-800">보고서 편집</h2>
+          {/* 탭 */}
+          <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+            <button
+              onClick={() => handleTabChange('edit')}
+              className={`px-4 py-1.5 text-sm rounded-md transition-colors ${
+                activeTab === 'edit'
+                  ? 'bg-white text-slate-800 font-medium shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              편집
+            </button>
+            <button
+              onClick={() => handleTabChange('preview')}
+              className={`px-4 py-1.5 text-sm rounded-md transition-colors ${
+                activeTab === 'preview'
+                  ? 'bg-white text-slate-800 font-medium shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              미리보기
+            </button>
+          </div>
           <span className="text-sm text-slate-400">
             {items.filter(i => i.isSelected).length}개 항목 선택됨
           </span>
@@ -266,6 +321,7 @@ export default function ReportEditor() {
       </header>
 
       {/* Content */}
+      {activeTab === 'edit' && (
       <div className="flex-1 overflow-y-auto p-6">
         <div className="max-w-4xl mx-auto space-y-6">
           {/* Period tabs */}
@@ -455,6 +511,28 @@ export default function ReportEditor() {
           })}
         </div>
       </div>
+      )}
+
+      {activeTab === 'preview' && (
+        <div className="flex-1 overflow-y-auto p-6">
+          <div className="max-w-3xl mx-auto bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
+            <div className="text-slate-800 text-sm leading-relaxed space-y-2">
+              <ReactMarkdown
+                components={{
+                  h1: ({ children }) => <h1 className="text-xl font-bold text-slate-900 mb-4">{children}</h1>,
+                  h2: ({ children }) => <h2 className="text-base font-semibold text-slate-800 mt-6 mb-2 border-b border-slate-200 pb-1">{children}</h2>,
+                  h3: ({ children }) => <h3 className="text-sm font-medium text-slate-700 mt-3 mb-1">{children}</h3>,
+                  ul: ({ children }) => <ul className="space-y-1 ml-4">{children}</ul>,
+                  li: ({ children }) => <li className="flex gap-2 text-slate-700"><span className="text-slate-400 shrink-0">•</span><span>{children}</span></li>,
+                  p: ({ children }) => <p className="text-slate-600">{children}</p>,
+                }}
+              >
+                {refinedMarkdown || markdownText || '항목을 선택하면 미리보기가 생성됩니다.'}
+              </ReactMarkdown>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

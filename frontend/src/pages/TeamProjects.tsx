@@ -116,6 +116,10 @@ export default function TeamProjects() {
   const { profile } = useTeamProfile()
   const currentTeamType = profile?.teamType || ''
 
+  // Debug log
+  console.log('[TeamProjects] profile:', profile)
+  console.log('[TeamProjects] currentTeamType:', currentTeamType)
+
   const [week, setWeek] = useState<WeekInfo | null>(null)
   const [weekOffset, setWeekOffset] = useState(0)
   const [statuses, setStatuses] = useState<string[]>([])

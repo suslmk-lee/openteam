@@ -448,7 +448,7 @@ export default function ReportEditor() {
                                 {item.category}
                               </span>
                             )}
-                            {(section.key === 'project_progress' || section.key === 'business_dev') && item.workType && (
+                            {teamType === 'si_business' && (section.key === 'project_progress' || section.key === 'business_dev') && item.workType && (
                               <select
                                 value={item.workType || 'si'}
                                 onChange={e => handleWorkTypeChange(item, e.target.value)}
@@ -480,7 +480,7 @@ export default function ReportEditor() {
                                   </option>
                                 ))}
                               </select>
-                              {(section.key === 'project_progress' || section.key === 'business_dev') && item.workType && (
+                              {teamType === 'si_business' && (section.key === 'project_progress' || section.key === 'business_dev') && item.workType && (
                                 <select
                                   value={item.workType || 'si'}
                                   onChange={e => {

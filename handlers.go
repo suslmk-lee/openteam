@@ -170,6 +170,10 @@ func (a *App) ListWeeklyReports() ([]db.WeeklyReport, error) {
 	return a.database.ListWeeklyReports(user.ID)
 }
 
+func (a *App) GetWeeklyReport(reportID int64) (*db.WeeklyReport, error) {
+	return a.database.GetWeeklyReport(reportID)
+}
+
 // --- Report Items ---
 
 func (a *App) GetReportItems(reportID int64) ([]db.ReportItem, error) {

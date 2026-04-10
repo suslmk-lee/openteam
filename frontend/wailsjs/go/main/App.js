@@ -222,6 +222,10 @@ export function GetWeekByOffset(arg1) {
   return window['go']['main']['App']['GetWeekByOffset'](arg1);
 }
 
+export function GetWeeklyReport(arg1) {
+  return window['go']['main']['App']['GetWeeklyReport'](arg1);
+}
+
 export function Greet(arg1) {
   return window['go']['main']['App']['Greet'](arg1);
 }

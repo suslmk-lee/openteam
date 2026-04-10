@@ -24,6 +24,7 @@ import {
   PreprocessReportItemsWithAI,
   OpenFile,
   RefineMarkdownWithAI,
+  GetWeeklyReport,
 } from '../../wailsjs/go/main/App'
 import ReactMarkdown from 'react-markdown'
 import { generateMarkdown } from '../utils/generateMarkdown'
@@ -107,20 +108,22 @@ export default function ReportEditor() {
 
   async function loadData() {
     try {
-      const promises: any[] = [
+      const [reportItems, cats, report] = await Promise.all([
         GetReportItems(reportId),
         GetProjectCategories(),
-      ]
-
-      const results = await Promise.all(promises)
-      const reportItems = results[0]
-      const cats = results[1]
+        GetWeeklyReport(reportId),
+      ])
 
       setItems(reportItems || [])
       setCategories(cats || [])
 
-      // weekInfo fallback (GetWeeklyReport not in bindings)
-      setWeekInfo({ weekStart: '', weekEnd: '', label: '' })
+      if (report) {
+        setWeekInfo({
+          weekStart: report.weekStart,
+          weekEnd: report.weekEnd,
+          label: `${report.weekStart} ~ ${report.weekEnd}`,
+        })
+      }
     } catch (err) {
       console.error('Failed to load report data:', err)
     }

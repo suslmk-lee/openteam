@@ -114,6 +114,8 @@ export function GetWeekActivities(arg1:string,arg2:string):Promise<Array<main.Ac
 
 export function GetWeekByOffset(arg1:number):Promise<main.WeekInfo>;
 
+export function GetWeeklyReport(arg1:number):Promise<db.WeeklyReport>;
+
 export function Greet(arg1:string):Promise<string>;
 
 export function ListAttendanceRecords(arg1:number,arg2:string,arg3:string):Promise<Array<db.AttendanceRecord>>;

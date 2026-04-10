@@ -850,6 +850,27 @@ func (a *App) getOpenAIConfig() (*openAIIntegrationConfig, error) {
 	return &cfg, nil
 }
 
+// RefineMarkdownWithAI sends the markdown report to OpenAI for polishing.
+// It returns the refined markdown. Original ReportItems are not modified.
+func (a *App) RefineMarkdownWithAI(markdownText string) (string, error) {
+	cfg, err := a.getOpenAIConfig()
+	if err != nil {
+		return "", fmt.Errorf("OpenAI 설정 조회 실패: %w", err)
+	}
+	if cfg == nil {
+		return "", fmt.Errorf("OpenAI API Key가 설정되지 않았습니다. 설정 > 연동 설정에서 OpenAI를 등록해주세요.")
+	}
+
+	systemPrompt := "당신은 한국어 업무 보고서 작성 전문가입니다. 주어진 주간업무보고서 마크다운을 자연스럽고 간결한 한국어 보고서체로 다듬어주세요. 마크다운 구조(##, - 등)는 그대로 유지하고 내용만 교정합니다. 원본에 없는 내용을 추가하지 마세요."
+
+	client := ai.NewClient(cfg.APIKey, cfg.Model)
+	refined, err := client.ChatCompletion(systemPrompt, markdownText)
+	if err != nil {
+		return "", fmt.Errorf("AI 다듬기 실패: %w", err)
+	}
+	return refined, nil
+}
+
 // --- Excel Template ---
 
 func (a *App) UploadExcelTemplate() (string, error) {

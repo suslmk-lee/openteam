@@ -135,6 +135,33 @@ export default function ReportEditor() {
     }
   }
 
+  async function handleRefine() {
+    const source = markdownText
+    if (!source) return
+    setIsRefining(true)
+    try {
+      const result = await RefineMarkdownWithAI(source)
+      setRefinedMarkdown(result)
+    } catch (err: any) {
+      showStatus(err?.message || 'AI 다듬기 실패')
+    } finally {
+      setIsRefining(false)
+    }
+  }
+
+  async function handleCopyMarkdown() {
+    const md = refinedMarkdown || markdownText
+    if (!md) return
+    try {
+      await navigator.clipboard.writeText(md)
+      setCopyMsg('복사됨!')
+      setTimeout(() => setCopyMsg(null), 2000)
+    } catch {
+      setCopyMsg('복사 실패')
+      setTimeout(() => setCopyMsg(null), 2000)
+    }
+  }
+
   async function runPreprocess(silent = false) {
     if (!reportId) return
     setPreprocessing(true)
@@ -309,6 +336,26 @@ export default function ReportEditor() {
             <RefreshCw size={15} className={preprocessing ? 'animate-spin' : ''} />
             {preprocessing ? 'AI 전처리 중...' : 'AI 전처리'}
           </button>
+          {activeTab === 'preview' && (
+            <>
+              <button
+                onClick={handleRefine}
+                disabled={isRefining || !markdownText}
+                className="flex items-center gap-2 px-3 py-1.5 text-sm bg-purple-100 text-purple-700 hover:bg-purple-200 rounded-lg transition-colors disabled:opacity-50"
+              >
+                <Sparkles size={16} className={isRefining ? 'animate-pulse' : ''} />
+                {isRefining ? 'AI 처리 중...' : 'AI 다듬기'}
+              </button>
+              <button
+                onClick={handleCopyMarkdown}
+                disabled={!markdownText}
+                className="flex items-center gap-2 px-3 py-1.5 text-sm bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-lg transition-colors disabled:opacity-50"
+              >
+                <Copy size={16} />
+                {copyMsg || 'MD 복사'}
+              </button>
+            </>
+          )}
           <button
             onClick={handleExport}
             disabled={exporting || preprocessing || items.filter(i => i.isSelected).length === 0}

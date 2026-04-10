@@ -46,12 +46,14 @@ type ActivityWithSource struct {
 }
 
 func (a *App) GetWeekActivities(weekStart, weekEnd string) ([]ActivityWithSource, error) {
+	log.Printf("[GetWeekActivities] Called with range: %s ~ %s", weekStart, weekEnd)
 	activities, err := a.database.ListActivities(weekStart, weekEnd)
 	if err != nil {
 		return nil, err
 	}
 
 	var result []ActivityWithSource
+	calendarCount := 0
 	for _, act := range activities {
 		aws := ActivityWithSource{
 			Activity:    act,
@@ -59,7 +61,12 @@ func (a *App) GetWeekActivities(weekStart, weekEnd string) ([]ActivityWithSource
 			SourceIcon:  sourceIcon(act.Source),
 		}
 		result = append(result, aws)
+		if act.Source == "google_calendar" {
+			calendarCount++
+			log.Printf("[GetWeekActivities] Calendar activity: ID=%d, Title=%s, Date=%s", act.ID, act.Title, act.ActivityDate)
+		}
 	}
+	log.Printf("[GetWeekActivities] Total: %d activities, Calendar: %d", len(result), calendarCount)
 	return result, nil
 }
 
@@ -201,7 +208,7 @@ func (a *App) AddReportItem(reportID int64, section, category, content string, a
 }
 
 func (a *App) UpdateReportItem(item db.ReportItem) error {
-	log.Printf("[UpdateReportItem] Updating item %d: content=%.50s..., section=%s, category=%s", 
+	log.Printf("[UpdateReportItem] Updating item %d: content=%.50s..., section=%s, category=%s",
 		item.ID, item.Content, item.Section, item.Category)
 	_, err := a.database.SaveReportItem(&item)
 	if err != nil {
@@ -328,7 +335,7 @@ func (a *App) PopulateReportFromTeamData(reportID int64) (int, error) {
 		for _, r := range records {
 			memberRecords[r.TeamMemberID] = append(memberRecords[r.TeamMemberID], r)
 		}
-		
+
 		// Format each member's attendance as date list
 		attendanceLines := []string{}
 		for _, recs := range memberRecords {
@@ -336,7 +343,7 @@ func (a *App) PopulateReportFromTeamData(reportID int64) (int, error) {
 				continue
 			}
 			memberName := recs[0].TeamMemberName
-			
+
 			// Format dates
 			dateParts := []string{}
 			for _, r := range recs {
@@ -345,13 +352,13 @@ func (a *App) PopulateReportFromTeamData(reportID int64) (int, error) {
 				if idx := strings.Index(dateStr, "T"); idx != -1 {
 					dateStr = dateStr[:idx]
 				}
-				
+
 				date, parseErr := time.Parse("2006-01-02", dateStr)
 				if parseErr == nil {
 					weekday := []string{"일", "월", "화", "수", "목", "금", "토"}[date.Weekday()]
 					dateStr = fmt.Sprintf("%04d/%02d/%02d(%s)", date.Year(), date.Month(), date.Day(), weekday)
 				}
-				
+
 				switch r.Type {
 				case "vacation":
 					dateParts = append(dateParts, dateStr+" 연차")
@@ -361,14 +368,14 @@ func (a *App) PopulateReportFromTeamData(reportID int64) (int, error) {
 					dateParts = append(dateParts, dateStr+" 오후반차")
 				}
 			}
-			
+
 			if len(dateParts) > 0 {
 				// Group by member
 				attendanceLines = append(attendanceLines,
 					fmt.Sprintf("%s: %s", memberName, strings.Join(dateParts, ", ")))
 			}
 		}
-		
+
 		if len(attendanceLines) > 0 {
 			content := strings.Join(attendanceLines, "\n")
 			addItem("attendance", "근태현황", content, "", "this_week")
@@ -908,6 +915,79 @@ func (a *App) GetExcelTemplate() (*db.ExcelTemplate, error) {
 	return a.database.GetExcelTemplate(user.ID)
 }
 
+func (a *App) UploadExcelTemplateForType(teamType string) (string, error) {
+	if teamType == "" {
+		teamType = "default"
+	}
+	selection, err := wailsRuntime.OpenFileDialog(a.ctx, wailsRuntime.OpenDialogOptions{
+		Title: "Excel 템플릿 선택",
+		Filters: []wailsRuntime.FileFilter{
+			{DisplayName: "Excel Files", Pattern: "*.xlsx;*.xls"},
+		},
+	})
+	if err != nil {
+		return "", err
+	}
+	if selection == "" {
+		return "", nil
+	}
+
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return "", err
+	}
+
+	destDir := filepath.Join(a.dataDir, "templates")
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		return "", err
+	}
+
+	destName := fmt.Sprintf("%s_%s", teamType, filepath.Base(selection))
+	destPath := filepath.Join(destDir, destName)
+	if err := copyFile(selection, destPath); err != nil {
+		return "", fmt.Errorf("failed to copy template: %w", err)
+	}
+
+	ts, err := excel.ParseTemplate(destPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse template: %w", err)
+	}
+
+	structJSON, err := excel.StructureToJSON(ts)
+	if err != nil {
+		return "", err
+	}
+
+	// Find existing template for this teamType to update instead of insert
+	existing, _ := a.database.GetExcelTemplateByType(user.ID, teamType)
+	tmpl := &db.ExcelTemplate{
+		UserID:        user.ID,
+		TeamType:      teamType,
+		Name:          filepath.Base(selection),
+		FilePath:      destPath,
+		StructureJSON: structJSON,
+	}
+	if existing != nil {
+		tmpl.ID = existing.ID
+	}
+
+	_, err = a.database.SaveExcelTemplate(tmpl)
+	if err != nil {
+		return "", err
+	}
+
+	log.Printf("Template uploaded for teamType=%s: %s", teamType, tmpl.Name)
+	return structJSON, nil
+}
+
+func (a *App) GetExcelTemplateForType(teamType string) (*db.ExcelTemplate, error) {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return nil, err
+	}
+	return a.database.GetExcelTemplateByType(user.ID, teamType)
+}
+
 // --- Excel Export ---
 
 func (a *App) ExportWeeklyReport(reportID int64) (string, error) {
@@ -919,7 +999,12 @@ func (a *App) ExportWeeklyReport(reportID int64) (string, error) {
 		return "", err
 	}
 
-	tmpl, err := a.database.GetExcelTemplate(user.ID)
+	profile, _ := a.database.GetTeamProfile(user.ID)
+	teamType := "default"
+	if profile != nil && profile.TeamType != "" {
+		teamType = profile.TeamType
+	}
+	tmpl, err := a.database.GetExcelTemplateByType(user.ID, teamType)
 	if err != nil {
 		log.Printf("Export error - GetExcelTemplate: %v", err)
 		return "", fmt.Errorf("템플릿 조회 실패: %w", err)
@@ -1017,7 +1102,7 @@ func (a *App) ExportWeeklyReport(reportID int64) (string, error) {
 	if err != nil {
 		log.Printf("Export warning - ListTeamMembers: %v", err)
 	}
-	
+
 	// Fetch all SI projects for reference
 	projects, err := a.database.ListProjectsWithClient(user.ID, "si")
 	if err != nil {
@@ -1035,7 +1120,7 @@ func (a *App) ExportWeeklyReport(reportID int64) (string, error) {
 			Name: member.Name,
 			Team: member.Position,
 		}
-		
+
 		// Get assignments for this member by TeamMemberID
 		assignments, err := a.database.ListMemberAssignments(user.ID, report.WeekStart, report.WeekEnd)
 		if err != nil {
@@ -1058,7 +1143,7 @@ func (a *App) ExportWeeklyReport(reportID int64) (string, error) {
 				}
 			}
 		}
-		
+
 		// If no projects assigned, set default 1.0 for current month
 		if len(utilMember.Projects) == 0 {
 			monthIdx := time.Now().Month() - 1
@@ -1066,7 +1151,7 @@ func (a *App) ExportWeeklyReport(reportID int64) (string, error) {
 				utilMember.MonthlyMM[monthIdx] = 1.0
 			}
 		}
-		
+
 		utilMembers = append(utilMembers, utilMember)
 	}
 
@@ -1189,13 +1274,13 @@ func (a *App) DeleteProjectCategory(id int64) error {
 // --- SI Team Ops ---
 
 var validSIProjectStatuses = map[string]bool{
-	"제안/POC":   true,
+	"제안/POC": true,
 	"분석/설계":  true,
-	"개발":       true,
-	"테스트":     true,
-	"오픈":       true,
-	"안정화":     true,
-	"종료":       true,
+	"개발":     true,
+	"테스트":    true,
+	"오픈":     true,
+	"안정화":    true,
+	"종료":     true,
 }
 
 type commonCodeSeed struct {
@@ -1789,9 +1874,9 @@ func (a *App) GetSIWeeklySnapshot(weekStart, weekEnd string) (*db.SIWeeklySnapsh
 // --- Attendance ---
 
 var validAttendanceTypes = map[string]bool{
-	"vacation":         true,
-	"morning_half":     true,
-	"afternoon_half":   true,
+	"vacation":       true,
+	"morning_half":   true,
+	"afternoon_half": true,
 }
 
 func (a *App) GetAttendanceTypes() []string {
@@ -1934,7 +2019,7 @@ func toJSON(v interface{}) string {
 	return string(data)
 }
 
-// --- gogcli Integration ---
+// --- GWS Integration ---
 
 type SyncResult struct {
 	Success bool   `json:"success"`
@@ -1947,50 +2032,37 @@ type StatusResult struct {
 	Message string `json:"message"`
 }
 
-func (a *App) CheckGogCLI() StatusResult {
-	if err := integrations.CheckInstalled(); err != nil {
+// CheckGWSCLI checks if the gws CLI is installed
+func (a *App) CheckGWSCLI() StatusResult {
+	cli := &integrations.GWSCLI{}
+	if err := cli.CheckInstalled(); err != nil {
 		return StatusResult{Ok: false, Message: err.Error()}
 	}
-	return StatusResult{Ok: true, Message: "gogcli (gog) is installed"}
+	return StatusResult{Ok: true, Message: "gws CLI is installed"}
 }
 
-func (a *App) CheckGmailAuth(account string) StatusResult {
-	cli := &integrations.GogCLI{Account: account}
+// CheckGWSAuth checks if gws is authenticated
+func (a *App) CheckGWSAuth() StatusResult {
+	cli := &integrations.GWSCLI{}
 	if err := cli.CheckAuth(); err != nil {
 		return StatusResult{Ok: false, Message: err.Error()}
 	}
-	return StatusResult{Ok: true, Message: "Gmail 인증 성공"}
+	return StatusResult{Ok: true, Message: "Google Workspace 인증 성공"}
 }
 
-func (a *App) SetupGogCredentials() (string, error) {
-	selection, err := wailsRuntime.OpenFileDialog(a.ctx, wailsRuntime.OpenDialogOptions{
-		Title: "Google OAuth Client JSON 파일 선택",
-		Filters: []wailsRuntime.FileFilter{
-			{DisplayName: "JSON Files", Pattern: "*.json"},
-		},
-	})
+// GetCalendars returns the list of available Google Calendars
+func (a *App) GetCalendars() ([]integrations.Calendar, error) {
+	cli := &integrations.GWSCLI{}
+	calendars, err := cli.FetchCalendars()
 	if err != nil {
-		return "", err
+		return nil, fmt.Errorf("failed to fetch calendars: %w", err)
 	}
-	if selection == "" {
-		return "", nil
-	}
-
-	out, err := integrations.StoreCredentials(selection)
-	if err != nil {
-		return "", fmt.Errorf("credentials 저장 실패: %w (output: %s)", err, out)
-	}
-	log.Printf("[gogcli] Credentials stored from: %s", selection)
-	return out, nil
+	return calendars, nil
 }
 
-func (a *App) AuthGmailAccount(account string) (string, error) {
-	cli := &integrations.GogCLI{Account: account}
-	out, err := cli.StartAuth()
-	if err != nil {
-		return out, fmt.Errorf("Gmail 인증 실패: %w", err)
-	}
-	return out, nil
+// SetupGWSAuth opens gws auth setup in terminal
+func (a *App) SetupGWSAuth() (string, error) {
+	return "터미널에서 'gws auth setup'을 실행하여 Google Workspace 인증을 설정하세요.", nil
 }
 
 func (a *App) SyncGmail(weekStart, weekEnd string) SyncResult {
@@ -2018,18 +2090,17 @@ func (a *App) SyncGmail(weekStart, weekEnd string) SyncResult {
 		return SyncResult{Success: false, Message: "Gmail 연동이 설정되지 않았습니다. 설정 페이지에서 먼저 연동해주세요."}
 	}
 
-	// Extract account from config
-	var config map[string]string
-	json.Unmarshal([]byte(gmailInt.ConfigJSON), &config)
-	account := config["account"]
-	if account == "" {
-		return SyncResult{Success: false, Message: "Gmail 계정이 설정되지 않았습니다."}
+	// Check gws auth
+	cli := &integrations.GWSCLI{}
+	if err := cli.CheckAuth(); err != nil {
+		return SyncResult{Success: false, Message: fmt.Sprintf("GWS 인증 실패: %v", err)}
 	}
 
 	ws, _ := time.Parse("2006-01-02", weekStart)
 	we, _ := time.Parse("2006-01-02", weekEnd)
 
-	count, err := integrations.SyncGmail(a.database, account, ws, we, gmailInt.ID)
+	// Use empty account for GWS (auth is handled by gws auth setup)
+	count, err := integrations.SyncGmail(a.database, "", ws, we, gmailInt.ID)
 	if err != nil {
 		return SyncResult{Success: false, Message: fmt.Sprintf("Gmail 동기화 실패: %v", err)}
 	}
@@ -2064,17 +2135,32 @@ func (a *App) SyncGoogleCalendar(weekStart, weekEnd string) SyncResult {
 		return SyncResult{Success: false, Message: "Google Calendar 연동이 설정되지 않았습니다."}
 	}
 
-	var config map[string]string
+	// Check gws auth
+	cli := &integrations.GWSCLI{}
+	if err := cli.CheckAuth(); err != nil {
+		return SyncResult{Success: false, Message: fmt.Sprintf("GWS 인증 실패: %v", err)}
+	}
+
+	// Parse config to get calendar list
+	var config struct {
+		Calendars []integrations.CalendarConfig `json:"calendars"`
+	}
 	json.Unmarshal([]byte(calInt.ConfigJSON), &config)
-	account := config["account"]
-	if account == "" {
-		return SyncResult{Success: false, Message: "Google 계정이 설정되지 않았습니다."}
+
+	// Use configured calendars or default to primary
+	var calendarConfigs []integrations.CalendarConfig
+	if len(config.Calendars) > 0 {
+		calendarConfigs = config.Calendars
+	} else {
+		// Default to primary calendar
+		calendarConfigs = []integrations.CalendarConfig{{ID: "primary", Color: "#3b82f6"}}
 	}
 
 	ws, _ := time.Parse("2006-01-02", weekStart)
 	we, _ := time.Parse("2006-01-02", weekEnd)
 
-	count, err := integrations.SyncGoogleCalendar(a.database, account, ws, we, calInt.ID)
+	// Use empty account for GWS (auth is handled by gws auth setup)
+	count, err := integrations.SyncGoogleCalendar(a.database, "", ws, we, calInt.ID, calendarConfigs)
 	if err != nil {
 		return SyncResult{Success: false, Message: fmt.Sprintf("Calendar 동기화 실패: %v", err)}
 	}
@@ -2347,11 +2433,11 @@ type LinearIssueProject struct {
 }
 
 type LinearIssue struct {
-	ID         string           `json:"id"`
-	Title      string           `json:"title"`
-	Identifier string           `json:"identifier"`
-	Priority   int              `json:"priority"`
-	State      LinearIssueState `json:"state"`
+	ID          string                 `json:"id"`
+	Title       string                 `json:"title"`
+	Identifier  string                 `json:"identifier"`
+	Priority    int                    `json:"priority"`
+	State       LinearIssueState       `json:"state"`
 	Assignee    *LinearIssueAssignee   `json:"assignee"`
 	URL         string                 `json:"url"`
 	CreatedAt   string                 `json:"createdAt"`
@@ -2372,20 +2458,20 @@ type LinearProject struct {
 }
 
 type LinearCycle struct {
-	ID           string  `json:"id"`
-	Name         string  `json:"name"`
-	Number       int     `json:"number"`
-	StartsAt     string  `json:"startsAt"`
-	EndsAt       string  `json:"endsAt"`
-	CompletedAt  *string `json:"completedAt"`
-	IssueCount   int     `json:"issueCount"`
-	CompletedIssueCount int `json:"completedIssueCount"`
+	ID                  string  `json:"id"`
+	Name                string  `json:"name"`
+	Number              int     `json:"number"`
+	StartsAt            string  `json:"startsAt"`
+	EndsAt              string  `json:"endsAt"`
+	CompletedAt         *string `json:"completedAt"`
+	IssueCount          int     `json:"issueCount"`
+	CompletedIssueCount int     `json:"completedIssueCount"`
 }
 
 type LinearDashboardData struct {
-	Projects   []LinearProject `json:"projects"`
-	Issues     []LinearIssue   `json:"issues"`
-	Cycles     []LinearCycle   `json:"cycles"`
+	Projects    []LinearProject `json:"projects"`
+	Issues      []LinearIssue   `json:"issues"`
+	Cycles      []LinearCycle   `json:"cycles"`
 	IssueCounts map[string]int  `json:"issueCounts"`
 }
 
@@ -2555,18 +2641,18 @@ func (a *App) ClaudeChatWithSession(prompt, systemContext, sessionID string) (Cl
 
 	// Parse NDJSON output — find the last line with "type":"result" and assistant message for model
 	type usageInfo struct {
-		InputTokens            int `json:"input_tokens"`
-		OutputTokens           int `json:"output_tokens"`
-		CacheReadInputTokens   int `json:"cache_read_input_tokens"`
+		InputTokens              int `json:"input_tokens"`
+		OutputTokens             int `json:"output_tokens"`
+		CacheReadInputTokens     int `json:"cache_read_input_tokens"`
 		CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
 	}
 	type resultLine struct {
-		Type         string   `json:"type"`
-		Result       string   `json:"result"`
-		SessionID    string   `json:"session_id"`
-		IsError      bool     `json:"is_error"`
-		NumTurns     int      `json:"num_turns"`
-		TotalCostUSD float64  `json:"total_cost_usd"`
+		Type         string    `json:"type"`
+		Result       string    `json:"result"`
+		SessionID    string    `json:"session_id"`
+		IsError      bool      `json:"is_error"`
+		NumTurns     int       `json:"num_turns"`
+		TotalCostUSD float64   `json:"total_cost_usd"`
 		Usage        usageInfo `json:"usage"`
 	}
 	type assistantLine struct {
@@ -2652,7 +2738,7 @@ func (a *App) ScanClaudeSkills() []SkillCommand {
 		matches := cmdRe.FindAllSubmatch(data, -1)
 		seen := map[string]bool{}
 		for _, m := range matches {
-			cmdStr := string(m[2])   // e.g. /ls:list
+			cmdStr := string(m[2]) // e.g. /ls:list
 			desc := strings.TrimSpace(string(m[4]))
 			if seen[cmdStr] {
 				continue

@@ -318,6 +318,10 @@ func (d *Database) migrate() error {
 	if err := d.ensureColumnExists("team_type_configs", "linear_team_id", "ALTER TABLE team_type_configs ADD COLUMN linear_team_id TEXT"); err != nil {
 		return err
 	}
+	// Add Linear user ID to team_type_configs (current user's Linear ID)
+	if err := d.ensureColumnExists("team_type_configs", "linear_user_id", "ALTER TABLE team_type_configs ADD COLUMN linear_user_id TEXT DEFAULT ''"); err != nil {
+		return err
+	}
 	// Add Linear user mapping to team_members
 	if err := d.ensureColumnExists("team_members", "linear_user_id", "ALTER TABLE team_members ADD COLUMN linear_user_id TEXT DEFAULT ''"); err != nil {
 		return err

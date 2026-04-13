@@ -760,12 +760,6 @@ func normalizeNarrativeContent(content string) string {
 	text = strings.ReplaceAll(text, "\r\n", "\n")
 	text = strings.ReplaceAll(text, "\r", "\n")
 
-	if !strings.Contains(text, "\n") {
-		text = strings.ReplaceAll(text, " 2) 후속조치:", "\n2) 후속조치:")
-		text = strings.ReplaceAll(text, "2) 후속조치:", "\n2) 후속조치:")
-		text = strings.ReplaceAll(text, " 후속조치:", "\n후속조치:")
-	}
-
 	lines := []string{}
 	for _, line := range strings.Split(text, "\n") {
 		line = strings.TrimSpace(line)
@@ -778,31 +772,38 @@ func normalizeNarrativeContent(content string) string {
 		return ""
 	}
 
+	// Check if content is already in new format with " - 진행사항 :" and " - 후속조치 :"
+	hasNewFormat := false
+	if len(lines) >= 3 {
+		for i := 1; i < len(lines); i++ {
+			if strings.Contains(lines[i], " - 진행사항") || strings.Contains(lines[i], " - 후속조치") {
+				hasNewFormat = true
+				break
+			}
+		}
+	}
+
+	if hasNewFormat {
+		// Already in new format, return as-is
+		return strings.Join(lines, "\n")
+	}
+
+	// Handle old format or unformatted content
+	// For new format, we should have: projectName, " - 진행사항 : ...", " - 후속조치 : ..."
+	// If content is single line or doesn't have the markers, rebuild it
+
 	if len(lines) == 1 {
-		line := lines[0]
-		if strings.HasPrefix(line, "1) 진행업무:") {
-			return line + "\n2) 후속조치: 관련 후속 조치를 진행함."
-		}
-		if strings.HasPrefix(line, "진행업무:") {
-			return "1) " + line + "\n2) 후속조치: 관련 후속 조치를 진행함."
-		}
-		return "1) 진행업무: " + line + "\n2) 후속조치: 관련 후속 조치를 진행함."
+		// Single line: assume it's project activity, create both lines
+		return lines[0] + "\n - 진행사항 : (진행 중)\n - 후속조치 : 후속 조치 필요"
 	}
 
-	first := lines[0]
-	second := lines[1]
-	if strings.HasPrefix(first, "진행업무:") {
-		first = "1) " + first
-	} else if !strings.HasPrefix(first, "1) 진행업무:") {
-		first = "1) 진행업무: " + first
-	}
-	if strings.HasPrefix(second, "후속조치:") {
-		second = "2) " + second
-	} else if !strings.HasPrefix(second, "2) 후속조치:") {
-		second = "2) 후속조치: " + second
+	if len(lines) == 2 {
+		// Two lines: first is project name, second is activity
+		return lines[0] + "\n - 진행사항 : " + lines[1] + "\n - 후속조치 : 후속 조치 필요"
 	}
 
-	return first + "\n" + second
+	// Three or more lines: first is project name, second is activity, third+ is follow-up
+	return lines[0] + "\n - 진행사항 : " + lines[1] + "\n - 후속조치 : " + strings.Join(lines[2:], " ")
 }
 
 func (a *App) PreprocessReportItemsWithAI(reportID int64) SyncResult {
@@ -2371,6 +2372,19 @@ func (a *App) UpdateTeamProfile(profile db.TeamProfile) error {
 		return err
 	}
 	profile.SetupDone = true
+
+	// If Linear API Key is set or changed, fetch and store the current user's Linear ID
+	if profile.LinearAPIKey != "" && profile.LinearUserID == "" {
+		viewerID, err := getLinearViewerID(profile.LinearAPIKey)
+		if err != nil {
+			log.Printf("[UpdateTeamProfile] Warning: Failed to fetch Linear viewer ID: %v", err)
+			// Continue anyway - Linear user ID is optional
+		} else {
+			profile.LinearUserID = viewerID
+			log.Printf("[UpdateTeamProfile] Fetched Linear user ID: %s", viewerID)
+		}
+	}
+
 	return a.database.SaveTeamProfile(user.ID, &profile)
 }
 
@@ -2806,4 +2820,269 @@ func (a *App) OpenFile(filePath string) error {
 	}
 
 	return cmd.Start()
+}
+
+// --- Linear Content Integration ---
+
+// mapLinearProjectToCategory maps Linear project name to ProjectCategory (3-step matching)
+func mapLinearProjectToCategory(linearProjectName string, categories []db.ProjectCategory, userID int64, database *db.Database) string {
+	if linearProjectName == "" {
+		return ""
+	}
+
+	// Step 1: Exact match (case-insensitive)
+	for _, cat := range categories {
+		if strings.EqualFold(cat.Name, linearProjectName) {
+			return cat.Name
+		}
+	}
+
+	// Step 2: Substring match (both directions)
+	for _, cat := range categories {
+		catLower := strings.ToLower(cat.Name)
+		projLower := strings.ToLower(linearProjectName)
+		if strings.Contains(projLower, catLower) || strings.Contains(catLower, projLower) {
+			return cat.Name
+		}
+	}
+
+	// Step 3: Create new category if no match found
+	_, err := database.SaveProjectCategory(userID, linearProjectName, len(categories))
+	if err != nil {
+		log.Printf("[mapLinearProjectToCategory] Failed to create category %s: %v", linearProjectName, err)
+	}
+	return linearProjectName // Return name even if creation failed
+}
+
+// buildLinearIssueDigest creates a compact issue digest for AI prompt
+func buildLinearIssueDigest(issue LinearIssue) string {
+	desc := issue.Description
+	if len([]rune(desc)) > 100 {
+		runes := []rune(desc)
+		desc = string(runes[:100]) + "..."
+	}
+
+	priority := ""
+	if issue.Priority > 0 {
+		priorityLabels := []string{"", "긴급", "높음", "보통", "낮음"}
+		if issue.Priority < len(priorityLabels) {
+			priority = fmt.Sprintf(", 우선순위: %s", priorityLabels[issue.Priority])
+		}
+	}
+
+	return fmt.Sprintf("[%s] %s (상태: %s%s)\n  %s",
+		issue.Identifier, issue.Title, issue.State.Name, priority, desc)
+}
+
+// generateLinearReportWithAI converts Linear issues to report text via AI (Claude CLI or OpenAI)
+func (a *App) generateLinearReportWithAI(issues []LinearIssue, projectName, categoryName string) (string, error) {
+	// Build issue digest list
+	digests := []string{}
+	for _, issue := range issues {
+		digests = append(digests, buildLinearIssueDigest(issue))
+	}
+	digestLines := strings.Join(digests, "\n\n")
+
+	systemPrompt := `너는 주간업무 보고서를 작성하는 보조자다.
+Linear 이슈 목록을 받아 하나의 보고서 항목으로 통합 작성한다.
+원문 복붙, 이슈 ID·URL 등 메타정보 나열을 금지한다.
+엑셀 보고서 톤의 간결한 서술형으로 작성한다.`
+
+	userPrompt := fmt.Sprintf(`[입력]
+프로젝트: %s
+카테고리: %s
+이슈 건수: %d건
+
+[이슈 목록]
+%s
+
+[작성 규칙]
+1. 이슈 목록을 종합해 가장 핵심적인 업무명(업무 요약)을 첫 줄에 작성
+   - 예: "API 연동 개선", "데이터베이스 마이그레이션", "버그 수정 및 최적화"
+   - 프로젝트 이름이 아닌 실제 작업 내용을 요약한 이름
+2. 두 번째 줄에는 진행 현황을 간단히 설명
+3. 세 번째 줄에는 예정된 후속 조치를 설명
+4. 이슈 ID, URL, 기술 용어 나열 금지
+5. 업무 맥락과 진행 흐름 중심 서술
+6. 각 줄 100자 이내
+
+[출력 예시]
+API 키 보안 강화
+ - 사용자 인증 API 개선 작업 진행 중, 기본 구현 완료
+ - 에러 처리 개선 및 문서화 예정
+
+주의: 각 줄은 "항목명 : 내용" 형식으로 작성하되, 내용 앞에 대시(-)를 추가하지 마세요.`,
+		projectName, categoryName, len(issues), digestLines)
+
+	// Try Claude CLI first
+	claudeCheck := a.CheckClaudeCLI()
+	if ok, _ := claudeCheck["ok"].(bool); ok {
+		result, err := a.ClaudeChatWithSession(systemPrompt+"\n\n---\n\n"+userPrompt, "", "")
+		if err == nil {
+			return normalizeNarrativeContent(result.Reply), nil
+		}
+		log.Printf("[Linear AI] Claude CLI failed, falling back to OpenAI: %v", err)
+	}
+
+	// Fallback to OpenAI
+	cfg, err := a.getOpenAIConfig()
+	if err != nil || cfg == nil {
+		return "", fmt.Errorf("AI 설정이 없습니다. Claude CLI 설치 또는 OpenAI API Key를 설정해주세요")
+	}
+
+	client := ai.NewClient(cfg.APIKey, cfg.Model)
+	reply, err := client.ChatCompletion(systemPrompt, userPrompt)
+	if err != nil {
+		return "", fmt.Errorf("OpenAI API 호출 실패: %w", err)
+	}
+
+	return normalizeNarrativeContent(reply), nil
+}
+
+// PopulateReportFromLinear auto-populates a report with Linear issues assigned to the user
+func (a *App) PopulateReportFromLinear(reportID int64, weekStart, weekEnd string) (int, error) {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return 0, err
+	}
+
+	profile, err := a.database.GetTeamProfile(user.ID)
+	if err != nil {
+		return 0, err
+	}
+
+	if profile.LinearAPIKey == "" {
+		return 0, fmt.Errorf("Linear API Key가 설정되지 않았습니다")
+	}
+
+	// Get my issues
+	myIssues, err := GetMyLinearIssues(profile.LinearAPIKey, profile.LinearTeamID, profile.LinearUserID)
+	if err != nil {
+		return 0, fmt.Errorf("Linear 이슈 조회 실패: %w", err)
+	}
+
+	if len(myIssues) == 0 {
+		return 0, nil
+	}
+
+	// Get existing report items to prevent duplicates
+	existingItems, err := a.database.ListReportItems(reportID)
+	if err != nil {
+		return 0, err
+	}
+	existingSet := make(map[string]bool)
+	for _, item := range existingItems {
+		key := "project_progress|" + item.Category + "|" + item.Content
+		if len(key) > 100 {
+			key = key[:100]
+		}
+		existingSet[key] = true
+	}
+
+	// Get categories
+	categories, err := a.database.ListProjectCategories(user.ID)
+	if err != nil {
+		log.Printf("[PopulateReportFromLinear] Failed to list categories: %v", err)
+		categories = []db.ProjectCategory{}
+	}
+
+	// Group issues by project and period (this_week vs next_week)
+	type projectGroup struct {
+		projectName    string
+		categoryName   string
+		thisWeekIssues []LinearIssue // In progress, In Review, etc.
+		nextWeekIssues []LinearIssue // Todo, Backlog
+	}
+	groups := make(map[string]*projectGroup)
+
+	for _, issue := range myIssues {
+		projName := ""
+		if issue.Project != nil {
+			projName = issue.Project.Name
+		}
+
+		if _, exists := groups[projName]; !exists {
+			catName := mapLinearProjectToCategory(projName, categories, user.ID, a.database)
+			groups[projName] = &projectGroup{
+				projectName:  projName,
+				categoryName: catName,
+			}
+		}
+
+		// Classify by state: Todo/Backlog -> next_week, others -> this_week
+		stateType := strings.ToLower(issue.State.Type)
+		stateName := strings.ToLower(issue.State.Name)
+		if stateType == "backlog" || stateType == "todo" || stateType == "unstarted" ||
+			strings.Contains(stateName, "todo") || strings.Contains(stateName, "backlog") {
+			groups[projName].nextWeekIssues = append(groups[projName].nextWeekIssues, issue)
+		} else {
+			groups[projName].thisWeekIssues = append(groups[projName].thisWeekIssues, issue)
+		}
+	}
+
+	// Convert each group to report items via AI
+	addedCount := 0
+	for _, group := range groups {
+		// Process this_week issues
+		if len(group.thisWeekIssues) > 0 {
+			content, err := a.generateLinearReportWithAI(group.thisWeekIssues, group.projectName, group.categoryName)
+			if err != nil {
+				log.Printf("[PopulateReportFromLinear] AI generation failed for project %s this_week: %v", group.projectName, err)
+			} else {
+				key := "project_progress|" + group.categoryName + "|" + content
+				if len(key) > 150 {
+					key = key[:150]
+				}
+				if !existingSet[key] {
+					item := &db.ReportItem{
+						ReportID:   reportID,
+						Section:    "project_progress",
+						Category:   group.categoryName,
+						WorkType:   "si",
+						Content:    content,
+						Period:     "this_week",
+						SortOrder:  len(existingItems) + addedCount,
+						IsSelected: true,
+					}
+					if _, err := a.database.SaveReportItem(item); err == nil {
+						existingSet[key] = true
+						addedCount++
+					}
+				}
+			}
+		}
+
+		// Process next_week issues (Todo state)
+		if len(group.nextWeekIssues) > 0 {
+			content, err := a.generateLinearReportWithAI(group.nextWeekIssues, group.projectName, group.categoryName)
+			if err != nil {
+				log.Printf("[PopulateReportFromLinear] AI generation failed for project %s next_week: %v", group.projectName, err)
+			} else {
+				// Use next_week_plan section for Todo items
+				key := "next_week_plan|" + group.categoryName + "|" + content
+				if len(key) > 150 {
+					key = key[:150]
+				}
+				if !existingSet[key] {
+					item := &db.ReportItem{
+						ReportID:   reportID,
+						Section:    "next_week_plan",
+						Category:   group.categoryName,
+						WorkType:   "si",
+						Content:    content,
+						Period:     "next_week",
+						SortOrder:  len(existingItems) + addedCount,
+						IsSelected: true,
+					}
+					if _, err := a.database.SaveReportItem(item); err == nil {
+						existingSet[key] = true
+						addedCount++
+					}
+				}
+			}
+		}
+	}
+
+	log.Printf("[PopulateReportFromLinear] Added %d items to report %d", addedCount, reportID)
+	return addedCount, nil
 }

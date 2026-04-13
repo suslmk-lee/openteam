@@ -1337,10 +1337,10 @@ func (d *Database) GetTeamProfile(userID int64) (*TeamProfile, error) {
 	profile.MemberCount = memberCount
 
 	// Load team_type from team_type_configs
-	var teamType, linearAPIKey, linearTeamID string
+	var teamType, linearAPIKey, linearTeamID, linearUserID string
 	err = d.conn.QueryRow(
-		"SELECT team_type, COALESCE(linear_api_key,''), COALESCE(linear_team_id,'') FROM team_type_configs WHERE user_id = ? ORDER BY id DESC LIMIT 1", userID,
-	).Scan(&teamType, &linearAPIKey, &linearTeamID)
+		"SELECT team_type, COALESCE(linear_api_key,''), COALESCE(linear_team_id,''), COALESCE(linear_user_id,'') FROM team_type_configs WHERE user_id = ? ORDER BY id DESC LIMIT 1", userID,
+	).Scan(&teamType, &linearAPIKey, &linearTeamID, &linearUserID)
 	if err == sql.ErrNoRows {
 		profile.TeamType = ""
 	} else if err != nil {
@@ -1349,6 +1349,7 @@ func (d *Database) GetTeamProfile(userID int64) (*TeamProfile, error) {
 		profile.TeamType = teamType
 		profile.LinearAPIKey = linearAPIKey
 		profile.LinearTeamID = linearTeamID
+		profile.LinearUserID = linearUserID
 	}
 	return profile, nil
 }
@@ -1372,8 +1373,8 @@ func (d *Database) SaveTeamProfile(userID int64, p *TeamProfile) error {
 		return err
 	}
 	_, err = d.conn.Exec(
-		"INSERT INTO team_type_configs (user_id, team_type, linear_api_key, linear_team_id) VALUES (?, ?, ?, ?)",
-		userID, p.TeamType, p.LinearAPIKey, p.LinearTeamID,
+		"INSERT INTO team_type_configs (user_id, team_type, linear_api_key, linear_team_id, linear_user_id) VALUES (?, ?, ?, ?, ?)",
+		userID, p.TeamType, p.LinearAPIKey, p.LinearTeamID, p.LinearUserID,
 	)
 	return err
 }

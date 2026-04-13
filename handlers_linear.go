@@ -438,3 +438,85 @@ func doLinearRequest(apiKey string, reqBody linearGraphQLRequest) (json.RawMessa
 
 	return gqlResp.Data, nil
 }
+
+// getLinearViewerID retrieves the current Linear user's ID
+func getLinearViewerID(apiKey string) (string, error) {
+	gqlQuery := `{ viewer { id } }`
+	reqBody := linearGraphQLRequest{
+		Query:     gqlQuery,
+		Variables: map[string]interface{}{},
+	}
+
+	respData, err := doLinearRequest(apiKey, reqBody)
+	if err != nil {
+		return "", err
+	}
+
+	var result struct {
+		Viewer struct {
+			ID string `json:"id"`
+		} `json:"viewer"`
+	}
+
+	if err := json.Unmarshal(respData, &result); err != nil {
+		return "", fmt.Errorf("viewer ID 파싱 실패: %w", err)
+	}
+
+	return result.Viewer.ID, nil
+}
+
+// GetMyLinearIssues retrieves issues assigned to the current user (identified by linearUserID), filtered by active states
+func GetMyLinearIssues(apiKey, teamID, linearUserID string) ([]LinearIssue, error) {
+	if apiKey == "" {
+		return nil, fmt.Errorf("Linear API Key가 설정되지 않았습니다")
+	}
+
+	if linearUserID == "" {
+		// Fallback: fetch viewer ID if not provided
+		var err error
+		linearUserID, err = getLinearViewerID(apiKey)
+		if err != nil {
+			return nil, fmt.Errorf("현재 사용자 조회 실패: %w", err)
+		}
+	}
+
+	var allIssues []LinearIssue
+
+	if teamID != "" {
+		// Fetch team issues and filter by assignee
+		dashboardData, err := fetchLinearWithTeam(apiKey, teamID)
+		if err != nil {
+			return nil, err
+		}
+		if dashboardData != nil {
+			allIssues = dashboardData.Issues
+		}
+	} else {
+		// Fetch viewer's assigned issues (already assignee-filtered)
+		dashboardData, err := fetchLinearWithoutTeam(apiKey)
+		if err != nil {
+			return nil, err
+		}
+		if dashboardData != nil {
+			allIssues = dashboardData.Issues
+		}
+	}
+
+	// Filter: include only if assigned to current user and not cancelled/completed
+	var filtered []LinearIssue
+	for _, issue := range allIssues {
+		// Check if assigned to current user (if teamID, otherwise already assigned)
+		if teamID != "" && (issue.Assignee == nil || issue.Assignee.ID != linearUserID) {
+			continue
+		}
+
+		// Exclude cancelled and completed states
+		if issue.State.Type == "cancelled" || issue.State.Type == "completed" {
+			continue
+		}
+
+		filtered = append(filtered, issue)
+	}
+
+	return filtered, nil
+}

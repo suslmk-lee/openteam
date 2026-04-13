@@ -266,6 +266,10 @@ export function OpenFile(arg1) {
   return window['go']['main']['App']['OpenFile'](arg1);
 }
 
+export function PopulateReportFromLinear(arg1, arg2, arg3) {
+  return window['go']['main']['App']['PopulateReportFromLinear'](arg1, arg2, arg3);
+}
+
 export function PopulateReportFromProjects(arg1, arg2, arg3) {
   return window['go']['main']['App']['PopulateReportFromProjects'](arg1, arg2, arg3);
 }

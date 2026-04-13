@@ -136,6 +136,8 @@ export function ListWeeklyReports():Promise<Array<db.WeeklyReport>>;
 
 export function OpenFile(arg1:string):Promise<void>;
 
+export function PopulateReportFromLinear(arg1:number,arg2:string,arg3:string):Promise<number>;
+
 export function PopulateReportFromProjects(arg1:number,arg2:string,arg3:string):Promise<number>;
 
 export function PopulateReportFromTeamData(arg1:number):Promise<number>;

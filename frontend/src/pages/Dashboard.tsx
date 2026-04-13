@@ -459,10 +459,10 @@ export default function Dashboard() {
       } catch { setAttendance([]) }
 
       console.log('[Dashboard] teamType:', teamType, '- checking for small_team or personal')
+      
+      // Linear tasks (for personal and small_team)
       if (teamType === 'small_team' || teamType === 'personal') {
-        // Linear tasks + retrospective
         try { 
-          // Use GetMyLinearIssues for personal team type, GetLinearDashboard for small_team
           const issues = teamType === 'personal' 
             ? (await GetMyLinearIssues() as any) || []
             : ((await GetLinearDashboard()) as any)?.issues || []
@@ -476,11 +476,11 @@ export default function Dashboard() {
           const retros: Retrospective[] = (await ListRetrospectives()) || []
           setLatestRetro(retros.length > 0 ? retros[0] : null)
         } catch { setLatestRetro(null) }
-
-      } else if (teamType === 'personal') {
-        // personal: my attendance, my weekly report, calendar activities
-        // Calculate current week (Mon-Sun)
-        const dayOfWeek = today.getDay() // 0=Sun, 1=Mon, ..., 6=Sat
+      }
+      
+      // Personal: my attendance, weekly report, calendar
+      if (teamType === 'personal') {
+        const dayOfWeek = today.getDay()
         const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek
         const monday = new Date(today)
         monday.setDate(today.getDate() + diffToMonday)
@@ -507,7 +507,6 @@ export default function Dashboard() {
         }
         setMyWeeklyReport((reportsData || []).find(r => r.weekStart === weekData?.weekStart) || null)
         
-        // Load calendar activities for today and this week
         if (weekData) {
           const todayStr = fmt(today)
           const [todayActs, weekActs] = await Promise.all([
@@ -517,7 +516,7 @@ export default function Dashboard() {
           setTodayActivities(todayActs || [])
           setWeekActivities(weekActs || [])
         }
-      } else {
+      } else if (teamType === 'si_business' || teamType === 'si_field') {
         // si_business or si_field
         const [projectsData, reportsData] = await Promise.all([ListSIProjects(), ListWeeklyReports()])
         setProjects(projectsData || [])

@@ -2883,7 +2883,7 @@ func (a *App) generateLinearReportWithAI(issues []LinearIssue, projectName, cate
 	}
 	digestLines := strings.Join(digests, "\n\n")
 
-	systemPrompt := `너는 SI사업팀 주간업무 보고서를 작성하는 보조자다.
+	systemPrompt := `너는 주간업무 보고서를 작성하는 보조자다.
 Linear 이슈 목록을 받아 하나의 보고서 항목으로 통합 작성한다.
 원문 복붙, 이슈 ID·URL 등 메타정보 나열을 금지한다.
 엑셀 보고서 톤의 간결한 서술형으로 작성한다.`
@@ -2908,8 +2908,10 @@ Linear 이슈 목록을 받아 하나의 보고서 항목으로 통합 작성한
 
 [출력 예시]
 API 키 보안 강화
- - 진행사항 : 사용자 인증 API 개선 작업 진행 중, 기본 구현 완료
- - 후속조치 : 에러 처리 개선 및 문서화 예정`,
+ - 사용자 인증 API 개선 작업 진행 중, 기본 구현 완료
+ - 에러 처리 개선 및 문서화 예정
+
+주의: 각 줄은 "항목명 : 내용" 형식으로 작성하되, 내용 앞에 대시(-)를 추가하지 마세요.`,
 		projectName, categoryName, len(issues), digestLines)
 
 	// Try Claude CLI first
@@ -2984,11 +2986,12 @@ func (a *App) PopulateReportFromLinear(reportID int64, weekStart, weekEnd string
 		categories = []db.ProjectCategory{}
 	}
 
-	// Group issues by project
+	// Group issues by project and period (this_week vs next_week)
 	type projectGroup struct {
-		projectName  string
-		categoryName string
-		issues       []LinearIssue
+		projectName    string
+		categoryName   string
+		thisWeekIssues []LinearIssue // In progress, In Review, etc.
+		nextWeekIssues []LinearIssue // Todo, Backlog
 	}
 	groups := make(map[string]*projectGroup)
 
@@ -3005,47 +3008,79 @@ func (a *App) PopulateReportFromLinear(reportID int64, weekStart, weekEnd string
 				categoryName: catName,
 			}
 		}
-		groups[projName].issues = append(groups[projName].issues, issue)
+
+		// Classify by state: Todo/Backlog -> next_week, others -> this_week
+		stateType := strings.ToLower(issue.State.Type)
+		stateName := strings.ToLower(issue.State.Name)
+		if stateType == "backlog" || stateType == "todo" || stateType == "unstarted" ||
+			strings.Contains(stateName, "todo") || strings.Contains(stateName, "backlog") {
+			groups[projName].nextWeekIssues = append(groups[projName].nextWeekIssues, issue)
+		} else {
+			groups[projName].thisWeekIssues = append(groups[projName].thisWeekIssues, issue)
+		}
 	}
 
-	// Convert each group to report item via AI
+	// Convert each group to report items via AI
 	addedCount := 0
 	for _, group := range groups {
-		content, err := a.generateLinearReportWithAI(group.issues, group.projectName, group.categoryName)
-		if err != nil {
-			log.Printf("[PopulateReportFromLinear] AI generation failed for project %s: %v", group.projectName, err)
-			continue
+		// Process this_week issues
+		if len(group.thisWeekIssues) > 0 {
+			content, err := a.generateLinearReportWithAI(group.thisWeekIssues, group.projectName, group.categoryName)
+			if err != nil {
+				log.Printf("[PopulateReportFromLinear] AI generation failed for project %s this_week: %v", group.projectName, err)
+			} else {
+				key := "project_progress|" + group.categoryName + "|" + content
+				if len(key) > 150 {
+					key = key[:150]
+				}
+				if !existingSet[key] {
+					item := &db.ReportItem{
+						ReportID:   reportID,
+						Section:    "project_progress",
+						Category:   group.categoryName,
+						WorkType:   "si",
+						Content:    content,
+						Period:     "this_week",
+						SortOrder:  len(existingItems) + addedCount,
+						IsSelected: true,
+					}
+					if _, err := a.database.SaveReportItem(item); err == nil {
+						existingSet[key] = true
+						addedCount++
+					}
+				}
+			}
 		}
 
-		// Check for duplicates by content (AI-generated content is unique per issue group)
-		key := "project_progress|" + group.categoryName + "|" + content
-		if len(key) > 150 {
-			key = key[:150]
+		// Process next_week issues (Todo state)
+		if len(group.nextWeekIssues) > 0 {
+			content, err := a.generateLinearReportWithAI(group.nextWeekIssues, group.projectName, group.categoryName)
+			if err != nil {
+				log.Printf("[PopulateReportFromLinear] AI generation failed for project %s next_week: %v", group.projectName, err)
+			} else {
+				// Use next_week_plan section for Todo items
+				key := "next_week_plan|" + group.categoryName + "|" + content
+				if len(key) > 150 {
+					key = key[:150]
+				}
+				if !existingSet[key] {
+					item := &db.ReportItem{
+						ReportID:   reportID,
+						Section:    "next_week_plan",
+						Category:   group.categoryName,
+						WorkType:   "si",
+						Content:    content,
+						Period:     "next_week",
+						SortOrder:  len(existingItems) + addedCount,
+						IsSelected: true,
+					}
+					if _, err := a.database.SaveReportItem(item); err == nil {
+						existingSet[key] = true
+						addedCount++
+					}
+				}
+			}
 		}
-		if existingSet[key] {
-			log.Printf("[PopulateReportFromLinear] Skipping duplicate for project %s", group.projectName)
-			continue
-		}
-
-		// Save report item
-		item := &db.ReportItem{
-			ReportID:   reportID,
-			Section:    "project_progress",
-			Category:   group.categoryName,  // Map Linear project to category
-			WorkType:   "si",
-			Content:    content,
-			Period:     "this_week",
-			SortOrder:  len(existingItems) + addedCount,
-			IsSelected: true,
-		}
-
-		if _, err := a.database.SaveReportItem(item); err != nil {
-			log.Printf("[PopulateReportFromLinear] Failed to save report item: %v", err)
-			continue
-		}
-
-		existingSet[key] = true
-		addedCount++
 	}
 
 	log.Printf("[PopulateReportFromLinear] Added %d items to report %d", addedCount, reportID)

@@ -2,6 +2,7 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard,
   Users,
+  User,
   Settings,
   ChevronLeft,
   ChevronRight,
@@ -215,10 +216,13 @@ export default function Layout() {
               <div className="ml-2 space-y-1 border-l-2 border-slate-700 pl-2">
                 <SidebarLink to="/settings/team-profile" icon={<Users size={18} />} label="팀 프로필" collapsed={false} />
                 <SidebarLink to="/settings/user" icon={<Settings size={18} />} label="사용자 정보" collapsed={false} />
+                <SidebarLink to="/settings/attendance" icon={<User size={18} />} label="내 근태 관리" collapsed={false} />
                 <SidebarLink to="/settings/template" icon={<FilePlus size={18} />} label="템플릿" collapsed={false} />
                 <SidebarLink to="/settings/integrations" icon={<Users size={18} />} label="연동 설정" collapsed={false} />
                 <SidebarLink to="/settings/categories" icon={<Briefcase size={18} />} label="카테고리" collapsed={false} />
-                <SidebarLink to="/settings/common-codes" icon={<ListTree size={18} />} label="공통코드관리" collapsed={false} />
+                {profile?.teamType !== 'personal' && (
+                  <SidebarLink to="/settings/common-codes" icon={<ListTree size={18} />} label="공통코드관리" collapsed={false} />
+                )}
               </div>
             )}
           </div>

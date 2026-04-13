@@ -9,6 +9,7 @@ export namespace db {
 	    summary: string;
 	    rawData: string;
 	    activityDate: string;
+	    date: string;
 	    activityDateTime?: string;
 	    endDateTime?: string;
 	    calendarId?: string;
@@ -29,6 +30,7 @@ export namespace db {
 	        this.summary = source["summary"];
 	        this.rawData = source["rawData"];
 	        this.activityDate = source["activityDate"];
+	        this.date = source["date"];
 	        this.activityDateTime = source["activityDateTime"];
 	        this.endDateTime = source["endDateTime"];
 	        this.calendarId = source["calendarId"];
@@ -356,6 +358,26 @@ export namespace db {
 		    }
 		    return a;
 		}
+	}
+	export class MyAttendanceSummary {
+	    vacationDays: number;
+	    morningHalfDays: number;
+	    afternoonHalfDays: number;
+	    totalDays: number;
+	    lateCount: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new MyAttendanceSummary(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.vacationDays = source["vacationDays"];
+	        this.morningHalfDays = source["morningHalfDays"];
+	        this.afternoonHalfDays = source["afternoonHalfDays"];
+	        this.totalDays = source["totalDays"];
+	        this.lateCount = source["lateCount"];
+	    }
 	}
 	export class Project {
 	    id: number;
@@ -998,6 +1020,7 @@ export namespace main {
 	    summary: string;
 	    rawData: string;
 	    activityDate: string;
+	    date: string;
 	    activityDateTime?: string;
 	    endDateTime?: string;
 	    calendarId?: string;
@@ -1020,6 +1043,7 @@ export namespace main {
 	        this.summary = source["summary"];
 	        this.rawData = source["rawData"];
 	        this.activityDate = source["activityDate"];
+	        this.date = source["date"];
 	        this.activityDateTime = source["activityDateTime"];
 	        this.endDateTime = source["endDateTime"];
 	        this.calendarId = source["calendarId"];

@@ -21,6 +21,7 @@ import TaskBoard from './pages/TaskBoard'
 import WeeklyRetro from './pages/WeeklyRetro'
 import GmailPage from './pages/GmailPage'
 import CalendarPage from './pages/CalendarPage'
+import PersonalAttendance from './pages/PersonalAttendance'
 
 const container = document.getElementById('root')
 const root = createRoot(container!)
@@ -54,6 +55,7 @@ root.render(
             <Route path="/settings/categories" element={<Settings section="categories" />} />
             <Route path="/settings/common-codes" element={<CommonCodes />} />
             <Route path="/settings/team-profile" element={<Settings section="team-profile" />} />
+            <Route path="/settings/attendance" element={<PersonalAttendance />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>

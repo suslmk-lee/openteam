@@ -170,6 +170,10 @@ export function GetLinearTeamStates() {
   return window['go']['main']['App']['GetLinearTeamStates']();
 }
 
+export function GetMyAttendanceSummary(arg1, arg2) {
+  return window['go']['main']['App']['GetMyAttendanceSummary'](arg1, arg2);
+}
+
 export function GetMyLinearIssues() {
   return window['go']['main']['App']['GetMyLinearIssues']();
 }
@@ -234,6 +238,10 @@ export function Greet(arg1) {
   return window['go']['main']['App']['Greet'](arg1);
 }
 
+export function ListActivitiesByDateRange(arg1, arg2) {
+  return window['go']['main']['App']['ListActivitiesByDateRange'](arg1, arg2);
+}
+
 export function ListAttendanceRecords(arg1, arg2, arg3) {
   return window['go']['main']['App']['ListAttendanceRecords'](arg1, arg2, arg3);
 }
@@ -248,6 +256,10 @@ export function ListIssues(arg1) {
 
 export function ListMemberAssignments(arg1, arg2) {
   return window['go']['main']['App']['ListMemberAssignments'](arg1, arg2);
+}
+
+export function ListMyWeeklyReports() {
+  return window['go']['main']['App']['ListMyWeeklyReports']();
 }
 
 export function ListRetrospectives() {

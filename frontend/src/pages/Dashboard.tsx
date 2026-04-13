@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Users, Clock, Briefcase, FileText, Building2, TrendingUp,
+  Users, User, Clock, Briefcase, FileText, Building2, TrendingUp,
   ArrowRight, Calendar, AlertTriangle, Kanban, RotateCcw, CheckSquare,
 } from 'lucide-react'
 import {
   ListTeamMembers, GetAttendanceSummary, ListSIProjects,
   GetSIWeeklySnapshot, ListWeeklyReports, ListClients, GetCurrentWeek,
   ListIssues, ListRetrospectives, GetLinearDashboard, GetMyLinearIssues,
+  GetMyAttendanceSummary, ListMyWeeklyReports, ListActivitiesByDateRange,
 } from '../../wailsjs/go/main/App'
 import { useTeamProfile } from '../contexts/TeamProfileContext'
 
@@ -31,6 +32,16 @@ interface Retrospective {
   wentWell: string; toImprove: string; actionItems: string
 }
 interface LinearIssue { id: string; state: { type: string } }
+interface Activity { 
+  id: number; 
+  title: string; 
+  activityDate: string; 
+  activityDatetime?: string 
+}
+interface MyAttendanceSummary { 
+  vacationDays: number; morningHalfDays: number; afternoonHalfDays: number; 
+  totalDays: number; lateCount: number 
+}
 
 // ── constants ───────────────────────────────────────────────────────────────
 
@@ -417,9 +428,15 @@ export default function Dashboard() {
   // si_field only
   const [issues, setIssues] = useState<Issue[]>([])
 
-  // small_team only
+  // small_team / personal
   const [linearIssues, setLinearIssues] = useState<LinearIssue[]>([])
   const [latestRetro, setLatestRetro] = useState<Retrospective | null>(null)
+  
+  // personal only
+  const [myAttendance, setMyAttendance] = useState<MyAttendanceSummary | null>(null)
+  const [myWeeklyReport, setMyWeeklyReport] = useState<WeeklyReport | null>(null)
+  const [todayActivities, setTodayActivities] = useState<Activity[]>([])
+  const [weekActivities, setWeekActivities] = useState<Activity[]>([])
 
   useEffect(() => { loadAllData() }, [teamType])
 
@@ -460,6 +477,46 @@ export default function Dashboard() {
           setLatestRetro(retros.length > 0 ? retros[0] : null)
         } catch { setLatestRetro(null) }
 
+      } else if (teamType === 'personal') {
+        // personal: my attendance, my weekly report, calendar activities
+        // Calculate current week (Mon-Sun)
+        const dayOfWeek = today.getDay() // 0=Sun, 1=Mon, ..., 6=Sat
+        const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek
+        const monday = new Date(today)
+        monday.setDate(today.getDate() + diffToMonday)
+        const sunday = new Date(monday)
+        sunday.setDate(monday.getDate() + 6)
+        
+        const weekStart = fmt(monday)
+        const weekEnd = fmt(sunday)
+        console.log('[Dashboard] Loading personal data for current week:', weekStart, '~', weekEnd)
+        let reportsData: any[] = []
+        try {
+          const [attendanceData, reportsDataInner] = await Promise.all([
+            GetMyAttendanceSummary(weekStart, weekEnd),
+            ListMyWeeklyReports()
+          ])
+          reportsData = reportsDataInner || []
+          console.log('[Dashboard] MyAttendance data:', attendanceData)
+          setMyAttendance(attendanceData)
+          setReports(reportsData)
+        } catch (e) {
+          console.error('[Dashboard] Error loading personal data:', e)
+          setMyAttendance(null)
+          setReports([])
+        }
+        setMyWeeklyReport((reportsData || []).find(r => r.weekStart === weekData?.weekStart) || null)
+        
+        // Load calendar activities for today and this week
+        if (weekData) {
+          const todayStr = fmt(today)
+          const [todayActs, weekActs] = await Promise.all([
+            ListActivitiesByDateRange(todayStr, todayStr),
+            ListActivitiesByDateRange(weekData.weekStart, weekData.weekEnd)
+          ])
+          setTodayActivities(todayActs || [])
+          setWeekActivities(weekActs || [])
+        }
       } else {
         // si_business or si_field
         const [projectsData, reportsData] = await Promise.all([ListSIProjects(), ListWeeklyReports()])
@@ -537,9 +594,13 @@ export default function Dashboard() {
 
           {/* ── Cards Grid ── */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-            {/* shared */}
-            <MembersCard members={members} />
-            <AttendanceCard attendance={attendance} />
+            {/* shared (except personal) */}
+            {teamType !== 'personal' && (
+              <>
+                <MembersCard members={members} />
+                <AttendanceCard attendance={attendance} />
+              </>
+            )}
 
             {/* si_business */}
             {teamType === 'si_business' && (
@@ -568,10 +629,20 @@ export default function Dashboard() {
                 <RetroCard retro={latestRetro} navigate={navigate} />
               </>
             )}
+
+            {/* personal only */}
+            {teamType === 'personal' && (
+              <>
+                <MyAttendanceCard summary={myAttendance} navigate={navigate} />
+                <TodayScheduleCard activities={todayActivities} />
+                <MyWeeklyReportCard report={myWeeklyReport} weekInfo={currentWeek} navigate={navigate} />
+                <MyStatsCard linearIssues={linearIssues} reports={reports} />
+              </>
+            )}
           </div>
 
-          {/* ── Attendance Detail (all types) ── */}
-          <AttendanceTable attendance={attendance} />
+          {/* ── Attendance Detail (all types except personal) ── */}
+          {teamType !== 'personal' && <AttendanceTable attendance={attendance} />}
 
           {/* ── small_team / personal: Linear 미설정 안내 ── */}
           {(teamType === 'small_team' || teamType === 'personal') && linearIssues.length === 0 && !loading && !profile?.linearApiKey && (
@@ -584,6 +655,122 @@ export default function Dashboard() {
             </div>
           )}
 
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Personal Dashboard Cards ────────────────────────────────────────────────
+
+function MyAttendanceCard({ summary, navigate }: { summary: MyAttendanceSummary | null; navigate: (p: string) => void }) {
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="p-2 bg-blue-100 rounded-lg"><User size={20} className="text-blue-600" /></div>
+        <h3 className="font-semibold text-slate-800">내 근무 현황</h3>
+      </div>
+      {summary ? (
+        <div className="grid grid-cols-2 gap-3 mb-3">
+          <div className="bg-slate-50 rounded-lg p-3 text-center">
+            <div className="text-2xl font-bold text-slate-700">{summary.vacationDays}</div>
+            <div className="text-xs text-slate-500">휴가</div>
+          </div>
+          <div className="bg-slate-50 rounded-lg p-3 text-center">
+            <div className="text-2xl font-bold text-slate-700">{summary.morningHalfDays + summary.afternoonHalfDays}</div>
+            <div className="text-xs text-slate-500">반차</div>
+          </div>
+        </div>
+      ) : (
+        <p className="text-slate-400 text-sm mb-3">근무 기록이 없습니다</p>
+      )}
+      <button 
+        onClick={() => navigate('/settings/attendance')}
+        className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm rounded-lg transition-colors"
+      >
+        + 근태 등록하기
+      </button>
+    </div>
+  )
+}
+
+function TodayScheduleCard({ activities }: { activities: Activity[] }) {
+  const today = new Date().toISOString().split('T')[0]
+  const todayActs = activities.filter(a => a.activityDate === today || a.activityDatetime?.startsWith(today))
+  
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="p-2 bg-green-100 rounded-lg"><Calendar size={20} className="text-green-600" /></div>
+        <h3 className="font-semibold text-slate-800">오늘 일정</h3>
+      </div>
+      {todayActs.length > 0 ? (
+        <ul className="space-y-2">
+          {todayActs.slice(0, 3).map(a => (
+            <li key={a.id} className="text-sm text-slate-600 truncate">{a.title}</li>
+          ))}
+          {todayActs.length > 3 && <li className="text-xs text-slate-400">+{todayActs.length - 3}개 더</li>}
+        </ul>
+      ) : (
+        <p className="text-slate-400 text-sm">오늘 일정이 없습니다</p>
+      )}
+    </div>
+  )
+}
+
+function MyWeeklyReportCard({ report, weekInfo, navigate }: { report: WeeklyReport | null, weekInfo: any, navigate: (p: string) => void }) {
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="p-2 bg-purple-100 rounded-lg"><FileText size={20} className="text-purple-600" /></div>
+        <h3 className="font-semibold text-slate-800">주간 보고서</h3>
+      </div>
+      {report ? (
+        <div>
+          <p className="text-sm text-slate-600 mb-2">{weekInfo?.label || '이번 주'}</p>
+          <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs ${
+            report.status === 'submitted' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+          }`}>
+            {report.status === 'submitted' ? '제출 완료' : '작성 중'}
+          </span>
+        </div>
+      ) : (
+        <div>
+          <p className="text-slate-400 text-sm mb-3">아직 보고서를 작성하지 않았습니다</p>
+          <button 
+            onClick={() => navigate('/report/create')}
+            className="text-sm text-blue-600 hover:underline"
+          >
+            보고서 작성하기 →
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function MyStatsCard({ linearIssues, reports }: { linearIssues: LinearIssue[], reports: WeeklyReport[] }) {
+  const doneCount = linearIssues.filter(i => i.state?.type === 'completed' || i.state?.type === 'done').length
+  const inProgressCount = linearIssues.filter(i => i.state?.type === 'started' || i.state?.type === 'in_progress').length
+  
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="p-2 bg-orange-100 rounded-lg"><TrendingUp size={20} className="text-orange-600" /></div>
+        <h3 className="font-semibold text-slate-800">업무 통계</h3>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="bg-slate-50 rounded-lg p-3 text-center">
+          <div className="text-2xl font-bold text-green-600">{doneCount}</div>
+          <div className="text-xs text-slate-500">완료한 태스크</div>
+        </div>
+        <div className="bg-slate-50 rounded-lg p-3 text-center">
+          <div className="text-2xl font-bold text-blue-600">{inProgressCount}</div>
+          <div className="text-xs text-slate-500">진행 중</div>
+        </div>
+        <div className="bg-slate-50 rounded-lg p-3 text-center">
+          <div className="text-2xl font-bold text-purple-600">{reports.length}</div>
+          <div className="text-xs text-slate-500">총 보고서</div>
         </div>
       </div>
     </div>

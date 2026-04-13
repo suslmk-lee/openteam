@@ -27,6 +27,7 @@ type Activity struct {
 	Summary          string    `json:"summary"`
 	RawData          string    `json:"rawData"`
 	ActivityDate     string    `json:"activityDate"`
+	Date             string    `json:"date"`                       // Alias for frontend compatibility
 	ActivityDateTime string    `json:"activityDateTime,omitempty"` // Full datetime for calendar events with time
 	EndDateTime      string    `json:"endDateTime,omitempty"`      // End datetime for multi-day events
 	CalendarID       string    `json:"calendarId,omitempty"`       // For Google Calendar
@@ -40,6 +41,14 @@ type WeeklyReport struct {
 	WeekEnd   string    `json:"weekEnd"`
 	Status    string    `json:"status"`
 	CreatedAt time.Time `json:"createdAt"`
+}
+
+type MyAttendanceSummary struct {
+	VacationDays      int `json:"vacationDays"`
+	MorningHalfDays   int `json:"morningHalfDays"`
+	AfternoonHalfDays int `json:"afternoonHalfDays"`
+	TotalDays         int `json:"totalDays"`
+	LateCount         int `json:"lateCount"`
 }
 
 type ReportItem struct {
@@ -244,14 +253,14 @@ type CodeGroup struct {
 
 // TeamProfile stores the team type and basic setup info
 type TeamProfile struct {
-	TeamType      string `json:"teamType"` // si_business, si_field, small_team
-	TeamName      string `json:"teamName"`
-	UserName      string `json:"userName"`
-	MemberCount   int    `json:"memberCount"`
-	SetupDone     bool   `json:"setupDone"`
-	LinearAPIKey  string `json:"linearApiKey"`
-	LinearTeamID  string `json:"linearTeamId"`
-	LinearUserID  string `json:"linearUserId"` // Current user's Linear ID
+	TeamType     string `json:"teamType"` // si_business, si_field, small_team
+	TeamName     string `json:"teamName"`
+	UserName     string `json:"userName"`
+	MemberCount  int    `json:"memberCount"`
+	SetupDone    bool   `json:"setupDone"`
+	LinearAPIKey string `json:"linearApiKey"`
+	LinearTeamID string `json:"linearTeamId"`
+	LinearUserID string `json:"linearUserId"` // Current user's Linear ID
 }
 
 // Issue stores issues/risks for si_field team

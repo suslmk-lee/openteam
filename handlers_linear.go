@@ -520,8 +520,8 @@ func GetMyLinearIssues(apiKey, teamID, linearUserID string) ([]LinearIssue, erro
 			continue
 		}
 
-		// Exclude cancelled and completed states
-		if issue.State.Type == "cancelled" || issue.State.Type == "completed" {
+		// Exclude cancelled states only (include completed for stats)
+		if issue.State.Type == "cancelled" || issue.State.Type == "canceled" {
 			log.Printf("[GetMyLinearIssues] Skipping issue %s: state=%s", issue.ID, issue.State.Type)
 			continue
 		}

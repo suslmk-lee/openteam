@@ -510,6 +510,29 @@ func (d *Database) DeleteTeamMember(userID, memberID int64) error {
 	return err
 }
 
+// GetOrCreateSelfTeamMember finds or creates a team member representing the user themselves (for personal attendance)
+func (d *Database) GetOrCreateSelfTeamMember(userID int64, userName string) (int64, error) {
+	// Try to find existing self team member
+	var memberID int64
+	err := d.conn.QueryRow(
+		"SELECT id FROM team_members WHERE user_id = ? AND name = ? LIMIT 1",
+		userID, userName,
+	).Scan(&memberID)
+	if err == nil {
+		return memberID, nil
+	}
+
+	// Create self team member
+	res, err := d.conn.Exec(
+		"INSERT INTO team_members (user_id, name, position, email, role, employment_type, active) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		userID, userName, "본인", "", "member", "", 1,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
 // --- Clients ---
 
 func (d *Database) SaveClient(c *Client) (int64, error) {

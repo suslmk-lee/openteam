@@ -3012,8 +3012,8 @@ func (a *App) PopulateReportFromLinear(reportID int64, weekStart, weekEnd string
 			continue
 		}
 
-		// Check for duplicates (category + first 50 chars of content)
-		key := "project_progress|" + group.categoryName + "|" + content
+		// Check for duplicates (content first 50 chars only, since category is empty)
+		key := "project_progress|" + content
 		if len(key) > 100 {
 			key = key[:100]
 		}
@@ -3023,10 +3023,11 @@ func (a *App) PopulateReportFromLinear(reportID int64, weekStart, weekEnd string
 		}
 
 		// Save report item
+		// Note: Linear content is already self-contained (1) 진행업무: ...), so no category needed
 		item := &db.ReportItem{
 			ReportID:   reportID,
 			Section:    "project_progress",
-			Category:   group.categoryName,
+			Category:   "",  // Linear content doesn't need category prefix
 			WorkType:   "si",
 			Content:    content,
 			Period:     "this_week",

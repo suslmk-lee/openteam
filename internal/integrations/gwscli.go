@@ -56,14 +56,16 @@ type Calendar struct {
 
 // CalendarEvent represents a calendar event from gws
 type CalendarEvent struct {
-	ID          string `json:"id"`
-	CalendarID  string `json:"calendarId,omitempty"` // Added by us
-	Summary     string `json:"summary"`
-	Description string `json:"description,omitempty"`
-	Location    string `json:"location,omitempty"`
-	Start       string `json:"start"` // Format: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS
-	End         string `json:"end"`   // Format: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS
-	Status      string `json:"status,omitempty"`
+	ID            string `json:"id"`
+	CalendarID    string `json:"calendarId,omitempty"` // Added by us
+	Summary       string `json:"summary"`
+	Description   string `json:"description,omitempty"`
+	Location      string `json:"location,omitempty"`
+	Status        string `json:"status,omitempty"`
+	Start         string `json:"start"`                   // Format: YYYY-MM-DD (date only)
+	StartDateTime string `json:"startDateTime,omitempty"` // Format: YYYY-MM-DDTHH:MM:SS (full datetime)
+	End           string `json:"end"`                     // Format: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS
+	EndDateTime   string `json:"endDateTime,omitempty"`   // Format: YYYY-MM-DDTHH:MM:SS (full datetime)
 }
 
 // EventTime represents Google API datetime format (can be date or dateTime)
@@ -318,14 +320,16 @@ func (g *GWSCLI) FetchCalendarEvents(calendarID string, after, before time.Time)
 	var events []CalendarEvent
 	for _, raw := range rawResult.Items {
 		evt := CalendarEvent{
-			ID:          raw.ID,
-			CalendarID:  calendarID,
-			Summary:     raw.Summary,
-			Description: raw.Description,
-			Location:    raw.Location,
-			Status:      raw.Status,
-			Start:       extractEventDateTime(raw.Start),
-			End:         extractEventDateTime(raw.End),
+			ID:            raw.ID,
+			CalendarID:    calendarID,
+			Summary:       raw.Summary,
+			Description:   raw.Description,
+			Location:      raw.Location,
+			Status:        raw.Status,
+			Start:         extractEventDate(raw.Start),
+			StartDateTime: extractEventDateTime(raw.Start),
+			End:           extractEventDate(raw.End),
+			EndDateTime:   extractEventDateTime(raw.End),
 		}
 		events = append(events, evt)
 	}
@@ -334,14 +338,23 @@ func (g *GWSCLI) FetchCalendarEvents(calendarID string, after, before time.Time)
 	return events, nil
 }
 
-// extractEventDateTime extracts date or datetime from EventTime
-func extractEventDateTime(et EventTime) string {
+// extractEventDate extracts date from EventTime (for activity_date)
+func extractEventDate(et EventTime) string {
 	if et.DateTime != "" {
 		return et.DateTime[:10] // Extract YYYY-MM-DD from datetime
 	}
 	if et.Date != "" {
 		return et.Date
 	}
+	return ""
+}
+
+// extractEventDateTime extracts full datetime from EventTime (for activity_datetime)
+func extractEventDateTime(et EventTime) string {
+	if et.DateTime != "" {
+		return et.DateTime // Return full datetime string
+	}
+	// For all-day events, return empty string
 	return ""
 }
 

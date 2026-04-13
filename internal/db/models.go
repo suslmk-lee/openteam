@@ -19,16 +19,18 @@ type Integration struct {
 }
 
 type Activity struct {
-	ID            int64     `json:"id"`
-	IntegrationID int64     `json:"integrationId"`
-	Source        string    `json:"source"`
-	ExternalID    string    `json:"externalId"`
-	Title         string    `json:"title"`
-	Summary       string    `json:"summary"`
-	RawData       string    `json:"rawData"`
-	ActivityDate  string    `json:"activityDate"`
-	CalendarID    string    `json:"calendarId,omitempty"` // For Google Calendar
-	FetchedAt     time.Time `json:"fetchedAt"`
+	ID               int64     `json:"id"`
+	IntegrationID    int64     `json:"integrationId"`
+	Source           string    `json:"source"`
+	ExternalID       string    `json:"externalId"`
+	Title            string    `json:"title"`
+	Summary          string    `json:"summary"`
+	RawData          string    `json:"rawData"`
+	ActivityDate     string    `json:"activityDate"`
+	ActivityDateTime string    `json:"activityDateTime,omitempty"` // Full datetime for calendar events with time
+	EndDateTime      string    `json:"endDateTime,omitempty"`      // End datetime for multi-day events
+	CalendarID       string    `json:"calendarId,omitempty"`       // For Google Calendar
+	FetchedAt        time.Time `json:"fetchedAt"`
 }
 
 type WeeklyReport struct {

@@ -34,10 +34,6 @@ export function AddSIProjectType(arg1) {
   return window['go']['main']['App']['AddSIProjectType'](arg1);
 }
 
-export function AuthGmailAccount(arg1) {
-  return window['go']['main']['App']['AuthGmailAccount'](arg1);
-}
-
 export function AutoMapLinearMembers() {
   return window['go']['main']['App']['AutoMapLinearMembers']();
 }
@@ -46,12 +42,12 @@ export function CheckClaudeCLI() {
   return window['go']['main']['App']['CheckClaudeCLI']();
 }
 
-export function CheckGmailAuth(arg1) {
-  return window['go']['main']['App']['CheckGmailAuth'](arg1);
+export function CheckGWSAuth() {
+  return window['go']['main']['App']['CheckGWSAuth']();
 }
 
-export function CheckGogCLI() {
-  return window['go']['main']['App']['CheckGogCLI']();
+export function CheckGWSCLI() {
+  return window['go']['main']['App']['CheckGWSCLI']();
 }
 
 export function ClaudeChat(arg1, arg2) {
@@ -126,6 +122,10 @@ export function GetAttendanceTypes() {
   return window['go']['main']['App']['GetAttendanceTypes']();
 }
 
+export function GetCalendars() {
+  return window['go']['main']['App']['GetCalendars']();
+}
+
 export function GetClientStatuses() {
   return window['go']['main']['App']['GetClientStatuses']();
 }
@@ -148,6 +148,10 @@ export function GetEmploymentTypes() {
 
 export function GetExcelTemplate() {
   return window['go']['main']['App']['GetExcelTemplate']();
+}
+
+export function GetExcelTemplateForType(arg1) {
+  return window['go']['main']['App']['GetExcelTemplateForType'](arg1);
 }
 
 export function GetIntegrations() {
@@ -218,6 +222,10 @@ export function GetWeekByOffset(arg1) {
   return window['go']['main']['App']['GetWeekByOffset'](arg1);
 }
 
+export function GetWeeklyReport(arg1) {
+  return window['go']['main']['App']['GetWeeklyReport'](arg1);
+}
+
 export function Greet(arg1) {
   return window['go']['main']['App']['Greet'](arg1);
 }
@@ -270,6 +278,10 @@ export function PreprocessReportItemsWithAI(arg1) {
   return window['go']['main']['App']['PreprocessReportItemsWithAI'](arg1);
 }
 
+export function RefineMarkdownWithAI(arg1) {
+  return window['go']['main']['App']['RefineMarkdownWithAI'](arg1);
+}
+
 export function SaveAttendanceRecord(arg1) {
   return window['go']['main']['App']['SaveAttendanceRecord'](arg1);
 }
@@ -318,8 +330,8 @@ export function ScanClaudeSkills() {
   return window['go']['main']['App']['ScanClaudeSkills']();
 }
 
-export function SetupGogCredentials() {
-  return window['go']['main']['App']['SetupGogCredentials']();
+export function SetupGWSAuth() {
+  return window['go']['main']['App']['SetupGWSAuth']();
 }
 
 export function SetupTeamProfile(arg1, arg2, arg3, arg4) {
@@ -364,4 +376,8 @@ export function UpdateUser(arg1, arg2) {
 
 export function UploadExcelTemplate() {
   return window['go']['main']['App']['UploadExcelTemplate']();
+}
+
+export function UploadExcelTemplateForType(arg1) {
+  return window['go']['main']['App']['UploadExcelTemplateForType'](arg1);
 }

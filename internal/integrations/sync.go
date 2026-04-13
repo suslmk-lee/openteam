@@ -129,18 +129,20 @@ func SyncGoogleCalendar(database *db.Database, account string, weekStart, weekEn
 			actDate = actDate[:10]
 		}
 
-		log.Printf("[sync] Storing calendar event: ID=%s, Date=%s, Title=%s, Calendar=%s",
-			evt.ID, actDate, evt.Summary, evt.CalendarID)
+		log.Printf("[sync] Storing calendar event: ID=%s, Date=%s, DateTime=%s, EndTime=%s, Title=%s, Calendar=%s",
+			evt.ID, actDate, evt.StartDateTime, evt.EndDateTime, evt.Summary, evt.CalendarID)
 
 		activity := &db.Activity{
-			IntegrationID: integrationID,
-			Source:        "google_calendar",
-			ExternalID:    evt.ID,
-			Title:         evt.Summary,
-			Summary:       formatCalendarSummary(evt),
-			RawData:       "",
-			ActivityDate:  actDate,
-			CalendarID:    evt.CalendarID,
+			IntegrationID:    integrationID,
+			Source:           "google_calendar",
+			ExternalID:       evt.ID,
+			Title:            evt.Summary,
+			Summary:          formatCalendarSummary(evt),
+			RawData:          "",
+			ActivityDate:     actDate,
+			ActivityDateTime: evt.StartDateTime, // Store full datetime for events with time
+			EndDateTime:      evt.EndDateTime,   // Store end datetime for multi-day events
+			CalendarID:       evt.CalendarID,
 		}
 
 		_, err := database.UpsertActivity(activity)

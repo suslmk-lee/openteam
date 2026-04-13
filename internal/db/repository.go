@@ -130,9 +130,9 @@ func (d *Database) ListIntegrations(userID int64) ([]Integration, error) {
 
 func (d *Database) SaveActivity(a *Activity) (int64, error) {
 	res, err := d.conn.Exec(
-		`INSERT OR REPLACE INTO activities (integration_id, source, external_id, title, summary, raw_data, activity_date, calendar_id)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		a.IntegrationID, a.Source, a.ExternalID, a.Title, a.Summary, a.RawData, a.ActivityDate, a.CalendarID,
+		`INSERT OR REPLACE INTO activities (integration_id, source, external_id, title, summary, raw_data, activity_date, activity_datetime, end_datetime, calendar_id)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		a.IntegrationID, a.Source, a.ExternalID, a.Title, a.Summary, a.RawData, a.ActivityDate, a.ActivityDateTime, a.EndDateTime, a.CalendarID,
 	)
 	if err != nil {
 		return 0, err
@@ -149,9 +149,9 @@ func (d *Database) UpsertActivity(a *Activity) (int64, error) {
 		).Scan(&existingID)
 		if err == nil {
 			_, err := d.conn.Exec(
-				`UPDATE activities SET title = ?, summary = ?, raw_data = ?, activity_date = ?, calendar_id = ?, fetched_at = CURRENT_TIMESTAMP
+				`UPDATE activities SET title = ?, summary = ?, raw_data = ?, activity_date = ?, activity_datetime = ?, end_datetime = ?, calendar_id = ?, fetched_at = CURRENT_TIMESTAMP
 				 WHERE id = ?`,
-				a.Title, a.Summary, a.RawData, a.ActivityDate, a.CalendarID, existingID,
+				a.Title, a.Summary, a.RawData, a.ActivityDate, a.ActivityDateTime, a.EndDateTime, a.CalendarID, existingID,
 			)
 			return existingID, err
 		}
@@ -162,7 +162,7 @@ func (d *Database) UpsertActivity(a *Activity) (int64, error) {
 func (d *Database) ListActivities(weekStart, weekEnd string) ([]Activity, error) {
 	log.Printf("[DB ListActivities] Query range: %s ~ %s", weekStart, weekEnd)
 	rows, err := d.conn.Query(
-		`SELECT id, integration_id, source, external_id, title, summary, raw_data, activity_date, calendar_id, fetched_at
+		`SELECT id, integration_id, source, external_id, title, summary, raw_data, activity_date, activity_datetime, end_datetime, calendar_id, fetched_at
 		 FROM activities WHERE activity_date BETWEEN ? AND ? ORDER BY activity_date DESC`,
 		weekStart, weekEnd,
 	)
@@ -175,8 +175,16 @@ func (d *Database) ListActivities(weekStart, weekEnd string) ([]Activity, error)
 	calendarCount := 0
 	for rows.Next() {
 		var a Activity
-		if err := rows.Scan(&a.ID, &a.IntegrationID, &a.Source, &a.ExternalID, &a.Title, &a.Summary, &a.RawData, &a.ActivityDate, &a.CalendarID, &a.FetchedAt); err != nil {
+		var activityDateTime sql.NullString
+		var endDateTime sql.NullString
+		if err := rows.Scan(&a.ID, &a.IntegrationID, &a.Source, &a.ExternalID, &a.Title, &a.Summary, &a.RawData, &a.ActivityDate, &activityDateTime, &endDateTime, &a.CalendarID, &a.FetchedAt); err != nil {
 			return nil, err
+		}
+		if activityDateTime.Valid {
+			a.ActivityDateTime = activityDateTime.String
+		}
+		if endDateTime.Valid {
+			a.EndDateTime = endDateTime.String
 		}
 		activities = append(activities, a)
 		if a.Source == "google_calendar" {

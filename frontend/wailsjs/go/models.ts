@@ -9,6 +9,9 @@ export namespace db {
 	    summary: string;
 	    rawData: string;
 	    activityDate: string;
+	    activityDateTime?: string;
+	    endDateTime?: string;
+	    calendarId?: string;
 	    // Go type: time
 	    fetchedAt: any;
 	
@@ -26,6 +29,9 @@ export namespace db {
 	        this.summary = source["summary"];
 	        this.rawData = source["rawData"];
 	        this.activityDate = source["activityDate"];
+	        this.activityDateTime = source["activityDateTime"];
+	        this.endDateTime = source["endDateTime"];
+	        this.calendarId = source["calendarId"];
 	        this.fetchedAt = this.convertValues(source["fetchedAt"], null);
 	    }
 	
@@ -172,6 +178,7 @@ export namespace db {
 	export class ExcelTemplate {
 	    id: number;
 	    userId: number;
+	    teamType: string;
 	    name: string;
 	    filePath: string;
 	    structureJson: string;
@@ -186,6 +193,7 @@ export namespace db {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
 	        this.userId = source["userId"];
+	        this.teamType = source["teamType"];
 	        this.name = source["name"];
 	        this.filePath = source["filePath"];
 	        this.structureJson = source["structureJson"];
@@ -954,6 +962,29 @@ export namespace db {
 
 }
 
+export namespace integrations {
+	
+	export class Calendar {
+	    id: string;
+	    summary: string;
+	    primary?: boolean;
+	    selected?: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new Calendar(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.summary = source["summary"];
+	        this.primary = source["primary"];
+	        this.selected = source["selected"];
+	    }
+	}
+
+}
+
 export namespace main {
 	
 	export class ActivityWithSource {
@@ -965,6 +996,9 @@ export namespace main {
 	    summary: string;
 	    rawData: string;
 	    activityDate: string;
+	    activityDateTime?: string;
+	    endDateTime?: string;
+	    calendarId?: string;
 	    // Go type: time
 	    fetchedAt: any;
 	    sourceLabel: string;
@@ -984,6 +1018,9 @@ export namespace main {
 	        this.summary = source["summary"];
 	        this.rawData = source["rawData"];
 	        this.activityDate = source["activityDate"];
+	        this.activityDateTime = source["activityDateTime"];
+	        this.endDateTime = source["endDateTime"];
+	        this.calendarId = source["calendarId"];
 	        this.fetchedAt = this.convertValues(source["fetchedAt"], null);
 	        this.sourceLabel = source["sourceLabel"];
 	        this.sourceIcon = source["sourceIcon"];

@@ -83,21 +83,39 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
 
   // Google Calendar settings
   const [availableCalendars, setAvailableCalendars] = useState<Array<{id: string, summary: string, primary?: boolean}>>([])
-  const [selectedCalendars, setSelectedCalendars] = useState<Array<{id: string, color: string}>>([])
+  const [selectedCalendars, setSelectedCalendars] = useState<Array<{id: string, color: string, name?: string}>>([])
   const [loadingCalendars, setLoadingCalendars] = useState(false)
 
-  // Predefined calendar colors
+  // Google Calendar style 24-color palette
   const CALENDAR_COLORS = [
-    { value: '#3b82f6', label: '파랑' },
-    { value: '#ef4444', label: '빨강' },
-    { value: '#22c55e', label: '초록' },
-    { value: '#f59e0b', label: '주황' },
-    { value: '#8b5cf6', label: '보라' },
-    { value: '#ec4899', label: '분홍' },
-    { value: '#06b6d4', label: '청록' },
-    { value: '#6366f1', label: '남색' },
-    { value: '#84cc16', label: '연두' },
-    { value: '#f97316', label: '오렌지' },
+    // Row 1: Red/Pink
+    { value: '#ac725e', label: '갈색' },
+    { value: '#d06b64', label: '진빨강' },
+    { value: '#f83a22', label: '빨강' },
+    { value: '#fa573c', label: '주황빨강' },
+    { value: '#ff7537', label: '주황' },
+    { value: '#ffad46', label: '연주황' },
+    // Row 2: Yellow/Green
+    { value: '#fad165', label: '노랑' },
+    { value: '#fbe983', label: '연노랑' },
+    { value: '#b3dc6c', label: '연두' },
+    { value: '#7bd148', label: '초록' },
+    { value: '#16a765', label: '진초록' },
+    { value: '#42d692', label: '민트' },
+    // Row 3: Cyan/Blue
+    { value: '#9fe1e7', label: '하늘' },
+    { value: '#92e1c0', label: '청록' },
+    { value: '#9fc6e7', label: '연파랑' },
+    { value: '#4986e7', label: '파랑' },
+    { value: '#9a9cff', label: '보라파랑' },
+    { value: '#b99aff', label: '연보라' },
+    // Row 4: Purple/Pink/Gray
+    { value: '#c2c2c2', label: '회색' },
+    { value: '#cabdbf', label: '연회색' },
+    { value: '#cca6ac', label: '분홍회색' },
+    { value: '#f691b2', label: '분홍' },
+    { value: '#cd74e6', label: '진보라' },
+    { value: '#a47ae2', label: '보라' },
   ]
 
   // Linear settings
@@ -589,7 +607,7 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
                         // Auto-select primary only if no existing selections
                         const primary = calendars?.find((c: any) => c.primary)
                         if (primary && preservedSelections.length === 0) {
-                          setSelectedCalendars([{ id: primary.id, color: CALENDAR_COLORS[0].value }])
+                          setSelectedCalendars([{ id: primary.id, color: CALENDAR_COLORS[0].value, name: primary.summary }])
                         } else {
                           setSelectedCalendars(preservedSelections)
                         }
@@ -626,18 +644,25 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
                                   const usedColors = selectedCalendars.map(sc => sc.color)
                                   const availableColor = CALENDAR_COLORS.find(c => !usedColors.includes(c.value))
                                   const color = availableColor?.value || CALENDAR_COLORS[0].value
-                                  setSelectedCalendars([...selectedCalendars, { id: cal.id, color }])
+                                  const newCalendar = { id: cal.id, color, name: cal.summary }
+                                  const updatedCalendars = [...selectedCalendars, newCalendar]
+                                  setSelectedCalendars(updatedCalendars)
+                                  // Save immediately with updated array
+                                  const configJson = JSON.stringify({
+                                    account: gmailAccount.trim(),
+                                    calendars: updatedCalendars
+                                  })
+                                  SaveIntegration('google_calendar', configJson, true)
                                 } else {
-                                  setSelectedCalendars(selectedCalendars.filter(sc => sc.id !== cal.id))
+                                  const updatedCalendars = selectedCalendars.filter(sc => sc.id !== cal.id)
+                                  setSelectedCalendars(updatedCalendars)
+                                  // Save immediately with updated array
+                                  const configJson = JSON.stringify({
+                                    account: gmailAccount.trim(),
+                                    calendars: updatedCalendars
+                                  })
+                                  SaveIntegration('google_calendar', configJson, true)
                                 }
-                                // Save to integration config
-                                const configJson = JSON.stringify({
-                                  account: gmailAccount.trim(),
-                                  calendars: e.target.checked
-                                    ? [...selectedCalendars, { id: cal.id, color: selectedCal?.color || CALENDAR_COLORS[0].value }]
-                                    : selectedCalendars.filter(sc => sc.id !== cal.id)
-                                })
-                                SaveIntegration('google_calendar', configJson, true)
                               }}
                               className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                             />
@@ -646,31 +671,10 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
                               {cal.primary && <span className="ml-2 text-xs text-blue-600">(기본)</span>}
                             </span>
                             {isSelected && (
-                              <div className="flex items-center gap-1">
-                                {CALENDAR_COLORS.map((color) => (
-                                  <button
-                                    key={color.value}
-                                    onClick={() => {
-                                      const updated = selectedCalendars.map(sc =>
-                                        sc.id === cal.id ? { ...sc, color: color.value } : sc
-                                      )
-                                      setSelectedCalendars(updated)
-                                      const configJson = JSON.stringify({
-                                        account: gmailAccount.trim(),
-                                        calendars: updated
-                                      })
-                                      SaveIntegration('google_calendar', configJson, true)
-                                    }}
-                                    className={`w-5 h-5 rounded-full border-2 transition-all ${
-                                      selectedCal?.color === color.value
-                                        ? 'border-slate-800 scale-110'
-                                        : 'border-transparent hover:scale-105'
-                                    }`}
-                                    style={{ backgroundColor: color.value }}
-                                    title={color.label}
-                                  />
-                                ))}
-                              </div>
+                              <span 
+                                className="w-4 h-4 rounded-full shrink-0"
+                                style={{ backgroundColor: selectedCal?.color || CALENDAR_COLORS[0].value }}
+                              />
                             )}
                           </div>
                         )

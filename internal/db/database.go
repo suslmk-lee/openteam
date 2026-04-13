@@ -334,6 +334,16 @@ func (d *Database) migrate() error {
 		return err
 	}
 
+	// Add activity_datetime column for storing full datetime (for calendar events with time)
+	if err := d.ensureColumnExists("activities", "activity_datetime", "ALTER TABLE activities ADD COLUMN activity_datetime TEXT"); err != nil {
+		return err
+	}
+
+	// Add end_datetime column for multi-day events
+	if err := d.ensureColumnExists("activities", "end_datetime", "ALTER TABLE activities ADD COLUMN end_datetime TEXT"); err != nil {
+		return err
+	}
+
 	// Verify calendar_id column exists (debugging)
 	if err := d.verifyCalendarColumn(); err != nil {
 		log.Printf("[DB] Calendar column verification: %v", err)

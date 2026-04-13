@@ -760,12 +760,6 @@ func normalizeNarrativeContent(content string) string {
 	text = strings.ReplaceAll(text, "\r\n", "\n")
 	text = strings.ReplaceAll(text, "\r", "\n")
 
-	if !strings.Contains(text, "\n") {
-		text = strings.ReplaceAll(text, " 2) 후속조치:", "\n2) 후속조치:")
-		text = strings.ReplaceAll(text, "2) 후속조치:", "\n2) 후속조치:")
-		text = strings.ReplaceAll(text, " 후속조치:", "\n후속조치:")
-	}
-
 	lines := []string{}
 	for _, line := range strings.Split(text, "\n") {
 		line = strings.TrimSpace(line)
@@ -778,31 +772,38 @@ func normalizeNarrativeContent(content string) string {
 		return ""
 	}
 
+	// Check if content is already in new format with " - 진행사항 :" and " - 후속조치 :"
+	hasNewFormat := false
+	if len(lines) >= 3 {
+		for i := 1; i < len(lines); i++ {
+			if strings.Contains(lines[i], " - 진행사항") || strings.Contains(lines[i], " - 후속조치") {
+				hasNewFormat = true
+				break
+			}
+		}
+	}
+
+	if hasNewFormat {
+		// Already in new format, return as-is
+		return strings.Join(lines, "\n")
+	}
+
+	// Handle old format or unformatted content
+	// For new format, we should have: projectName, " - 진행사항 : ...", " - 후속조치 : ..."
+	// If content is single line or doesn't have the markers, rebuild it
+
 	if len(lines) == 1 {
-		line := lines[0]
-		if strings.HasPrefix(line, "1) 진행업무:") {
-			return line + "\n2) 후속조치: 관련 후속 조치를 진행함."
-		}
-		if strings.HasPrefix(line, "진행업무:") {
-			return "1) " + line + "\n2) 후속조치: 관련 후속 조치를 진행함."
-		}
-		return "1) 진행업무: " + line + "\n2) 후속조치: 관련 후속 조치를 진행함."
+		// Single line: assume it's project activity, create both lines
+		return lines[0] + "\n - 진행사항 : (진행 중)\n - 후속조치 : 후속 조치 필요"
 	}
 
-	first := lines[0]
-	second := lines[1]
-	if strings.HasPrefix(first, "진행업무:") {
-		first = "1) " + first
-	} else if !strings.HasPrefix(first, "1) 진행업무:") {
-		first = "1) 진행업무: " + first
-	}
-	if strings.HasPrefix(second, "후속조치:") {
-		second = "2) " + second
-	} else if !strings.HasPrefix(second, "2) 후속조치:") {
-		second = "2) 후속조치: " + second
+	if len(lines) == 2 {
+		// Two lines: first is project name, second is activity
+		return lines[0] + "\n - 진행사항 : " + lines[1] + "\n - 후속조치 : 후속 조치 필요"
 	}
 
-	return first + "\n" + second
+	// Three or more lines: first is project name, second is activity, third+ is follow-up
+	return lines[0] + "\n - 진행사항 : " + lines[1] + "\n - 후속조치 : " + strings.Join(lines[2:], " ")
 }
 
 func (a *App) PreprocessReportItemsWithAI(reportID int64) SyncResult {
@@ -2897,15 +2898,16 @@ Linear 이슈 목록을 받아 하나의 보고서 항목으로 통합 작성한
 
 [작성 규칙]
 이슈들을 종합해 프로젝트 진행 현황으로 통합 작성
-아래 고정 형식으로 정확히 2줄 출력
+아래 고정 형식으로 정확히 3줄 출력
 이슈 ID, URL, 기술 용어 나열 금지
 업무 맥락과 진행 흐름 중심 서술
 각 줄 100자 이내
 
 [반드시 지킬 출력 형식]
-진행업무: (첫 번째 줄)
-후속조치: (두 번째 줄)`,
-		projectName, categoryName, len(issues), digestLines)
+%s
+ - 진행사항 : (첫 번째 줄)
+ - 후속조치 : (두 번째 줄)`,
+		projectName, categoryName, len(issues), digestLines, projectName)
 
 	// Try Claude CLI first
 	claudeCheck := a.CheckClaudeCLI()

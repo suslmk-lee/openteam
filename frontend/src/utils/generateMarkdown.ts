@@ -65,8 +65,11 @@ function generatePersonalMarkdown(items: ReportItemForMD[]): string {
       const tag = item.category ? `[${item.category}] ` : ''
       const contentLines = item.content.split('\n').filter(line => line.trim())
       if (contentLines.length > 0) {
-        // Check if content is already formatted (starts with "1) 진행업무:" or similar)
-        if (contentLines[0].match(/^\d+\)/)) {
+        // Check if content is already formatted (old format: "1) 진행업무:" or new format with " - 진행사항 :")
+        const isOldFormat = contentLines[0].match(/^\d+\)/)
+        const isNewFormat = contentLines.some(line => line.includes(' - 진행사항') || line.includes(' - 후속조치'))
+
+        if (isOldFormat || isNewFormat) {
           // Already formatted - output as-is without category tag (content is self-contained)
           lines.push(contentLines[0])
           for (let i = 1; i < contentLines.length; i++) {
@@ -92,8 +95,11 @@ function generatePersonalMarkdown(items: ReportItemForMD[]): string {
       const tag = item.category ? `[${item.category}] ` : ''
       const contentLines = item.content.split('\n').filter(line => line.trim())
       if (contentLines.length > 0) {
-        // Check if content is already formatted (starts with "1) 진행업무:" or similar)
-        if (contentLines[0].match(/^\d+\)/)) {
+        // Check if content is already formatted (old format: "1) 진행업무:" or new format with " - 진행사항 :")
+        const isOldFormat = contentLines[0].match(/^\d+\)/)
+        const isNewFormat = contentLines.some(line => line.includes(' - 진행사항') || line.includes(' - 후속조치'))
+
+        if (isOldFormat || isNewFormat) {
           // Already formatted - output as-is without category tag (content is self-contained)
           lines.push(contentLines[0])
           for (let i = 1; i < contentLines.length; i++) {
@@ -142,13 +148,19 @@ function generateTeamMarkdown(items: ReportItemForMD[]): string {
 
     lines.push(`## ${SECTION_LABELS[section] || section}`)
     catMap.forEach((contents, cat) => {
-      // Only show category as sub-header if content is NOT already formatted
-      const hasFormattedContent = contents.some(c => c.match(/^\d+\)/))
+      // Check if content is already formatted (old format: "1) 진행업무:" or new format with " - 진행사항 :")
+      const hasOldFormattedContent = contents.some(c => c.match(/^\d+\)/))
+      const hasNewFormattedContent = contents.some(c => c.includes(' - 진행사항') || c.includes(' - 후속조치'))
+      const hasFormattedContent = hasOldFormattedContent || hasNewFormattedContent
+
       if (cat && !hasFormattedContent) lines.push(`### ${cat}`)
 
       contents.forEach(c => {
-        // Check if content is already formatted (starts with "1) 진행업무:" or similar)
-        if (c.match(/^\d+\)/)) {
+        // Check if content is already formatted (old format: "1) 진행업무:" or new format with " - 진행사항 :")
+        const isOldFormat = c.match(/^\d+\)/)
+        const isNewFormat = c.includes(' - 진행사항') || c.includes(' - 후속조치')
+
+        if (isOldFormat || isNewFormat) {
           // Already formatted - output as-is without category wrapper
           lines.push(c)
         } else {

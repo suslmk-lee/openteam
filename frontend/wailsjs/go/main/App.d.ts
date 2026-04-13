@@ -88,6 +88,8 @@ export function GetLinearTeamMembers():Promise<Array<main.LinearTeamMember>>;
 
 export function GetLinearTeamStates():Promise<Array<main.LinearWorkflowState>>;
 
+export function GetMyLinearIssues():Promise<Array<main.LinearIssue>>;
+
 export function GetOrCreateWeeklyReport(arg1:string,arg2:string):Promise<db.WeeklyReport>;
 
 export function GetPositionTypes():Promise<Array<string>>;

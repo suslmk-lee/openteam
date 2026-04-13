@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"time"
 )
@@ -95,7 +96,9 @@ func fetchLinearWithTeam(apiKey, teamID string) (*LinearDashboardData, error) {
 					EndsAt      string  `json:"endsAt"`
 					CompletedAt *string `json:"completedAt"`
 					Issues      struct {
-						Nodes []struct{ ID string `json:"id"` } `json:"nodes"`
+						Nodes []struct {
+							ID string `json:"id"`
+						} `json:"nodes"`
 					} `json:"issues"`
 				} `json:"nodes"`
 			} `json:"cycles"`
@@ -504,19 +507,29 @@ func GetMyLinearIssues(apiKey, teamID, linearUserID string) ([]LinearIssue, erro
 
 	// Filter: include only if assigned to current user and not cancelled/completed
 	var filtered []LinearIssue
+	log.Printf("[GetMyLinearIssues] Filtering %d issues, teamID=%s, linearUserID=%s", len(allIssues), teamID, linearUserID)
 	for _, issue := range allIssues {
+		assigneeID := ""
+		if issue.Assignee != nil {
+			assigneeID = issue.Assignee.ID
+		}
+
 		// Check if assigned to current user (if teamID, otherwise already assigned)
 		if teamID != "" && (issue.Assignee == nil || issue.Assignee.ID != linearUserID) {
+			log.Printf("[GetMyLinearIssues] Skipping issue %s: assignee=%s, expected=%s", issue.ID, assigneeID, linearUserID)
 			continue
 		}
 
 		// Exclude cancelled and completed states
 		if issue.State.Type == "cancelled" || issue.State.Type == "completed" {
+			log.Printf("[GetMyLinearIssues] Skipping issue %s: state=%s", issue.ID, issue.State.Type)
 			continue
 		}
 
+		log.Printf("[GetMyLinearIssues] Including issue %s: assignee=%s", issue.ID, assigneeID)
 		filtered = append(filtered, issue)
 	}
 
+	log.Printf("[GetMyLinearIssues] Filtered %d issues from %d total", len(filtered), len(allIssues))
 	return filtered, nil
 }

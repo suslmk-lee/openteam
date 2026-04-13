@@ -2553,6 +2553,18 @@ func (a *App) GetLinearTeamMembers() ([]LinearTeamMember, error) {
 	return GetLinearTeamMembers(profile.LinearAPIKey, profile.LinearTeamID)
 }
 
+// GetMyLinearIssues retrieves Linear issues assigned to the current user
+func (a *App) GetMyLinearIssues() ([]LinearIssue, error) {
+	profile, err := a.GetTeamProfile()
+	if err != nil {
+		return nil, fmt.Errorf("팀 프로필을 불러올 수 없습니다")
+	}
+	if profile.LinearAPIKey == "" {
+		return nil, fmt.Errorf("Linear API Key가 설정되지 않았습니다")
+	}
+	return GetMyLinearIssues(profile.LinearAPIKey, profile.LinearTeamID, profile.LinearUserID)
+}
+
 // AutoMapLinearMembers matches app team members to Linear members by email then name,
 // saves the linear_user_id, and returns the count of newly mapped members.
 func (a *App) AutoMapLinearMembers() (int, error) {

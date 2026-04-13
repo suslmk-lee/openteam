@@ -170,6 +170,10 @@ export function GetLinearTeamStates() {
   return window['go']['main']['App']['GetLinearTeamStates']();
 }
 
+export function GetMyLinearIssues() {
+  return window['go']['main']['App']['GetMyLinearIssues']();
+}
+
 export function GetOrCreateWeeklyReport(arg1, arg2) {
   return window['go']['main']['App']['GetOrCreateWeeklyReport'](arg1, arg2);
 }

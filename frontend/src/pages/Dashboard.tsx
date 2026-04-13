@@ -7,7 +7,7 @@ import {
 import {
   ListTeamMembers, GetAttendanceSummary, ListSIProjects,
   GetSIWeeklySnapshot, ListWeeklyReports, ListClients, GetCurrentWeek,
-  ListIssues, ListRetrospectives, GetLinearDashboard,
+  ListIssues, ListRetrospectives, GetLinearDashboard, GetMyLinearIssues,
 } from '../../wailsjs/go/main/App'
 import { useTeamProfile } from '../contexts/TeamProfileContext'
 
@@ -264,8 +264,25 @@ function IssuesCard({ issues }: { issues: Issue[] }) {
 }
 
 function LinearTaskCard({ linearIssues, navigate }: { linearIssues: LinearIssue[]; navigate: (p: string) => void }) {
+  // Debug: log first few issues
+  if (linearIssues.length > 0) {
+    console.log('[LinearTaskCard] Issues:', linearIssues.slice(0, 3).map(i => ({ id: i.id, state: i.state })))
+  }
+  
   const counts: Record<string, number> = { backlog: 0, unstarted: 0, started: 0, completed: 0, cancelled: 0 }
-  linearIssues.forEach(i => { const t = i.state?.type || 'backlog'; if (t in counts) counts[t]++ })
+  linearIssues.forEach(i => { 
+    const t = (i.state?.type || 'backlog').toLowerCase()
+    // Map common Linear state types
+    const mappedType = t === 'in_progress' || t === 'inprogress' ? 'started' : 
+                       t === 'todo' ? 'unstarted' :
+                       t === 'done' ? 'completed' :
+                       t === 'canceled' ? 'cancelled' : t
+    if (mappedType in counts) {
+      counts[mappedType]++
+    } else {
+      console.log('[LinearTaskCard] Unknown state type:', t, 'for issue:', i.id)
+    }
+  })
   const cols = [
     { type: 'backlog', label: 'Backlog', color: 'text-slate-500', bg: 'bg-slate-50' },
     { type: 'unstarted', label: 'Todo', color: 'text-blue-600', bg: 'bg-blue-50' },
@@ -424,9 +441,20 @@ export default function Dashboard() {
         setAttendance((await GetAttendanceSummary(fmt(firstDay), fmt(lastDay))) || [])
       } catch { setAttendance([]) }
 
-      if (teamType === 'small_team') {
+      console.log('[Dashboard] teamType:', teamType, '- checking for small_team or personal')
+      if (teamType === 'small_team' || teamType === 'personal') {
         // Linear tasks + retrospective
-        try { setLinearIssues(((await GetLinearDashboard()) as any)?.issues || []) } catch { setLinearIssues([]) }
+        try { 
+          // Use GetMyLinearIssues for personal team type, GetLinearDashboard for small_team
+          const issues = teamType === 'personal' 
+            ? (await GetMyLinearIssues() as any) || []
+            : ((await GetLinearDashboard()) as any)?.issues || []
+          console.log('[Dashboard] Linear issues loaded:', issues)
+          setLinearIssues(issues) 
+        } catch (e) { 
+          console.log('[Dashboard] Linear fetch error:', e)
+          setLinearIssues([]) 
+        }
         try {
           const retros: Retrospective[] = (await ListRetrospectives()) || []
           setLatestRetro(retros.length > 0 ? retros[0] : null)
@@ -546,7 +574,7 @@ export default function Dashboard() {
           <AttendanceTable attendance={attendance} />
 
           {/* ── small_team / personal: Linear 미설정 안내 ── */}
-          {(teamType === 'small_team' || teamType === 'personal') && linearIssues.length === 0 && !loading && (
+          {(teamType === 'small_team' || teamType === 'personal') && linearIssues.length === 0 && !loading && !profile?.linearApiKey && (
             <div className="mt-4 flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl p-4">
               <CheckSquare size={18} className="text-amber-500 shrink-0" />
               <p className="text-sm text-amber-700">

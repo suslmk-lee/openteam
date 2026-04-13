@@ -2906,10 +2906,10 @@ Linear 이슈 목록을 받아 하나의 보고서 항목으로 통합 작성한
 5. 업무 맥락과 진행 흐름 중심 서술
 6. 각 줄 100자 이내
 
-[반드시 지킬 출력 형식]
-{업무명}
- - 진행사항 : 진행 현황 설명
- - 후속조치 : 예정된 조치`,
+[출력 예시]
+API 키 보안 강화
+ - 진행사항 : 사용자 인증 API 개선 작업 진행 중, 기본 구현 완료
+ - 후속조치 : 에러 처리 개선 및 문서화 예정`,
 		projectName, categoryName, len(issues), digestLines)
 
 	// Try Claude CLI first
@@ -3017,10 +3017,10 @@ func (a *App) PopulateReportFromLinear(reportID int64, weekStart, weekEnd string
 			continue
 		}
 
-		// Check for duplicates (content first 50 chars only, since category is empty)
-		key := "project_progress|" + content
-		if len(key) > 100 {
-			key = key[:100]
+		// Check for duplicates by content (AI-generated content is unique per issue group)
+		key := "project_progress|" + group.categoryName + "|" + content
+		if len(key) > 150 {
+			key = key[:150]
 		}
 		if existingSet[key] {
 			log.Printf("[PopulateReportFromLinear] Skipping duplicate for project %s", group.projectName)
@@ -3028,11 +3028,10 @@ func (a *App) PopulateReportFromLinear(reportID int64, weekStart, weekEnd string
 		}
 
 		// Save report item
-		// Note: Linear content is already self-contained (1) 진행업무: ...), so no category needed
 		item := &db.ReportItem{
 			ReportID:   reportID,
 			Section:    "project_progress",
-			Category:   "",  // Linear content doesn't need category prefix
+			Category:   group.categoryName,  // Map Linear project to category
 			WorkType:   "si",
 			Content:    content,
 			Period:     "this_week",

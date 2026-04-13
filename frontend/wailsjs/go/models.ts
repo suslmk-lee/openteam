@@ -864,6 +864,7 @@ export namespace db {
 	    setupDone: boolean;
 	    linearApiKey: string;
 	    linearTeamId: string;
+	    linearUserId: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new TeamProfile(source);
@@ -878,6 +879,7 @@ export namespace db {
 	        this.setupDone = source["setupDone"];
 	        this.linearApiKey = source["linearApiKey"];
 	        this.linearTeamId = source["linearTeamId"];
+	        this.linearUserId = source["linearUserId"];
 	    }
 	}
 	export class User {

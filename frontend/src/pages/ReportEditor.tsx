@@ -13,6 +13,7 @@ import {
   FileSpreadsheet,
   Copy,
   Sparkles,
+  GitBranch,
 } from 'lucide-react'
 import {
   GetReportItems,
@@ -25,6 +26,7 @@ import {
   OpenFile,
   RefineMarkdownWithAI,
   GetWeeklyReport,
+  PopulateReportFromLinear,
 } from '../../wailsjs/go/main/App'
 import ReactMarkdown from 'react-markdown'
 import { generateMarkdown } from '../utils/generateMarkdown'
@@ -48,7 +50,7 @@ interface ProjectCategory {
   name: string
 }
 
-const SECTIONS = [
+const ALL_SECTIONS = [
   { key: 'project_progress', label: '프로젝트 진행사항', period: 'this_week' },
   { key: 'next_week_plan', label: '차주 계획', period: 'next_week' },
   { key: 'issues', label: '이슈/리스크', period: 'this_week' },
@@ -57,6 +59,14 @@ const SECTIONS = [
   { key: 'hiring', label: '인력채용', period: 'this_week' },
   { key: 'other', label: '기타', period: 'this_week' },
 ]
+
+const getVisibleSections = (teamType: string) => {
+  if (teamType === 'personal') {
+    // 개인 팀은 팀 관리 기능(근태, 인력채용) 및 팀 영업(사업개발) 제외
+    return ALL_SECTIONS.filter(s => !['business_dev', 'attendance', 'hiring'].includes(s.key))
+  }
+  return ALL_SECTIONS
+}
 
 const PERIODS = [
   { key: 'this_week', label: '금주 현황' },
@@ -87,6 +97,7 @@ export default function ReportEditor() {
   const [isRefining, setIsRefining] = useState(false)
   const [copyMsg, setCopyMsg] = useState<string | null>(null)
   const [weekInfo, setWeekInfo] = useState<{ weekStart: string; weekEnd: string; label: string } | null>(null)
+  const [linearLoading, setLinearLoading] = useState(false)
 
   useEffect(() => {
     initializeEditor()
@@ -182,6 +193,20 @@ export default function ReportEditor() {
       await loadData()
     } finally {
       setPreprocessing(false)
+    }
+  }
+
+  async function handleLinearPopulate() {
+    if (!weekInfo) return
+    setLinearLoading(true)
+    try {
+      const count = await PopulateReportFromLinear(reportId, weekInfo.weekStart, weekInfo.weekEnd)
+      await loadData()
+      showStatus(`Linear에서 ${count}개 항목이 추가되었습니다`)
+    } catch (err: any) {
+      showStatus(err?.message || 'Linear 취합 실패')
+    } finally {
+      setLinearLoading(false)
     }
   }
 
@@ -331,6 +356,16 @@ export default function ReportEditor() {
             <RefreshCw size={15} />
             최신 내용 불러오기
           </button>
+          {activeTab === 'edit' && (
+            <button
+              onClick={handleLinearPopulate}
+              disabled={linearLoading || !weekInfo}
+              className="flex items-center gap-2 px-3 py-2 text-sm bg-emerald-100 text-emerald-700 hover:bg-emerald-200 rounded-lg transition-colors disabled:opacity-50"
+            >
+              <GitBranch size={15} className={linearLoading ? 'animate-spin' : ''} />
+              {linearLoading ? 'Linear 취합 중...' : 'Linear 취합'}
+            </button>
+          )}
           <button
             onClick={() => runPreprocess(false)}
             disabled={preprocessing}
@@ -391,7 +426,7 @@ export default function ReportEditor() {
             ))}
           </div>
 
-          {SECTIONS.map(section => {
+          {getVisibleSections(teamType).map(section => {
             if (!shouldShowSection(section.period)) return null
             const sectionItems = getItemsBySection(section.key)
             return (

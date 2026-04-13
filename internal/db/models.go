@@ -244,13 +244,14 @@ type CodeGroup struct {
 
 // TeamProfile stores the team type and basic setup info
 type TeamProfile struct {
-	TeamType     string `json:"teamType"` // si_business, si_field, small_team
-	TeamName     string `json:"teamName"`
-	UserName     string `json:"userName"`
-	MemberCount  int    `json:"memberCount"`
-	SetupDone    bool   `json:"setupDone"`
-	LinearAPIKey string `json:"linearApiKey"`
-	LinearTeamID string `json:"linearTeamId"`
+	TeamType      string `json:"teamType"` // si_business, si_field, small_team
+	TeamName      string `json:"teamName"`
+	UserName      string `json:"userName"`
+	MemberCount   int    `json:"memberCount"`
+	SetupDone     bool   `json:"setupDone"`
+	LinearAPIKey  string `json:"linearApiKey"`
+	LinearTeamID  string `json:"linearTeamId"`
+	LinearUserID  string `json:"linearUserId"` // Current user's Linear ID
 }
 
 // Issue stores issues/risks for si_field team

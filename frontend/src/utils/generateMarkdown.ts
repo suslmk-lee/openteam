@@ -63,7 +63,27 @@ function generatePersonalMarkdown(items: ReportItemForMD[]): string {
   } else {
     thisWeek.forEach(item => {
       const tag = item.category ? `[${item.category}] ` : ''
-      lines.push(`- ${tag}${item.content}`)
+      const contentLines = item.content.split('\n').filter(line => line.trim())
+      if (contentLines.length > 0) {
+        // Check if content is already formatted (starts with "1) 진행업무:" or similar)
+        if (contentLines[0].match(/^\d+\)/)) {
+          // Already formatted - output as-is with category tag
+          if (tag) {
+            lines.push(`${tag}${contentLines[0]}`)
+          } else {
+            lines.push(contentLines[0])
+          }
+          for (let i = 1; i < contentLines.length; i++) {
+            lines.push(contentLines[i])
+          }
+        } else {
+          // Not formatted - use markdown list
+          lines.push(`- ${tag}${contentLines[0]}`)
+          for (let i = 1; i < contentLines.length; i++) {
+            lines.push(`  ${contentLines[i]}`)
+          }
+        }
+      }
     })
   }
 
@@ -74,7 +94,27 @@ function generatePersonalMarkdown(items: ReportItemForMD[]): string {
   } else {
     nextWeek.forEach(item => {
       const tag = item.category ? `[${item.category}] ` : ''
-      lines.push(`- ${tag}${item.content}`)
+      const contentLines = item.content.split('\n').filter(line => line.trim())
+      if (contentLines.length > 0) {
+        // Check if content is already formatted (starts with "1) 진행업무:" or similar)
+        if (contentLines[0].match(/^\d+\)/)) {
+          // Already formatted - output as-is with category tag
+          if (tag) {
+            lines.push(`${tag}${contentLines[0]}`)
+          } else {
+            lines.push(contentLines[0])
+          }
+          for (let i = 1; i < contentLines.length; i++) {
+            lines.push(contentLines[i])
+          }
+        } else {
+          // Not formatted - use markdown list
+          lines.push(`- ${tag}${contentLines[0]}`)
+          for (let i = 1; i < contentLines.length; i++) {
+            lines.push(`  ${contentLines[i]}`)
+          }
+        }
+      }
     })
   }
 
@@ -111,7 +151,16 @@ function generateTeamMarkdown(items: ReportItemForMD[]): string {
     lines.push(`## ${SECTION_LABELS[section] || section}`)
     catMap.forEach((contents, cat) => {
       if (cat) lines.push(`### ${cat}`)
-      contents.forEach(c => lines.push(`- ${c}`))
+      contents.forEach(c => {
+        // Check if content is already formatted (starts with "1) 진행업무:" or similar)
+        if (c.match(/^\d+\)/)) {
+          // Already formatted - output as-is
+          lines.push(c)
+        } else {
+          // Not formatted - use markdown list
+          lines.push(`- ${c}`)
+        }
+      })
     })
     lines.push('')
   })

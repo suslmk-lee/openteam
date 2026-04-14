@@ -1,46 +1,44 @@
 package db
 
-import "time"
-
 type User struct {
-	ID        int64     `json:"id"`
-	Name      string    `json:"name"`
-	Team      string    `json:"team"`
-	CreatedAt time.Time `json:"createdAt"`
+	ID        int64  `json:"id"`
+	Name      string `json:"name"`
+	Team      string `json:"team"`
+	CreatedAt string `json:"createdAt"`
 }
 
 type Integration struct {
-	ID           int64      `json:"id"`
-	UserID       int64      `json:"userId"`
-	ToolType     string     `json:"toolType"`
-	ConfigJSON   string     `json:"configJson"`
-	Enabled      bool       `json:"enabled"`
-	LastSyncedAt *time.Time `json:"lastSyncedAt"`
+	ID           int64   `json:"id"`
+	UserID       int64   `json:"userId"`
+	ToolType     string  `json:"toolType"`
+	ConfigJSON   string  `json:"configJson"`
+	Enabled      bool    `json:"enabled"`
+	LastSyncedAt *string `json:"lastSyncedAt"`
 }
 
 type Activity struct {
-	ID               int64     `json:"id"`
-	IntegrationID    int64     `json:"integrationId"`
-	Source           string    `json:"source"`
-	ExternalID       string    `json:"externalId"`
-	Title            string    `json:"title"`
-	Summary          string    `json:"summary"`
-	RawData          string    `json:"rawData"`
-	ActivityDate     string    `json:"activityDate"`
-	Date             string    `json:"date"`                       // Alias for frontend compatibility
-	ActivityDateTime string    `json:"activityDateTime,omitempty"` // Full datetime for calendar events with time
-	EndDateTime      string    `json:"endDateTime,omitempty"`      // End datetime for multi-day events
-	CalendarID       string    `json:"calendarId,omitempty"`       // For Google Calendar
-	FetchedAt        time.Time `json:"fetchedAt"`
+	ID               int64  `json:"id"`
+	IntegrationID    int64  `json:"integrationId"`
+	Source           string `json:"source"`
+	ExternalID       string `json:"externalId"`
+	Title            string `json:"title"`
+	Summary          string `json:"summary"`
+	RawData          string `json:"rawData"`
+	ActivityDate     string `json:"activityDate"`
+	Date             string `json:"date"`                       // Alias for frontend compatibility
+	ActivityDateTime string `json:"activityDateTime,omitempty"` // Full datetime for calendar events with time
+	EndDateTime      string `json:"endDateTime,omitempty"`      // End datetime for multi-day events
+	CalendarID       string `json:"calendarId,omitempty"`       // For Google Calendar
+	FetchedAt        string `json:"fetchedAt"`
 }
 
 type WeeklyReport struct {
-	ID        int64     `json:"id"`
-	UserID    int64     `json:"userId"`
-	WeekStart string    `json:"weekStart"`
-	WeekEnd   string    `json:"weekEnd"`
-	Status    string    `json:"status"`
-	CreatedAt time.Time `json:"createdAt"`
+	ID        int64  `json:"id"`
+	UserID    int64  `json:"userId"`
+	WeekStart string `json:"weekStart"`
+	WeekEnd   string `json:"weekEnd"`
+	Status    string `json:"status"`
+	CreatedAt string `json:"createdAt"`
 }
 
 type MyAttendanceSummary struct {
@@ -97,20 +95,20 @@ type ReportInsights struct {
 }
 
 type ReportInsightIgnore struct {
-	ID         int64     `json:"id"`
-	ReportID   int64     `json:"reportId"`
-	ActivityID int64     `json:"activityId"`
-	CreatedAt  time.Time `json:"createdAt"`
+	ID         int64  `json:"id"`
+	ReportID   int64  `json:"reportId"`
+	ActivityID int64  `json:"activityId"`
+	CreatedAt  string `json:"createdAt"`
 }
 
 type ExcelTemplate struct {
-	ID            int64     `json:"id"`
-	UserID        int64     `json:"userId"`
-	TeamType      string    `json:"teamType"`
-	Name          string    `json:"name"`
-	FilePath      string    `json:"filePath"`
-	StructureJSON string    `json:"structureJson"`
-	CreatedAt     time.Time `json:"createdAt"`
+	ID            int64  `json:"id"`
+	UserID        int64  `json:"userId"`
+	TeamType      string `json:"teamType"`
+	Name          string `json:"name"`
+	FilePath      string `json:"filePath"`
+	StructureJSON string `json:"structureJson"`
+	CreatedAt     string `json:"createdAt"`
 }
 
 type ProjectCategory struct {
@@ -132,7 +130,7 @@ type TeamMember struct {
 	ResignDate     *string   `json:"resignDate"`
 	Active         bool      `json:"active"`
 	LinearUserID   string    `json:"linearUserId"`
-	CreatedAt      time.Time `json:"createdAt"`
+	CreatedAt      string    `json:"createdAt"`
 }
 
 type Project struct {
@@ -146,7 +144,7 @@ type Project struct {
 	Description string    `json:"description"`
 	StartDate   string    `json:"startDate"`
 	EndDate     *string   `json:"endDate"`
-	CreatedAt   time.Time `json:"createdAt"`
+	CreatedAt   string `json:"createdAt"`
 	// SI Project Detail fields (migrated from si_project_details table)
 	ProjectType  string  `json:"projectType"`  // 직영, 당선, 신대방동, 거제 등
 	PMName       string  `json:"pmName"`       // 프로젝트 책임자/PM
@@ -164,7 +162,7 @@ type MemberAssignment struct {
 	EndDate           *string   `json:"endDate"`
 	WorkMode          string    `json:"workMode"`
 	Notes             string    `json:"notes"`
-	CreatedAt         time.Time `json:"createdAt"`
+	CreatedAt         string `json:"createdAt"`
 }
 
 type UtilizationMemberRow struct {
@@ -201,7 +199,7 @@ type AttendanceRecord struct {
 	Notes             string    `json:"notes"`
 	IntegrationSource string    `json:"integrationSource"`
 	ExternalID        string    `json:"externalId"`
-	CreatedAt         time.Time `json:"createdAt"`
+	CreatedAt         string `json:"createdAt"`
 }
 
 type AttendanceSummary struct {
@@ -223,7 +221,7 @@ type Client struct {
 	ContactEmail string    `json:"contactEmail"`
 	Notes        string    `json:"notes"`
 	Active       bool      `json:"active"`
-	CreatedAt    time.Time `json:"createdAt"`
+	CreatedAt    string `json:"createdAt"`
 }
 
 // Extended Project with client reference - uses embedded Project fields
@@ -241,7 +239,7 @@ type SIProjectDetail struct {
 	TotalMM      float64   `json:"totalMM"`      // 총 투입 M/M
 	CurrentPhase string    `json:"currentPhase"` // 현재 진행단계
 	ProgressRate int       `json:"progressRate"` // 진행율 %
-	CreatedAt    time.Time `json:"createdAt"`
+	CreatedAt    string `json:"createdAt"`
 }
 
 // SIWeeklyReport stores weekly progress for SI projects
@@ -255,7 +253,7 @@ type SIWeeklyReport struct {
 	NextWeekPlan     string    `json:"nextWeekPlan"`     // 차주 계획
 	Risks            string    `json:"risks"`            // 리스크/이슈
 	Notes            string    `json:"notes"`            // 비고
-	CreatedAt        time.Time `json:"createdAt"`
+	CreatedAt        string `json:"createdAt"`
 }
 
 // SIProjectMember stores project member assignments with SI-specific details
@@ -287,7 +285,7 @@ type CodeGroup struct {
 	GroupName   string    `json:"groupName"`
 	Description string    `json:"description"`
 	SortOrder   int       `json:"sortOrder"`
-	CreatedAt   time.Time `json:"createdAt"`
+	CreatedAt   string `json:"createdAt"`
 }
 
 // TeamProfile stores the team type and basic setup info
@@ -313,7 +311,7 @@ type Issue struct {
 	Status      string    `json:"status"`   // open, in_progress, resolved, closed
 	Assignee    string    `json:"assignee"`
 	DueDate     *string   `json:"dueDate"`
-	CreatedAt   time.Time `json:"createdAt"`
+	CreatedAt   string `json:"createdAt"`
 }
 
 // Retrospective stores weekly retro for small_team
@@ -325,7 +323,7 @@ type Retrospective struct {
 	WentWell    string    `json:"wentWell"`
 	ToImprove   string    `json:"toImprove"`
 	ActionItems string    `json:"actionItems"`
-	CreatedAt   time.Time `json:"createdAt"`
+	CreatedAt   string `json:"createdAt"`
 }
 
 // CodeValue represents a single code value within a group
@@ -338,5 +336,5 @@ type CodeValue struct {
 	Description string    `json:"description"`
 	SortOrder   int       `json:"sortOrder"`
 	IsActive    bool      `json:"isActive"`
-	CreatedAt   time.Time `json:"createdAt"`
+	CreatedAt   string `json:"createdAt"`
 }

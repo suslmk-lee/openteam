@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"time"
+
+	"openreport/internal/constants"
 )
 
 // --- Users ---
@@ -265,7 +267,7 @@ func (d *Database) UpdateReportStatus(id int64, status string) error {
 
 func (d *Database) SaveReportItem(item *ReportItem) (int64, error) {
 	if item.Period == "" {
-		item.Period = "this_week"
+		item.Period = constants.PeriodThisWeek
 	}
 	if item.ID > 0 {
 		log.Printf("[DB SaveReportItem] Updating item %d: content=%.50s...", item.ID, item.Content)
@@ -350,6 +352,35 @@ func (d *Database) GetPreviousWeekReport(userID int64, currentWeekStart string) 
 func (d *Database) DeleteReportItem(id int64) error {
 	_, err := d.conn.Exec("DELETE FROM report_items WHERE id = ?", id)
 	return err
+}
+
+func (d *Database) IgnoreReportInsightActivity(reportID, activityID int64) error {
+	_, err := d.conn.Exec(
+		"INSERT OR IGNORE INTO report_insight_ignores (report_id, activity_id) VALUES (?, ?)",
+		reportID, activityID,
+	)
+	return err
+}
+
+func (d *Database) ListIgnoredReportInsightActivities(reportID int64) (map[int64]bool, error) {
+	rows, err := d.conn.Query(
+		"SELECT activity_id FROM report_insight_ignores WHERE report_id = ?",
+		reportID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	ignored := make(map[int64]bool)
+	for rows.Next() {
+		var activityID int64
+		if err := rows.Scan(&activityID); err != nil {
+			return nil, err
+		}
+		ignored[activityID] = true
+	}
+	return ignored, nil
 }
 
 // --- Excel Templates ---
@@ -508,6 +539,29 @@ func (d *Database) ListTeamMembers(userID int64) ([]TeamMember, error) {
 func (d *Database) DeleteTeamMember(userID, memberID int64) error {
 	_, err := d.conn.Exec("DELETE FROM team_members WHERE id = ? AND user_id = ?", memberID, userID)
 	return err
+}
+
+// GetOrCreateSelfTeamMember finds or creates a team member representing the user themselves (for personal attendance)
+func (d *Database) GetOrCreateSelfTeamMember(userID int64, userName string) (int64, error) {
+	// Try to find existing self team member
+	var memberID int64
+	err := d.conn.QueryRow(
+		"SELECT id FROM team_members WHERE user_id = ? AND name = ? LIMIT 1",
+		userID, userName,
+	).Scan(&memberID)
+	if err == nil {
+		return memberID, nil
+	}
+
+	// Create self team member
+	res, err := d.conn.Exec(
+		"INSERT INTO team_members (user_id, name, position, email, role, employment_type, active) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		userID, userName, "본인", "", "member", "", 1,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
 }
 
 // --- Clients ---

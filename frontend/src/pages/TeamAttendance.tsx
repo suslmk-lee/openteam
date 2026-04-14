@@ -1,12 +1,5 @@
 import { useEffect, useState } from 'react'
-import {
-  ListTeamMembers,
-  ListAttendanceRecords,
-  SaveAttendanceRecord,
-  DeleteAttendanceRecord,
-  GetAttendanceSummary,
-  GetAttendanceTypes,
-} from '../../wailsjs/go/main/App'
+import { useAppApi } from '../hooks/useAppApi'
 
 interface TeamMember {
   id: number
@@ -58,6 +51,10 @@ function formatDateWithWeekday(dateStr: string): string {
 }
 
 export default function TeamAttendance() {
+  const appApi = useAppApi()
+  const { ListTeamMembers, ListAttendanceRecords, SaveAttendanceRecord, DeleteAttendanceRecord, GetAttendanceSummary, GetAttendanceTypes } =
+    appApi
+
   const [members, setMembers] = useState<TeamMember[]>([])
   const [records, setRecords] = useState<AttendanceRecord[]>([])
   const [summary, setSummary] = useState<AttendanceSummary[]>([])

@@ -90,6 +90,13 @@ func (d *Database) migrate() error {
 			sort_order INTEGER,
 			is_selected INTEGER DEFAULT 1
 		)`,
+		`CREATE TABLE IF NOT EXISTS report_insight_ignores (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			report_id INTEGER NOT NULL,
+			activity_id INTEGER NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(report_id, activity_id)
+		)`,
 		`CREATE TABLE IF NOT EXISTS excel_templates (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			user_id INTEGER REFERENCES users(id),

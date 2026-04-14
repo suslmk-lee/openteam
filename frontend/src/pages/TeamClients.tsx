@@ -1,10 +1,5 @@
 import { useEffect, useState } from 'react'
-import {
-  GetClientStatuses,
-  ListClients,
-  SaveClient,
-  DeleteClient,
-} from '../../wailsjs/go/main/App'
+import { useAppApi } from '../hooks/useAppApi'
 import { Plus, X, Building2, Mail, User, Edit3, Trash2 } from 'lucide-react'
 import type { db } from '../../wailsjs/go/models'
 
@@ -31,6 +26,9 @@ const STATUS_COLORS: Record<string, string> = {
 }
 
 export default function TeamClients() {
+  const appApi = useAppApi()
+  const { GetClientStatuses, ListClients, SaveClient, DeleteClient } = appApi
+
   const [clients, setClients] = useState<Client[]>([])
   const [statuses, setStatuses] = useState<string[]>([])
   const [loading, setLoading] = useState(false)

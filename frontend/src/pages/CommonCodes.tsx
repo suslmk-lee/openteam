@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
+import { useCommonCodeService } from '../hooks/useCommonCodeService'
 
 type CodeGroupKey = 'position_types' | 'employment_types' | 'project_types' | 'project_phases'
 
@@ -23,6 +24,8 @@ const GROUP_META: Record<CodeGroupKey, { title: string; description: string }> =
 }
 
 export default function CommonCodes() {
+  const commonCodeService = useCommonCodeService()
+
   const [positionTypes, setPositionTypes] = useState<string[]>([])
   const [employmentTypes, setEmploymentTypes] = useState<string[]>([])
   const [projectTypes, setProjectTypes] = useState<string[]>([])
@@ -41,10 +44,10 @@ export default function CommonCodes() {
     setLoading(true)
     try {
       const [positions, employments, projects, phases] = await Promise.all([
-        (window as any).go?.main?.App?.GetPositionTypes?.(),
-        (window as any).go?.main?.App?.GetEmploymentTypes?.(),
-        (window as any).go?.main?.App?.GetSIProjectTypes?.(),
-        (window as any).go?.main?.App?.GetSIPhases?.(),
+        commonCodeService.load('position_types'),
+        commonCodeService.load('employment_types'),
+        commonCodeService.load('project_types'),
+        commonCodeService.load('project_phases'),
       ])
       setPositionTypes(Array.isArray(positions) ? positions : [])
       setEmploymentTypes(Array.isArray(employments) ? employments : [])
@@ -60,16 +63,16 @@ export default function CommonCodes() {
     if (!trimmed) return
 
     if (group === 'position_types') {
-      await (window as any).go?.main?.App?.AddPositionType?.(trimmed)
+      await commonCodeService.add(group, trimmed)
       setNewPosition('')
     } else if (group === 'employment_types') {
-      await (window as any).go?.main?.App?.AddEmploymentType?.(trimmed)
+      await commonCodeService.add(group, trimmed)
       setNewEmployment('')
     } else if (group === 'project_types') {
-      await (window as any).go?.main?.App?.AddSIProjectType?.(trimmed)
+      await commonCodeService.add(group, trimmed)
       setNewProjectType('')
     } else {
-      await (window as any).go?.main?.App?.AddSIPhase?.(trimmed)
+      await commonCodeService.add(group, trimmed)
       setNewProjectPhase('')
     }
 
@@ -81,13 +84,13 @@ export default function CommonCodes() {
     if (!ok) return
 
     if (group === 'position_types') {
-      await (window as any).go?.main?.App?.DeletePositionType?.(value)
+      await commonCodeService.remove(group, value)
     } else if (group === 'employment_types') {
-      await (window as any).go?.main?.App?.DeleteEmploymentType?.(value)
+      await commonCodeService.remove(group, value)
     } else if (group === 'project_types') {
-      await (window as any).go?.main?.App?.DeleteSIProjectType?.(value)
+      await commonCodeService.remove(group, value)
     } else {
-      await (window as any).go?.main?.App?.DeleteSIPhase?.(value)
+      await commonCodeService.remove(group, value)
     }
 
     await loadAll()

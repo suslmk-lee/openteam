@@ -8,26 +8,13 @@ import {
   Trash2,
   FileSpreadsheet,
   GitBranch,
+  Sun,
+  Moon,
+  Monitor,
 } from 'lucide-react'
-import {
-  GetCurrentUser,
-  UpdateUser,
-  UploadExcelTemplate,
-  GetExcelTemplate,
-  GetIntegrations,
-  SaveIntegration,
-  GetProjectCategories,
-  AddProjectCategory,
-  DeleteProjectCategory,
-  CheckGWSCLI,
-  SetupGWSAuth,
-  CheckGWSAuth,
-  GetCalendars,
-  UpdateTeamProfile,
-  UploadExcelTemplateForType,
-  GetExcelTemplateForType,
-} from '../../wailsjs/go/main/App'
+import { useAppApi } from '../hooks/useAppApi'
 import { useTeamProfile } from '../contexts/TeamProfileContext'
+import { useTheme } from '../contexts/ThemeContext'
 
 interface Integration {
   id: number
@@ -62,6 +49,27 @@ const TOOL_OPTIONS = [
 type SettingsSection = 'user' | 'template' | 'integrations' | 'categories' | 'team-profile'
 
 export default function Settings({ section = 'user' }: { section?: SettingsSection }) {
+  const appApi = useAppApi()
+  const {
+    GetCurrentUser,
+    UpdateUser,
+    UploadExcelTemplate,
+    GetExcelTemplate,
+    GetIntegrations,
+    SaveIntegration,
+    GetProjectCategories,
+    AddProjectCategory,
+    DeleteProjectCategory,
+    CheckGWSCLI,
+    SetupGWSAuth,
+    CheckGWSAuth,
+    GetCalendars,
+    UpdateTeamProfile,
+    LookupLinearViewer,
+    UploadExcelTemplateForType,
+    GetExcelTemplateForType,
+  } = appApi
+
   const [userName, setUserName] = useState('')
   const [userTeam, setUserTeam] = useState('')
   const [template, setTemplate] = useState<ExcelTemplate | null>(null)
@@ -121,9 +129,13 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
   // Linear settings
   const [linearApiKey, setLinearApiKey] = useState('')
   const [linearTeamId, setLinearTeamId] = useState('')
+  const [linearUserId, setLinearUserId] = useState('')
+  const [linearLookupLoading, setLinearLookupLoading] = useState(false)
+  const [linearLookupMessage, setLinearLookupMessage] = useState('')
 
   // Team profile
   const { profile: teamProfile, reload: reloadProfile } = useTeamProfile()
+  const { theme, setTheme } = useTheme()
   const [profileTeamType, setProfileTeamType] = useState('')
   const [profileTeamName, setProfileTeamName] = useState('')
   const [profileUserName, setProfileUserName] = useState('')
@@ -141,6 +153,7 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
       setProfileMemberCount(teamProfile.memberCount || 4)
       setLinearApiKey(teamProfile.linearApiKey || '')
       setLinearTeamId(teamProfile.linearTeamId || '')
+      setLinearUserId(teamProfile.linearUserId || '')
 
       // Load personal template if user is personal type
       if (teamProfile.teamType === 'personal') {
@@ -300,19 +313,19 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
 
   const sectionTitle: Record<SettingsSection, string> = {
     user: '사용자 정보',
-    template: 'Excel 템플릿',
+    template: '템플릿',
     integrations: '협업툴 연동',
     categories: '프로젝트 카테고리',
     'team-profile': '팀 프로필',
   }
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col bg-slate-50 dark:bg-[var(--color-bg)]">
       {/* Header */}
-      <header className="h-14 border-b border-slate-200 bg-white flex items-center justify-between px-6 shrink-0">
-        <h2 className="text-lg font-semibold text-slate-800">설정 · {sectionTitle[section]}</h2>
+      <header className="h-14 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-[var(--color-card)] flex items-center justify-between px-6 shrink-0">
+        <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100">설정 · {section === 'integrations' ? '연동 설정' : sectionTitle[section]}</h2>
         {saveStatus && (
-          <div className="flex items-center gap-2 text-sm text-green-600 bg-green-50 px-3 py-1.5 rounded-lg">
+          <div className="flex items-center gap-2 text-sm text-green-600 dark:text-emerald-300 bg-green-50 dark:bg-emerald-500/15 px-3 py-1.5 rounded-lg border border-green-200 dark:border-emerald-500/30">
             <CheckCircle size={16} />
             {saveStatus}
           </div>
@@ -323,7 +336,8 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
       <div className="flex-1 overflow-y-auto p-6">
         <div className="max-w-3xl mx-auto space-y-8">
           {section === 'user' && (
-          <section className="bg-white border border-slate-200 rounded-xl p-6">
+          <>
+          <section className="bg-white dark:bg-[var(--color-card)] border border-slate-200 dark:border-slate-700 rounded-xl p-6">
             <h3 className="text-base font-semibold text-slate-800 mb-4">사용자 정보</h3>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -353,44 +367,84 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
               저장
             </button>
           </section>
+
+          <section className="bg-white border border-slate-200 rounded-xl p-6">
+            <h3 className="text-base font-semibold text-slate-800 mb-4">외관 테마</h3>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setTheme('light')}
+                className={`flex items-center gap-2 px-4 py-2.5 text-sm rounded-lg border-2 transition-all ${
+                  theme === 'light'
+                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                }`}
+              >
+                <Sun size={18} />
+                라이트
+              </button>
+              <button
+                onClick={() => setTheme('dark')}
+                className={`flex items-center gap-2 px-4 py-2.5 text-sm rounded-lg border-2 transition-all ${
+                  theme === 'dark'
+                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                }`}
+              >
+                <Moon size={18} />
+                다크
+              </button>
+              <button
+                onClick={() => setTheme('system')}
+                className={`flex items-center gap-2 px-4 py-2.5 text-sm rounded-lg border-2 transition-all ${
+                  theme === 'system'
+                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                }`}
+              >
+                <Monitor size={18} />
+                시스템
+              </button>
+            </div>
+          </section>
+          </>
           )}
 
           {section === 'template' && (
           <section className="bg-white border border-slate-200 rounded-xl p-6">
-            <h3 className="text-base font-semibold text-slate-800 mb-4">Excel 템플릿</h3>
+            <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100 mb-4">Excel 템플릿</h3>
             {template ? (
-              <div className="flex items-center gap-3 p-3 bg-green-50 border border-green-200 rounded-lg mb-4">
-                <FileSpreadsheet size={20} className="text-green-600" />
+              <div className="flex items-center gap-3 p-3 bg-green-50 dark:bg-emerald-500/15 border border-green-200 dark:border-emerald-500/30 rounded-lg mb-4">
+                <FileSpreadsheet size={20} className="text-green-600 dark:text-emerald-300" />
                 <div className="flex-1">
-                  <p className="text-sm font-medium text-green-800">{template.name}</p>
-                  <p className="text-xs text-green-600">템플릿이 설정되었습니다</p>
+                  <p className="text-sm font-medium text-green-800 dark:text-emerald-200">{template.name}</p>
+                  <p className="text-xs text-green-600 dark:text-emerald-300">템플릿이 설정되었습니다</p>
                 </div>
-                <CheckCircle size={18} className="text-green-600" />
+                <CheckCircle size={18} className="text-green-600 dark:text-emerald-300" />
               </div>
             ) : (
-              <div className="flex items-center gap-3 p-3 bg-amber-50 border border-amber-200 rounded-lg mb-4">
-                <AlertCircle size={20} className="text-amber-600" />
-                <p className="text-sm text-amber-800">
+              <div className="flex items-center gap-3 p-3 bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-500/30 rounded-lg mb-4">
+                <AlertCircle size={20} className="text-amber-600 dark:text-amber-300" />
+                <p className="text-sm text-amber-800 dark:text-amber-200">
                   Excel 템플릿을 업로드해주세요. 주간업무일지 포맷의 기준이 됩니다.
                 </p>
               </div>
             )}
             <button
               onClick={handleUploadTemplate}
-              className="flex items-center gap-2 px-4 py-2 text-sm bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-lg transition-colors"
+              className="flex items-center gap-2 px-4 py-2 text-sm bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg transition-colors"
             >
               <Upload size={16} />
               {template ? '템플릿 변경' : '템플릿 업로드'}
             </button>
 
             {teamProfile?.teamType === 'personal' && (
-              <div className="mt-4 pt-4 border-t border-slate-200">
-                <h4 className="text-sm font-medium text-slate-700 mb-2">개인용 템플릿</h4>
-                <p className="text-xs text-slate-400 mb-3">
+              <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700">
+                <h4 className="text-sm font-medium text-slate-700 dark:text-slate-200 mb-2">개인용 템플릿</h4>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mb-3">
                   개인용 전용 템플릿입니다. 없을 경우 기본 템플릿을 사용합니다.
                 </p>
                 <div className="flex items-center gap-3">
-                  <span className="text-sm text-slate-600 flex-1">
+                  <span className="text-sm text-slate-600 dark:text-slate-300 flex-1">
                     {personalTemplate ? personalTemplate.name : '(업로드 없음 — 기본 템플릿 사용)'}
                   </span>
                   <button
@@ -408,36 +462,36 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
 
           {section === 'integrations' && (
           <>
-          <section className="bg-white border border-slate-200 rounded-xl p-6">
-            <h3 className="text-base font-semibold text-slate-800 mb-2">OpenAI 보고서 작성</h3>
-            <p className="text-xs text-slate-500 mb-4">
+          <section className="bg-white dark:bg-[var(--color-card)] border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+            <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100 mb-2">OpenAI 보고서 작성</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
               메일 활동을 보고서 문장으로 자동 작성합니다. API Key는 로컬 DB에 저장됩니다.
             </p>
 
             <div className="space-y-3">
               <div>
-                <label className="block text-sm text-slate-600 mb-1">OpenAI API Key</label>
+                <label className="block text-sm text-slate-600 dark:text-slate-300 mb-1">OpenAI API Key</label>
                 <input
                   type="password"
                   placeholder="sk-..."
                   value={openAIApiKey}
                   onChange={e => setOpenAIApiKey(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
 
               <div>
-                <label className="block text-sm text-slate-600 mb-1">Model</label>
+                <label className="block text-sm text-slate-600 dark:text-slate-300 mb-1">Model</label>
                 <input
                   type="text"
                   placeholder="gpt-4o-mini"
                   value={openAIModel}
                   onChange={e => setOpenAIModel(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
 
-              <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+              <label className="inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
                 <input
                   type="checkbox"
                   checked={openAIEnabled}
@@ -471,37 +525,37 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
             </div>
           </section>
 
-          <section className="bg-white border border-slate-200 rounded-xl p-6">
-            <h3 className="text-base font-semibold text-slate-800 mb-4">Google 연동 (gws)</h3>
-            <p className="text-xs text-slate-500 mb-4">
+          <section className="bg-white dark:bg-[var(--color-card)] border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+            <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100 mb-4">Google 연동 (gws)</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
               Gmail, Google Calendar 데이터를 가져오려면 gws CLI 설정이 필요합니다.
             </p>
 
             {/* Step 1: gws CLI 설치 상태 */}
             <div className="space-y-4">
-              <div className="flex items-center gap-3 p-3 border border-slate-100 rounded-lg">
+              <div className="flex items-center gap-3 p-3 border border-slate-100 dark:border-slate-700 rounded-lg">
                 <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                  gogInstalled ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'
+                  gogInstalled ? 'bg-green-100 text-green-700 dark:bg-emerald-500/20 dark:text-emerald-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-300'
                 }`}>1</div>
                 <div className="flex-1">
-                  <p className="text-sm font-medium text-slate-800">gws CLI 설치</p>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-sm font-medium text-slate-800 dark:text-slate-100">gws CLI 설치</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
                     {gogInstalled === null ? '확인 중...' : gogInstalled ? '✓ 설치됨' : '미설치 — npm install -g @googleworkspace/cli'}
                   </p>
                 </div>
                 {gogInstalled ? (
-                  <CheckCircle size={18} className="text-green-500" />
+                  <CheckCircle size={18} className="text-green-500 dark:text-emerald-300" />
                 ) : (
-                  <AlertCircle size={18} className="text-amber-500" />
+                  <AlertCircle size={18} className="text-amber-500 dark:text-amber-300" />
                 )}
               </div>
 
               {/* Step 2: OAuth Credentials */}
-              <div className="flex items-center gap-3 p-3 border border-slate-100 rounded-lg">
-                <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold bg-slate-100 text-slate-500">2</div>
+              <div className="flex items-center gap-3 p-3 border border-slate-100 dark:border-slate-700 rounded-lg">
+                <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300">2</div>
                 <div className="flex-1">
-                  <p className="text-sm font-medium text-slate-800">OAuth Client 설정</p>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-sm font-medium text-slate-800 dark:text-slate-100">OAuth Client 설정</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
                     Google Cloud Console에서 다운로드한 client_secret JSON 파일
                   </p>
                 </div>
@@ -515,7 +569,7 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
                     }
                   }}
                   disabled={!gogInstalled}
-                  className="px-3 py-1 text-xs bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-lg transition-colors disabled:opacity-50"
+                  className="px-3 py-1 text-xs bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg transition-colors disabled:opacity-50"
                 >
                   <Upload size={14} className="inline mr-1" />
                   JSON 업로드
@@ -523,16 +577,16 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
               </div>
 
               {/* Step 3: Gmail Account */}
-              <div className="p-3 border border-slate-100 rounded-lg space-y-3">
+              <div className="p-3 border border-slate-100 dark:border-slate-700 rounded-lg space-y-3">
                 <div className="flex items-center gap-3">
-                  <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold bg-slate-100 text-slate-500">3</div>
+                    <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300">3</div>
                   <div className="flex-1">
-                    <p className="text-sm font-medium text-slate-800">Gmail 계정 연동</p>
-                    <p className="text-xs text-slate-500">
+                      <p className="text-sm font-medium text-slate-800 dark:text-slate-100">Gmail 계정 연동</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
                       터미널에서 'gws auth setup' 실행 후 저장하세요
                     </p>
                   </div>
-                  {gmailAuthOk && <CheckCircle size={18} className="text-green-500" />}
+                  {gmailAuthOk && <CheckCircle size={18} className="text-green-500 dark:text-emerald-300" />}
                 </div>
                 <div className="flex gap-2 ml-9">
                   <input
@@ -540,7 +594,7 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
                     placeholder="you@gmail.com"
                     value={gmailAccount}
                     onChange={e => setGmailAccount(e.target.value)}
-                    className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="flex-1 px-3 py-2 text-sm border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                   <button
                     onClick={async () => {
@@ -580,13 +634,13 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
               </div>
 
               {/* Step 4: Google Calendar Selection */}
-              <div className="p-3 border border-slate-100 rounded-lg space-y-3">
+              <div className="p-3 border border-slate-100 dark:border-slate-700 rounded-lg space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold bg-slate-100 text-slate-500">4</div>
+                    <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300">4</div>
                     <div className="flex-1">
-                      <p className="text-sm font-medium text-slate-800">Google Calendar 선택</p>
-                      <p className="text-xs text-slate-500">
+                      <p className="text-sm font-medium text-slate-800 dark:text-slate-100">Google Calendar 선택</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
                         여러 캘린더를 선택하고 색상을 지정하세요
                       </p>
                     </div>
@@ -628,13 +682,13 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
                 {/* Calendar List with Checkboxes and Color Pickers */}
                 {availableCalendars.length > 0 && (
                   <div className="ml-9 space-y-2">
-                    <p className="text-xs text-slate-500 mb-2">캘린더를 선택하고 색상을 지정하세요:</p>
-                    <div className="space-y-2 max-h-48 overflow-y-auto border border-slate-200 rounded-lg p-2">
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">캘린더를 선택하고 색상을 지정하세요:</p>
+                    <div className="space-y-2 max-h-48 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg p-2">
                       {availableCalendars.map((cal) => {
                         const isSelected = selectedCalendars.some(sc => sc.id === cal.id)
                         const selectedCal = selectedCalendars.find(sc => sc.id === cal.id)
                         return (
-                          <div key={cal.id} className="flex items-center gap-3 p-2 hover:bg-slate-50 rounded">
+                          <div key={cal.id} className="flex items-center gap-3 p-2 hover:bg-slate-50 dark:hover:bg-slate-800 rounded">
                             <input
                               type="checkbox"
                               checked={isSelected}
@@ -666,7 +720,7 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
                               }}
                               className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                             />
-                            <span className="flex-1 text-sm text-slate-700">
+                            <span className="flex-1 text-sm text-slate-700 dark:text-slate-200">
                               {cal.summary}
                               {cal.primary && <span className="ml-2 text-xs text-blue-600">(기본)</span>}
                             </span>
@@ -681,7 +735,7 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
                       })}
                     </div>
                     {selectedCalendars.length === 0 && (
-                      <p className="text-xs text-amber-600">
+                      <p className="text-xs text-amber-600 dark:text-amber-300">
                         최소 하나의 캘린더를 선택해주세요
                       </p>
                     )}
@@ -689,7 +743,7 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
                 )}
 
                 {availableCalendars.length === 0 && gmailAuthOk && !loadingCalendars && (
-                  <p className="ml-9 text-xs text-slate-500">
+                   <p className="ml-9 text-xs text-slate-500 dark:text-slate-400">
                     "캘린더 목록" 버튼을 클릭하여 사용 가능한 캘린더를 불러오세요
                   </p>
                 )}
@@ -697,26 +751,26 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
             </div>
           </section>
 
-          <section className="bg-white border border-slate-200 rounded-xl p-6">
-            <h3 className="text-base font-semibold text-slate-800 mb-4">기타 협업툴 연동</h3>
+          <section className="bg-white dark:bg-[var(--color-card)] border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+            <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100 mb-4">기타 협업툴 연동</h3>
             <div className="space-y-3">
               {TOOL_OPTIONS.filter(t => t.type !== 'gmail' && t.type !== 'google_calendar').map(tool => {
                 const enabled = isIntegrationEnabled(tool.type)
                 return (
                   <div
                     key={tool.type}
-                    className="flex items-center justify-between p-3 border border-slate-100 rounded-lg"
+                      className="flex items-center justify-between p-3 border border-slate-100 dark:border-slate-700 rounded-lg"
                   >
                     <div>
-                      <p className="text-sm font-medium text-slate-800">{tool.label}</p>
-                      <p className="text-xs text-slate-500">{tool.description}</p>
+                      <p className="text-sm font-medium text-slate-800 dark:text-slate-100">{tool.label}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">{tool.description}</p>
                     </div>
                     <button
                       onClick={() => handleToggleIntegration(tool.type, '{}', !enabled)}
                       className={`px-3 py-1 text-xs rounded-full transition-colors ${
                         enabled
-                          ? 'bg-blue-100 text-blue-700'
-                          : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                          ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300'
+                          : 'bg-slate-100 text-slate-500 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600'
                       }`}
                     >
                       {enabled ? '연동 중' : '연동하기'}
@@ -808,6 +862,54 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
                 />
                 <p className="text-xs text-slate-400 mt-1">Linear &gt; Settings &gt; Teams &gt; Team URL의 마지막 부분</p>
               </div>
+              <div>
+                <label className="block text-sm text-slate-600 dark:text-slate-300 mb-1">Linear User ID (개인 모드 필수)</label>
+                <input
+                  type="text"
+                  placeholder="예: 6f2b3c1a-...."
+                  value={linearUserId}
+                  onChange={e => setLinearUserId(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <div className="mt-2 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const key = linearApiKey.trim()
+                      if (!key) {
+                        setLinearLookupMessage('먼저 Linear API Key를 입력해 주세요.')
+                        return
+                      }
+                      try {
+                        setLinearLookupLoading(true)
+                        setLinearLookupMessage('')
+                        const viewer = await LookupLinearViewer(key)
+                        const id = (viewer?.id || '').trim()
+                        if (!id) {
+                          setLinearLookupMessage('조회된 User ID가 없습니다. API Key 권한을 확인해 주세요.')
+                          return
+                        }
+                        setLinearUserId(id)
+                        const meta = [viewer?.name, viewer?.email].filter(Boolean).join(' / ')
+                        setLinearLookupMessage(meta ? `조회 완료: ${meta}` : '조회 완료')
+                      } catch (err) {
+                        console.error('Failed to lookup Linear viewer:', err)
+                        setLinearLookupMessage('User ID 자동 조회에 실패했습니다. API Key를 확인해 주세요.')
+                      } finally {
+                        setLinearLookupLoading(false)
+                      }
+                    }}
+                    disabled={linearLookupLoading}
+                    className="px-3 py-1.5 text-xs bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg transition-colors disabled:opacity-50"
+                  >
+                    {linearLookupLoading ? '조회 중...' : '내 ID 자동 조회'}
+                  </button>
+                </div>
+                {linearLookupMessage && (
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">{linearLookupMessage}</p>
+                )}
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">개인 모드에서 태스크보드 담당자 자동지정을 위해 사용됩니다.</p>
+              </div>
               <button
                 onClick={async () => {
                   try {
@@ -816,6 +918,7 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
                       ...teamProfile,
                       linearApiKey: linearApiKey.trim(),
                       linearTeamId: linearTeamId.trim(),
+                      linearUserId: linearUserId.trim(),
                     } as any)
                     await reloadProfile()
                     showStatus('Linear 설정이 저장되었습니다')

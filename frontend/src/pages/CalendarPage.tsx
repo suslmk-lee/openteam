@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Calendar as CalendarIcon, RefreshCw, Clock, ChevronLeft, ChevronRight, Eye, EyeOff, X } from 'lucide-react'
-import { GetWeekActivities, SyncAll, GetIntegrations, SaveIntegration } from '../../wailsjs/go/main/App'
+import { useAppApi } from '../hooks/useAppApi'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import type { EventInput, EventClickArg } from '@fullcalendar/core'
@@ -60,6 +60,9 @@ const GOOGLE_CALENDAR_COLORS = [
 ]
 
 export default function CalendarPage() {
+  const appApi = useAppApi()
+  const { GetWeekActivities, SyncAll, GetIntegrations, SaveIntegration } = appApi
+
   const [events, setEvents] = useState<CalendarEvent[]>([])
   const [loading, setLoading] = useState(false)
   const [syncing, setSyncing] = useState(false)

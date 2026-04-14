@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { SetupTeamProfile } from '../../wailsjs/go/main/App'
+import { useAppApi } from '../hooks/useAppApi'
 import { useTeamProfile } from '../contexts/TeamProfileContext'
 import {
   Building2,
@@ -78,6 +78,9 @@ const COLOR_MAP: Record<string, { card: string; badge: string; btn: string; icon
 }
 
 export default function Onboarding() {
+  const appApi = useAppApi()
+  const { SetupTeamProfile } = appApi
+
   const navigate = useNavigate()
   const { reload } = useTeamProfile()
   const [step, setStep] = useState(0)

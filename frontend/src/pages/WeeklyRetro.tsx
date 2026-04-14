@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ListRetrospectives, SaveRetrospective, GetCurrentWeek } from '../../wailsjs/go/main/App'
+import { useAppApi } from '../hooks/useAppApi'
 import { RotateCcw, Plus, ChevronDown, ChevronUp, Save } from 'lucide-react'
 
 interface Retrospective {
@@ -25,6 +25,9 @@ function normalizeDate(d: string) {
 }
 
 export default function WeeklyRetro() {
+  const appApi = useAppApi()
+  const { ListRetrospectives, SaveRetrospective, GetCurrentWeek } = appApi
+
   const [retros, setRetros] = useState<Retrospective[]>([])
   const [currentWeek, setCurrentWeek] = useState<Week | null>(null)
   const [editing, setEditing] = useState<Partial<Retrospective>>({})

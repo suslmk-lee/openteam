@@ -8,17 +8,20 @@ import (
 func TestBasicArithmetic(t *testing.T) {
 	tests := []struct {
 		name     string
+		op       string
 		a, b     int
 		want     int
 	}{
 		{
 			name: "addition of positive numbers",
+			op:   "add",
 			a:    1,
 			b:    2,
 			want: 3,
 		},
 		{
 			name: "subtraction",
+			op:   "sub",
 			a:    5,
 			b:    3,
 			want: 2,
@@ -27,7 +30,13 @@ func TestBasicArithmetic(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := tt.a + tt.b
+			var got int
+			switch tt.op {
+			case "sub":
+				got = tt.a - tt.b
+			default:
+				got = tt.a + tt.b
+			}
 			if got != tt.want {
 				t.Errorf("got %d, want %d", got, tt.want)
 			}

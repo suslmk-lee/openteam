@@ -4,6 +4,10 @@ import {db} from '../models';
 import {main} from '../models';
 import {integrations} from '../models';
 
+export function AcceptInsightActivity(arg1:number,arg2:number,arg3:string,arg4:string,arg5:string):Promise<db.ReportItem>;
+
+export function AcceptInsightDraft(arg1:number,arg2:db.ReportInsightDraft,arg3:string):Promise<Array<db.ReportItem>>;
+
 export function AddActivityToReport(arg1:number,arg2:number,arg3:string,arg4:string):Promise<db.ReportItem>;
 
 export function AddEmploymentType(arg1:string):Promise<void>;
@@ -84,15 +88,23 @@ export function GetIntegrations():Promise<Array<db.Integration>>;
 
 export function GetLinearDashboard():Promise<main.LinearDashboardData>;
 
+export function GetLinearTeamLabels():Promise<Array<main.LinearIssueLabel>>;
+
 export function GetLinearTeamMembers():Promise<Array<main.LinearTeamMember>>;
 
 export function GetLinearTeamStates():Promise<Array<main.LinearWorkflowState>>;
+
+export function GetMyAttendanceSummary(arg1:string,arg2:string):Promise<db.MyAttendanceSummary>;
+
+export function GetMyLinearIssues():Promise<Array<main.LinearIssue>>;
 
 export function GetOrCreateWeeklyReport(arg1:string,arg2:string):Promise<db.WeeklyReport>;
 
 export function GetPositionTypes():Promise<Array<string>>;
 
 export function GetProjectCategories():Promise<Array<db.ProjectCategory>>;
+
+export function GetReportInsights(arg1:number):Promise<db.ReportInsights>;
 
 export function GetReportItems(arg1:number):Promise<Array<db.ReportItem>>;
 
@@ -118,6 +130,10 @@ export function GetWeeklyReport(arg1:number):Promise<db.WeeklyReport>;
 
 export function Greet(arg1:string):Promise<string>;
 
+export function IgnoreInsightActivity(arg1:number,arg2:number):Promise<void>;
+
+export function ListActivitiesByDateRange(arg1:string,arg2:string):Promise<Array<db.Activity>>;
+
 export function ListAttendanceRecords(arg1:number,arg2:string,arg3:string):Promise<Array<db.AttendanceRecord>>;
 
 export function ListClients(arg1:string,arg2:boolean):Promise<Array<db.Client>>;
@@ -126,6 +142,8 @@ export function ListIssues(arg1:string):Promise<Array<db.Issue>>;
 
 export function ListMemberAssignments(arg1:string,arg2:string):Promise<Array<db.MemberAssignment>>;
 
+export function ListMyWeeklyReports():Promise<Array<db.WeeklyReport>>;
+
 export function ListRetrospectives():Promise<Array<db.Retrospective>>;
 
 export function ListSIProjects():Promise<Array<db.ProjectWithClient>>;
@@ -133,6 +151,8 @@ export function ListSIProjects():Promise<Array<db.ProjectWithClient>>;
 export function ListTeamMembers():Promise<Array<db.TeamMember>>;
 
 export function ListWeeklyReports():Promise<Array<db.WeeklyReport>>;
+
+export function LookupLinearViewer(arg1:string):Promise<Record<string, string>>;
 
 export function OpenFile(arg1:string):Promise<void>;
 

@@ -220,6 +220,12 @@ type LinearTeamMember struct {
 	DisplayName string `json:"displayName"`
 }
 
+type LinearViewer struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Email string `json:"email"`
+}
+
 // GetLinearTeamMembers returns members of the resolved team.
 func GetLinearTeamMembers(apiKey, teamID string) ([]LinearTeamMember, error) {
 	resolvedID, err := resolveLinearTeamID(apiKey, teamID)
@@ -252,12 +258,45 @@ func GetLinearTeamMembers(apiKey, teamID string) ([]LinearTeamMember, error) {
 	return result.Team.Members.Nodes, nil
 }
 
+// GetLinearTeamLabels returns labels of the resolved team.
+func GetLinearTeamLabels(apiKey, teamID string) ([]LinearIssueLabel, error) {
+	resolvedID, err := resolveLinearTeamID(apiKey, teamID)
+	if err != nil {
+		return nil, err
+	}
+	gqlQuery := `
+	query($teamId: String!) {
+		team(id: $teamId) {
+			labels(first: 200) { nodes { id name color } }
+		}
+	}`
+	respData, err := doLinearRequest(apiKey, linearGraphQLRequest{
+		Query:     gqlQuery,
+		Variables: map[string]interface{}{"teamId": resolvedID},
+	})
+	if err != nil {
+		return nil, err
+	}
+	var result struct {
+		Team struct {
+			Labels struct {
+				Nodes []LinearIssueLabel `json:"nodes"`
+			} `json:"labels"`
+		} `json:"team"`
+	}
+	if err := json.Unmarshal(respData, &result); err != nil {
+		return nil, fmt.Errorf("labels parse failed: %w", err)
+	}
+	return result.Team.Labels.Nodes, nil
+}
+
 // LinearIssueUpdateInput holds optional fields for issue mutation
 type LinearIssueUpdateInput struct {
-	StateID    string `json:"stateId,omitempty"`
-	Priority   *int   `json:"priority,omitempty"`
-	DueDate    string `json:"dueDate,omitempty"`
-	AssigneeID string `json:"assigneeId,omitempty"`
+	StateID    string    `json:"stateId,omitempty"`
+	Priority   *int      `json:"priority,omitempty"`
+	DueDate    string    `json:"dueDate,omitempty"`
+	AssigneeID string    `json:"assigneeId,omitempty"`
+	LabelIDs   *[]string `json:"labelIds,omitempty"`
 }
 
 // UpdateLinearIssue updates multiple fields of a Linear issue.
@@ -283,6 +322,9 @@ func UpdateLinearIssue(apiKey, issueID string, input LinearIssueUpdateInput) err
 		} else {
 			inputMap["assigneeId"] = input.AssigneeID
 		}
+	}
+	if input.LabelIDs != nil {
+		inputMap["labelIds"] = *input.LabelIDs
 	}
 
 	gqlQuery := `
@@ -466,6 +508,32 @@ func getLinearViewerID(apiKey string) (string, error) {
 	}
 
 	return result.Viewer.ID, nil
+}
+
+func getLinearViewer(apiKey string) (*LinearViewer, error) {
+	gqlQuery := `{ viewer { id name email } }`
+	reqBody := linearGraphQLRequest{
+		Query:     gqlQuery,
+		Variables: map[string]interface{}{},
+	}
+
+	respData, err := doLinearRequest(apiKey, reqBody)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Viewer LinearViewer `json:"viewer"`
+	}
+
+	if err := json.Unmarshal(respData, &result); err != nil {
+		return nil, fmt.Errorf("viewer parse failed: %w", err)
+	}
+	if result.Viewer.ID == "" {
+		return nil, fmt.Errorf("viewer id is empty")
+	}
+
+	return &result.Viewer, nil
 }
 
 // GetMyLinearIssues retrieves issues assigned to the current user (identified by linearUserID), filtered by active states

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ListWeeklyReports, GetReportItems } from '../../wailsjs/go/main/App'
+import { useAppApi } from '../hooks/useAppApi'
 import { X, FileText, Calendar, CheckCircle } from 'lucide-react'
 
 const WEEKDAY_NAMES = ['일', '월', '화', '수', '목', '금', '토']
@@ -46,6 +46,9 @@ interface GroupedItems {
 }
 
 export default function WeeklyReportList() {
+  const appApi = useAppApi()
+  const { ListWeeklyReports, GetReportItems } = appApi
+
   const [reports, setReports] = useState<WeeklyReport[]>([])
   const [loading, setLoading] = useState(false)
   const [selectedReport, setSelectedReport] = useState<WeeklyReport | null>(null)
@@ -139,8 +142,8 @@ export default function WeeklyReportList() {
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                        <FileText className="w-5 h-5 text-blue-600" />
+                      <div className="w-10 h-10 bg-blue-100 dark:bg-blue-500/20 rounded-lg flex items-center justify-center">
+                        <FileText className="w-5 h-5 text-blue-700 dark:text-blue-300" />
                       </div>
                       <div>
                         <h3 className="font-medium text-slate-800">
@@ -155,12 +158,12 @@ export default function WeeklyReportList() {
                     <div className="flex items-center gap-2">
                       <span className={`text-xs px-2 py-1 rounded-full ${
                         report.status === 'exported' 
-                          ? 'bg-green-100 text-green-700' 
-                          : 'bg-amber-100 text-amber-700'
+                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300' 
+                          : 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300'
                       }`}>
                         {report.status === 'exported' ? '보내기 완료' : '임시저장'}
                       </span>
-                      <button className="text-sm text-blue-600 hover:text-blue-700 px-3 py-1 hover:bg-blue-50 rounded-lg">
+                      <button className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-300 dark:hover:text-blue-200 px-3 py-1 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-lg">
                         상세보기
                       </button>
                     </div>
@@ -208,8 +211,8 @@ export default function WeeklyReportList() {
                     <div key={section} className="border border-slate-200 rounded-xl overflow-hidden">
                       {/* Section Header */}
                       <div className="bg-slate-100 px-4 py-3 border-b border-slate-200">
-                        <h4 className="font-semibold text-slate-800 flex items-center gap-2">
-                          <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+                        <h4 className="font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                          <span className="w-2 h-2 bg-blue-500 dark:bg-blue-300 rounded-full"></span>
                           {section}
                           <span className="text-sm font-normal text-slate-500">
                             ({groupedItems[section].length}개 항목)
@@ -227,13 +230,13 @@ export default function WeeklyReportList() {
                               </div>
                               <div className="flex-1">
                                 <div className="flex items-center gap-2 mb-1">
-                                  <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
+                                  <span className="text-xs font-medium text-slate-500 dark:text-slate-300 bg-slate-100 dark:bg-slate-700/60 px-2 py-0.5 rounded">
                                     {item.category}
                                   </span>
-                                                  <span className={`text-xs px-2 py-0.5 rounded ${
+                                  <span className={`text-xs px-2 py-0.5 rounded ${
                                   item.workType === 'sm'
-                                                        ? 'bg-purple-100 text-purple-700'
-                                                        : 'bg-blue-100 text-blue-700'
+                                      ? 'bg-purple-100 text-purple-700 dark:bg-purple-500/20 dark:text-purple-300'
+                                      : 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300'
                                 }`}>
                                     {item.workType?.toUpperCase() || 'SI'}
                                   </span>

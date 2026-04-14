@@ -15,22 +15,12 @@ import {
   Sparkles,
   GitBranch,
 } from 'lucide-react'
-import {
-  GetReportItems,
-  UpdateReportItem,
-  DeleteReportItem,
-  AddReportItem,
-  ExportWeeklyReport,
-  GetProjectCategories,
-  PreprocessReportItemsWithAI,
-  OpenFile,
-  RefineMarkdownWithAI,
-  GetWeeklyReport,
-  PopulateReportFromLinear,
-} from '../../wailsjs/go/main/App'
 import ReactMarkdown from 'react-markdown'
 import { generateMarkdown } from '../utils/generateMarkdown'
 import { useTeamProfile } from '../contexts/TeamProfileContext'
+import { useAppApi } from '../hooks/useAppApi'
+import { useReportInsights } from '../hooks/useReportInsights'
+import type { db } from '../../wailsjs/go/models'
 
 interface ReportItem {
   id: number
@@ -74,6 +64,21 @@ const PERIODS = [
 ]
 
 export default function ReportEditor() {
+  const appApi = useAppApi()
+  const {
+    GetReportItems,
+    UpdateReportItem,
+    DeleteReportItem,
+    AddReportItem,
+    ExportWeeklyReport,
+    GetProjectCategories,
+    PreprocessReportItemsWithAI,
+    OpenFile,
+    RefineMarkdownWithAI,
+    GetWeeklyReport,
+    PopulateReportFromLinear,
+  } = appApi
+
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const reportId = Number(id)
@@ -98,6 +103,18 @@ export default function ReportEditor() {
   const [copyMsg, setCopyMsg] = useState<string | null>(null)
   const [weekInfo, setWeekInfo] = useState<{ weekStart: string; weekEnd: string; label: string } | null>(null)
   const [linearLoading, setLinearLoading] = useState(false)
+  const [insightActivityConfig, setInsightActivityConfig] = useState<Record<number, { section: string; period: string }>>({})
+  const [draftEditMode, setDraftEditMode] = useState<Record<string, boolean>>({})
+  const [draftEditValue, setDraftEditValue] = useState<Record<string, { section: string; period: string; content: string }>>({})
+  const [evidenceOpen, setEvidenceOpen] = useState<Record<string, boolean>>({})
+  const {
+    insights,
+    loading: insightsLoading,
+    acceptActivity: acceptInsightActivity,
+    acceptDraft: acceptInsightDraft,
+    ignoreActivity: ignoreInsightActivity,
+    refresh: refreshInsights,
+  } = useReportInsights(Number.isFinite(reportId) && reportId > 0 ? reportId : null)
 
   useEffect(() => {
     initializeEditor()
@@ -135,8 +152,56 @@ export default function ReportEditor() {
           label: `${report.weekStart} ~ ${report.weekEnd}`,
         })
       }
+      await refreshInsights()
     } catch (err) {
       console.error('Failed to load report data:', err)
+    }
+  }
+
+  async function handleInsightAcceptActivity(activity: db.ReportInsightActivity) {
+    try {
+      const config = getActivityConfig(activity)
+      const section = config.section
+      const period = config.period
+      const activityId = activity.activityId
+      await acceptInsightActivity(activityId, section, '', period)
+      await loadData()
+      showStatus('인사이트 활동을 보고서에 반영했습니다')
+    } catch (err: any) {
+      showStatus(err?.message || '인사이트 반영에 실패했습니다')
+    }
+  }
+
+  async function handleInsightAcceptDraft(draft: db.ReportInsightDraft) {
+    try {
+      const value = getDraftEditValue(draft)
+      await acceptInsightDraft({ ...draft, suggestedSection: value.section }, value.period)
+      await loadData()
+      showStatus('초안 후보를 반영했습니다')
+    } catch (err: any) {
+      showStatus(err?.message || '초안 반영에 실패했습니다')
+    }
+  }
+
+  async function handleInsightAcceptDraftEdited(draft: db.ReportInsightDraft) {
+    try {
+      const value = getDraftEditValue(draft)
+      await AddReportItem(reportId, value.section, '', value.content, undefined, value.period)
+      setDraftEditMode(prev => ({ ...prev, [draft.key]: false }))
+      await loadData()
+      showStatus('수정 초안을 새 항목으로 반영했습니다')
+    } catch (err: any) {
+      showStatus(err?.message || '수정 초안 반영에 실패했습니다')
+    }
+  }
+
+  async function handleInsightIgnore(activityId: number) {
+    try {
+      await ignoreInsightActivity(activityId)
+      await loadData()
+      showStatus('해당 활동을 인사이트에서 숨겼습니다')
+    } catch (err: any) {
+      showStatus(err?.message || '활동 무시에 실패했습니다')
     }
   }
 
@@ -293,8 +358,68 @@ export default function ReportEditor() {
     return !sectionPeriod || sectionPeriod === activePeriod
   }
 
+  function periodBySection(section: string) {
+    return section === 'next_week_plan' ? 'next_week' : 'this_week'
+  }
+
+  function defaultSectionBySource(source: string) {
+    const s = source.toLowerCase()
+    if (s.includes('calendar') || s.includes('meeting')) return 'attendance'
+    if (s.includes('issue') || s.includes('linear')) return 'project_progress'
+    return 'project_progress'
+  }
+
+  function getActivityConfig(activity: db.ReportInsightActivity) {
+    const existing = insightActivityConfig[activity.activityId]
+    if (existing) return existing
+    const section = defaultSectionBySource(activity.source)
+    return { section, period: periodBySection(section) }
+  }
+
+  function updateActivityConfig(activityId: number, next: { section?: string; period?: string }) {
+    setInsightActivityConfig(prev => {
+      const current = prev[activityId] ?? { section: 'project_progress', period: 'this_week' }
+      return {
+        ...prev,
+        [activityId]: {
+          section: next.section ?? current.section,
+          period: next.period ?? current.period,
+        },
+      }
+    })
+  }
+
+  function getDraftEditValue(draft: db.ReportInsightDraft) {
+    const existing = draftEditValue[draft.key]
+    if (existing) return existing
+    const section = draft.suggestedSection || 'other'
+    return {
+      section,
+      period: periodBySection(section),
+      content: draft.content || '',
+    }
+  }
+
+  function updateDraftEditValue(draftKey: string, next: { section?: string; period?: string; content?: string }) {
+    setDraftEditValue(prev => {
+      const current = prev[draftKey] ?? { section: 'other', period: 'this_week', content: '' }
+      return {
+        ...prev,
+        [draftKey]: {
+          section: next.section ?? current.section,
+          period: next.period ?? current.period,
+          content: next.content ?? current.content,
+        },
+      }
+    })
+  }
+
+  function toggleEvidence(key: string) {
+    setEvidenceOpen(prev => ({ ...prev, [key]: !prev[key] }))
+  }
+
   return (
-    <div className="h-full flex flex-col">
+    <div className="report-editor h-full flex flex-col">
       {/* Header */}
       <header className="h-14 border-b border-slate-200 bg-white flex items-center justify-between px-6 shrink-0">
         <div className="flex items-center gap-3">
@@ -305,23 +430,23 @@ export default function ReportEditor() {
             <ArrowLeft size={18} />
           </button>
           {/* 탭 */}
-          <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+          <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 rounded-lg p-1 ring-1 ring-slate-200 dark:ring-slate-700">
             <button
               onClick={() => handleTabChange('edit')}
-              className={`px-4 py-1.5 text-sm rounded-md transition-colors ${
+              className={`px-4 py-1.5 text-sm rounded-md border transition-colors ${
                 activeTab === 'edit'
-                  ? 'bg-white text-slate-800 font-medium shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700'
+                  ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 font-semibold border-slate-300 dark:border-slate-600 shadow-sm'
+                  : 'bg-transparent text-slate-600 dark:text-slate-300 border-transparent hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-100'
               }`}
             >
               편집
             </button>
             <button
               onClick={() => handleTabChange('preview')}
-              className={`px-4 py-1.5 text-sm rounded-md transition-colors ${
+              className={`px-4 py-1.5 text-sm rounded-md border transition-colors ${
                 activeTab === 'preview'
-                  ? 'bg-white text-slate-800 font-medium shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700'
+                  ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 font-semibold border-slate-300 dark:border-slate-600 shadow-sm'
+                  : 'bg-transparent text-slate-600 dark:text-slate-300 border-transparent hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-100'
               }`}
             >
               미리보기
@@ -353,7 +478,7 @@ export default function ReportEditor() {
             onClick={loadData}
             className="flex items-center gap-2 px-3 py-2 text-sm bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-lg transition-colors"
           >
-            <RefreshCw size={15} />
+            <RefreshCw size={15} className="opacity-80" />
             최신 내용 불러오기
           </button>
           {activeTab === 'edit' && (
@@ -362,7 +487,7 @@ export default function ReportEditor() {
               disabled={linearLoading || !weekInfo}
               className="flex items-center gap-2 px-3 py-2 text-sm bg-emerald-100 text-emerald-700 hover:bg-emerald-200 rounded-lg transition-colors disabled:opacity-50"
             >
-              <GitBranch size={15} className={linearLoading ? 'animate-spin' : ''} />
+              <GitBranch size={15} className={`${linearLoading ? 'animate-spin' : ''} opacity-80`} />
               {linearLoading ? 'Linear 취합 중...' : 'Linear 취합'}
             </button>
           )}
@@ -371,7 +496,7 @@ export default function ReportEditor() {
             disabled={preprocessing}
             className="flex items-center gap-2 px-3 py-2 text-sm bg-violet-100 text-violet-700 hover:bg-violet-200 rounded-lg transition-colors disabled:opacity-50"
           >
-            <RefreshCw size={15} className={preprocessing ? 'animate-spin' : ''} />
+            <RefreshCw size={15} className={`${preprocessing ? 'animate-spin' : ''} opacity-80`} />
             {preprocessing ? 'AI 전처리 중...' : 'AI 전처리'}
           </button>
           {activeTab === 'preview' && (
@@ -381,7 +506,7 @@ export default function ReportEditor() {
                 disabled={isRefining || !markdownText}
                 className="flex items-center gap-2 px-3 py-1.5 text-sm bg-purple-100 text-purple-700 hover:bg-purple-200 rounded-lg transition-colors disabled:opacity-50"
               >
-                <Sparkles size={16} className={isRefining ? 'animate-pulse' : ''} />
+                <Sparkles size={16} className={`${isRefining ? 'animate-pulse' : ''} opacity-80`} />
                 {isRefining ? 'AI 처리 중...' : 'AI 다듬기'}
               </button>
               <button
@@ -389,7 +514,7 @@ export default function ReportEditor() {
                 disabled={!markdownText}
                 className="flex items-center gap-2 px-3 py-1.5 text-sm bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-lg transition-colors disabled:opacity-50"
               >
-                <Copy size={16} />
+                <Copy size={16} className="opacity-80" />
                 {copyMsg || 'MD 복사'}
               </button>
             </>
@@ -399,7 +524,7 @@ export default function ReportEditor() {
             disabled={exporting || preprocessing || items.filter(i => i.isSelected).length === 0}
             className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white hover:bg-blue-700 rounded-lg transition-colors font-medium disabled:opacity-50"
           >
-            <Download size={16} />
+            <Download size={16} className="opacity-90" />
             {exporting ? '생성 중...' : 'Excel 내보내기'}
           </button>
         </div>
@@ -409,6 +534,203 @@ export default function ReportEditor() {
       {activeTab === 'edit' && (
       <div className="flex-1 overflow-y-auto p-6">
         <div className="max-w-4xl mx-auto space-y-6">
+          {insights && (
+            <section className="bg-white border border-slate-200 rounded-xl p-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-slate-700">인사이트 요약</h3>
+                {insightsLoading && <span className="text-xs text-slate-400">불러오는 중...</span>}
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="rounded-lg border border-slate-200 p-3">
+                  <div className="text-xs text-slate-500">반영률</div>
+                  <div className="text-lg font-semibold text-slate-800">
+                    {insights.summary.linkedActivities}/{insights.summary.totalActivities}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-slate-200 p-3">
+                  <div className="text-xs text-slate-500">미반영</div>
+                  <div className="text-lg font-semibold text-slate-800">{insights.summary.unlinkedActivities}</div>
+                </div>
+                <div className="rounded-lg border border-slate-200 p-3">
+                  <div className="text-xs text-slate-500">검토 필요</div>
+                  <div className="text-lg font-semibold text-slate-800">{insights.summary.needsReview}</div>
+                </div>
+              </div>
+
+              {(insights.unlinkedActivities ?? []).length > 0 && (
+                <div className="space-y-2">
+                  <h4 className="text-xs font-semibold text-slate-600">미반영 활동</h4>
+                  <div className="space-y-2">
+                    {(insights.unlinkedActivities ?? []).slice(0, 6).map(activity => (
+                      <div key={activity.activityId} className="border border-slate-200 rounded-lg p-3 space-y-2">
+                        <div className="text-sm font-medium text-slate-800">{activity.title || '(제목 없음)'}</div>
+                        <div className="text-xs text-slate-500">
+                          {activity.source} · {activity.activityDate} · #{activity.activityId}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <select
+                            value={getActivityConfig(activity).section}
+                            onChange={e => {
+                              const section = e.target.value
+                              updateActivityConfig(activity.activityId, { section, period: periodBySection(section) })
+                            }}
+                            className="text-xs border border-slate-200 rounded px-2 py-1"
+                          >
+                            {getVisibleSections(teamType).map(section => (
+                              <option key={section.key} value={section.key}>
+                                {section.key}
+                              </option>
+                            ))}
+                          </select>
+                          <select
+                            value={getActivityConfig(activity).period}
+                            onChange={e => updateActivityConfig(activity.activityId, { period: e.target.value })}
+                            className="text-xs border border-slate-200 rounded px-2 py-1"
+                          >
+                            <option value="this_week">this_week</option>
+                            <option value="next_week">next_week</option>
+                          </select>
+                          <button
+                            onClick={() => toggleEvidence(`activity-${activity.activityId}`)}
+                            className="px-2 py-1 text-xs rounded bg-slate-100 text-slate-700 hover:bg-slate-200"
+                          >
+                            {evidenceOpen[`activity-${activity.activityId}`] ? '근거 숨기기' : '근거 보기'}
+                          </button>
+                        </div>
+                        {evidenceOpen[`activity-${activity.activityId}`] && (
+                          <div className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded p-2 whitespace-pre-wrap">
+                            제목: {activity.title || '(없음)'}{'\n'}
+                            요약: {activity.summary || '(없음)'}{'\n'}
+                            출처: {activity.source}{'\n'}
+                            날짜: {activity.activityDate}
+                          </div>
+                        )}
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            onClick={() => handleInsightAcceptActivity(activity)}
+                            className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-700 hover:bg-blue-200"
+                          >
+                            선택값으로 추가
+                          </button>
+                          <button
+                            onClick={() => handleInsightIgnore(activity.activityId)}
+                            className="px-2 py-1 text-xs rounded bg-slate-100 text-slate-700 hover:bg-slate-200"
+                          >
+                            무시
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {(insights.needsReview ?? []).length > 0 && (
+                <div className="space-y-2">
+                  <h4 className="text-xs font-semibold text-slate-600">검토 필요</h4>
+                  <div className="space-y-2">
+                    {(insights.needsReview ?? []).slice(0, 4).map(activity => (
+                      <div key={activity.activityId} className="border border-amber-200 bg-amber-50 rounded-lg p-3">
+                        <div className="text-sm font-medium text-slate-800">{activity.title || '(제목 없음)'}</div>
+                        <div className="text-xs text-slate-600">
+                          {activity.source} · {activity.activityDate}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {(insights.draftCandidates ?? []).length > 0 && (
+                <div className="space-y-2">
+                  <h4 className="text-xs font-semibold text-slate-600">초안 후보</h4>
+                  <div className="space-y-2">
+                    {(insights.draftCandidates ?? []).slice(0, 4).map(draft => (
+                      <div key={draft.key} className="border border-slate-200 rounded-lg p-3 space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <select
+                            value={getDraftEditValue(draft).section}
+                            onChange={e => {
+                              const section = e.target.value
+                              updateDraftEditValue(draft.key, { section, period: periodBySection(section) })
+                            }}
+                            className="text-xs border border-slate-200 rounded px-2 py-1"
+                          >
+                            {getVisibleSections(teamType).map(section => (
+                              <option key={section.key} value={section.key}>
+                                {section.key}
+                              </option>
+                            ))}
+                          </select>
+                          <select
+                            value={getDraftEditValue(draft).period}
+                            onChange={e => updateDraftEditValue(draft.key, { period: e.target.value })}
+                            className="text-xs border border-slate-200 rounded px-2 py-1"
+                          >
+                            <option value="this_week">this_week</option>
+                            <option value="next_week">next_week</option>
+                          </select>
+                          <button
+                            onClick={() => toggleEvidence(`draft-${draft.key}`)}
+                            className="px-2 py-1 text-xs rounded bg-slate-100 text-slate-700 hover:bg-slate-200"
+                          >
+                            {evidenceOpen[`draft-${draft.key}`] ? '근거 숨기기' : '근거 보기'}
+                          </button>
+                          <button
+                            onClick={() => {
+                              const current = getDraftEditValue(draft)
+                              setDraftEditValue(prev => ({
+                                ...prev,
+                                [draft.key]: current,
+                              }))
+                              setDraftEditMode(prev => ({ ...prev, [draft.key]: !prev[draft.key] }))
+                            }}
+                            className="px-2 py-1 text-xs rounded bg-amber-100 text-amber-700 hover:bg-amber-200"
+                          >
+                            수정 후 채택
+                          </button>
+                        </div>
+                        {draftEditMode[draft.key] ? (
+                          <textarea
+                            value={getDraftEditValue(draft).content}
+                            onChange={e => updateDraftEditValue(draft.key, { content: e.target.value })}
+                            rows={4}
+                            className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                          />
+                        ) : (
+                          <div className="text-sm text-slate-800 whitespace-pre-wrap">{draft.content}</div>
+                        )}
+                        {evidenceOpen[`draft-${draft.key}`] && (
+                          <div className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded p-2 whitespace-pre-wrap">
+                            reason: {draft.reason || '(none)'}{'\n'}
+                            activityIds: {draft.activityIds.join(', ') || '(none)'}
+                          </div>
+                        )}
+                        <div className="text-xs text-slate-500">근거 활동 {draft.activityIds.length}건</div>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            onClick={() => handleInsightAcceptDraft(draft)}
+                            className="px-2 py-1 text-xs rounded bg-violet-100 text-violet-700 hover:bg-violet-200"
+                          >
+                            채택
+                          </button>
+                          {draftEditMode[draft.key] && (
+                            <button
+                              onClick={() => handleInsightAcceptDraftEdited(draft)}
+                              className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-700 hover:bg-blue-200"
+                            >
+                              수정본 채택
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
+
           {/* Period tabs */}
           <div className="flex items-center gap-2 mb-4">
             {PERIODS.map(period => (

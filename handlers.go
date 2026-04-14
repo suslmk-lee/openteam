@@ -1,3 +1,6 @@
+//go:build legacy_handlers
+// +build legacy_handlers
+
 package main
 
 import (

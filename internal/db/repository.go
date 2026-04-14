@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"time"
+
+	"openreport/internal/constants"
 )
 
 // --- Users ---
@@ -265,7 +267,7 @@ func (d *Database) UpdateReportStatus(id int64, status string) error {
 
 func (d *Database) SaveReportItem(item *ReportItem) (int64, error) {
 	if item.Period == "" {
-		item.Period = "this_week"
+		item.Period = constants.PeriodThisWeek
 	}
 	if item.ID > 0 {
 		log.Printf("[DB SaveReportItem] Updating item %d: content=%.50s...", item.ID, item.Content)
@@ -350,6 +352,35 @@ func (d *Database) GetPreviousWeekReport(userID int64, currentWeekStart string) 
 func (d *Database) DeleteReportItem(id int64) error {
 	_, err := d.conn.Exec("DELETE FROM report_items WHERE id = ?", id)
 	return err
+}
+
+func (d *Database) IgnoreReportInsightActivity(reportID, activityID int64) error {
+	_, err := d.conn.Exec(
+		"INSERT OR IGNORE INTO report_insight_ignores (report_id, activity_id) VALUES (?, ?)",
+		reportID, activityID,
+	)
+	return err
+}
+
+func (d *Database) ListIgnoredReportInsightActivities(reportID int64) (map[int64]bool, error) {
+	rows, err := d.conn.Query(
+		"SELECT activity_id FROM report_insight_ignores WHERE report_id = ?",
+		reportID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	ignored := make(map[int64]bool)
+	for rows.Next() {
+		var activityID int64
+		if err := rows.Scan(&activityID); err != nil {
+			return nil, err
+		}
+		ignored[activityID] = true
+	}
+	return ignored, nil
 }
 
 // --- Excel Templates ---

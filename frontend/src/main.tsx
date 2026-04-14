@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import './style.css'
 import { TeamProfileProvider } from './contexts/TeamProfileContext'
+import { ThemeProvider } from './contexts/ThemeContext'
 import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
 import Settings from './pages/Settings'
@@ -29,8 +30,9 @@ const root = createRoot(container!)
 root.render(
   <React.StrictMode>
     <HashRouter>
-      <TeamProfileProvider>
-        <Routes>
+      <ThemeProvider>
+        <TeamProfileProvider>
+          <Routes>
           <Route path="/onboarding" element={<Onboarding />} />
           <Route element={<Layout />}>
             <Route path="/" element={<Dashboard />} />
@@ -59,7 +61,8 @@ root.render(
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>
-      </TeamProfileProvider>
+        </TeamProfileProvider>
+      </ThemeProvider>
     </HashRouter>
   </React.StrictMode>
 )

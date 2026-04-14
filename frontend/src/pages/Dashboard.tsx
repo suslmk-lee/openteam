@@ -4,13 +4,8 @@ import {
   Users, User, Clock, Briefcase, FileText, Building2, TrendingUp,
   ArrowRight, Calendar, AlertTriangle, Kanban, RotateCcw, CheckSquare,
 } from 'lucide-react'
-import {
-  ListTeamMembers, GetAttendanceSummary, ListSIProjects,
-  GetSIWeeklySnapshot, ListWeeklyReports, ListClients, GetCurrentWeek,
-  ListIssues, ListRetrospectives, GetLinearDashboard, GetMyLinearIssues,
-  GetMyAttendanceSummary, ListMyWeeklyReports, ListActivitiesByDateRange,
-} from '../../wailsjs/go/main/App'
 import { useTeamProfile } from '../contexts/TeamProfileContext'
+import { useAppApi } from '../hooks/useAppApi'
 
 // ── interfaces ──────────────────────────────────────────────────────────────
 
@@ -50,16 +45,20 @@ const STATUS_LABELS: Record<string, string> = {
   in_development: '개발중', in_operation: '운영중', closed: '종료',
 }
 const STATUS_COLORS: Record<string, string> = {
-  preparing: 'bg-slate-100 text-slate-600', poc_proposal: 'bg-blue-100 text-blue-600',
-  in_development: 'bg-amber-100 text-amber-600', in_operation: 'bg-green-100 text-green-600',
-  closed: 'bg-gray-100 text-gray-600',
+  preparing: 'bg-slate-100 text-slate-700 dark:bg-slate-700/60 dark:text-slate-200',
+  poc_proposal: 'bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-300',
+  in_development: 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300',
+  in_operation: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300',
+  closed: 'bg-slate-100 text-slate-600 dark:bg-slate-700/50 dark:text-slate-300',
 }
 const ISSUE_STATUS_LABELS: Record<string, string> = {
   open: '미처리', in_progress: '처리중', resolved: '해결됨', closed: '종료',
 }
 const ISSUE_STATUS_COLORS: Record<string, string> = {
-  open: 'bg-red-100 text-red-600', in_progress: 'bg-amber-100 text-amber-600',
-  resolved: 'bg-green-100 text-green-600', closed: 'bg-slate-100 text-slate-500',
+  open: 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300',
+  in_progress: 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300',
+  resolved: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300',
+  closed: 'bg-slate-100 text-slate-500 dark:bg-slate-700/50 dark:text-slate-300',
 }
 
 function normalizeDate(d: string) {
@@ -295,16 +294,16 @@ function LinearTaskCard({ linearIssues, navigate }: { linearIssues: LinearIssue[
     }
   })
   const cols = [
-    { type: 'backlog', label: 'Backlog', color: 'text-slate-500', bg: 'bg-slate-50' },
-    { type: 'unstarted', label: 'Todo', color: 'text-blue-600', bg: 'bg-blue-50' },
-    { type: 'started', label: 'In Progress', color: 'text-amber-600', bg: 'bg-amber-50' },
-    { type: 'completed', label: 'Done', color: 'text-green-600', bg: 'bg-green-50' },
+    { type: 'backlog', label: 'Backlog', color: 'text-slate-500 dark:text-slate-300', bg: 'bg-slate-50 dark:bg-slate-700/40' },
+    { type: 'unstarted', label: 'Todo', color: 'text-blue-600 dark:text-blue-300', bg: 'bg-blue-50 dark:bg-blue-500/20' },
+    { type: 'started', label: 'In Progress', color: 'text-amber-600 dark:text-amber-300', bg: 'bg-amber-50 dark:bg-amber-500/20' },
+    { type: 'completed', label: 'Done', color: 'text-green-600 dark:text-emerald-300', bg: 'bg-green-50 dark:bg-emerald-500/20' },
   ]
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-4">
       <div className="flex items-center gap-3 mb-3">
-        <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-          <Kanban className="w-5 h-5 text-green-600" />
+        <div className="w-10 h-10 bg-emerald-100 dark:bg-emerald-500/20 rounded-lg flex items-center justify-center">
+          <Kanban className="w-5 h-5 text-emerald-700 dark:text-emerald-300" />
         </div>
         <div>
           <h3 className="font-semibold text-slate-800">Linear 태스크</h3>
@@ -320,7 +319,7 @@ function LinearTaskCard({ linearIssues, navigate }: { linearIssues: LinearIssue[
         ))}
       </div>
       <button onClick={() => navigate('/team/taskboard')}
-        className="w-full mt-3 flex items-center justify-center gap-1 text-xs text-slate-500 hover:text-slate-700 py-1">
+        className="w-full mt-3 flex items-center justify-center gap-1 text-xs text-slate-500 hover:text-slate-700 dark:text-slate-300 dark:hover:text-slate-100 py-1">
         태스크보드 바로가기 <ArrowRight size={12} />
       </button>
     </div>
@@ -331,8 +330,8 @@ function RetroCard({ retro, navigate }: { retro: Retrospective | null; navigate:
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-4">
       <div className="flex items-center gap-3 mb-3">
-        <div className="w-10 h-10 bg-violet-100 rounded-lg flex items-center justify-center">
-          <RotateCcw className="w-5 h-5 text-violet-600" />
+        <div className="w-10 h-10 bg-violet-100 dark:bg-violet-500/20 rounded-lg flex items-center justify-center">
+          <RotateCcw className="w-5 h-5 text-violet-700 dark:text-violet-300" />
         </div>
         <div>
           <h3 className="font-semibold text-slate-800">주간 회고</h3>
@@ -360,7 +359,7 @@ function RetroCard({ retro, navigate }: { retro: Retrospective | null; navigate:
         <p className="text-sm text-slate-400 text-center py-2">작성된 회고가 없습니다</p>
       )}
       <button onClick={() => navigate('/team/retro')}
-        className="w-full mt-3 flex items-center justify-center gap-1 text-xs text-slate-500 hover:text-slate-700 py-1">
+        className="w-full mt-3 flex items-center justify-center gap-1 text-xs text-slate-500 hover:text-slate-700 dark:text-slate-300 dark:hover:text-slate-100 py-1">
         회고 전체보기 <ArrowRight size={12} />
       </button>
     </div>
@@ -409,6 +408,23 @@ function AttendanceTable({ attendance }: { attendance: AttendanceSummary[] }) {
 export default function Dashboard() {
   const navigate = useNavigate()
   const { profile } = useTeamProfile()
+  const appApi = useAppApi()
+  const {
+    ListTeamMembers,
+    GetAttendanceSummary,
+    ListSIProjects,
+    GetSIWeeklySnapshot,
+    ListWeeklyReports,
+    ListClients,
+    GetCurrentWeek,
+    ListIssues,
+    ListRetrospectives,
+    GetLinearDashboard,
+    GetMyLinearIssues,
+    GetMyAttendanceSummary,
+    ListMyWeeklyReports,
+    ListActivitiesByDateRange,
+  } = appApi
   const teamType = profile?.teamType || 'si_business'
   const [loading, setLoading] = useState(true)
 
@@ -666,16 +682,16 @@ function MyAttendanceCard({ summary, navigate }: { summary: MyAttendanceSummary 
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
       <div className="flex items-center gap-3 mb-4">
-        <div className="p-2 bg-blue-100 rounded-lg"><User size={20} className="text-blue-600" /></div>
+        <div className="p-2 bg-blue-100 dark:bg-blue-500/20 rounded-lg"><User size={20} className="text-blue-700 dark:text-blue-300" /></div>
         <h3 className="font-semibold text-slate-800">내 근무 현황</h3>
       </div>
       {summary ? (
         <div className="grid grid-cols-2 gap-3 mb-3">
-          <div className="bg-slate-50 rounded-lg p-3 text-center">
+          <div className="bg-slate-50 dark:bg-slate-700/40 rounded-lg p-3 text-center">
             <div className="text-2xl font-bold text-slate-700">{summary.vacationDays}</div>
             <div className="text-xs text-slate-500">휴가</div>
           </div>
-          <div className="bg-slate-50 rounded-lg p-3 text-center">
+          <div className="bg-slate-50 dark:bg-slate-700/40 rounded-lg p-3 text-center">
             <div className="text-2xl font-bold text-slate-700">{summary.morningHalfDays + summary.afternoonHalfDays}</div>
             <div className="text-xs text-slate-500">반차</div>
           </div>
@@ -685,7 +701,7 @@ function MyAttendanceCard({ summary, navigate }: { summary: MyAttendanceSummary 
       )}
       <button 
         onClick={() => navigate('/settings/attendance')}
-        className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm rounded-lg transition-colors"
+        className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-slate-100 text-sm rounded-lg transition-colors"
       >
         + 근태 등록하기
       </button>
@@ -700,7 +716,7 @@ function TodayScheduleCard({ activities }: { activities: Activity[] }) {
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
       <div className="flex items-center gap-3 mb-4">
-        <div className="p-2 bg-green-100 rounded-lg"><Calendar size={20} className="text-green-600" /></div>
+        <div className="p-2 bg-emerald-100 dark:bg-emerald-500/20 rounded-lg"><Calendar size={20} className="text-emerald-700 dark:text-emerald-300" /></div>
         <h3 className="font-semibold text-slate-800">오늘 일정</h3>
       </div>
       {todayActs.length > 0 ? (
@@ -721,14 +737,16 @@ function MyWeeklyReportCard({ report, weekInfo, navigate }: { report: WeeklyRepo
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
       <div className="flex items-center gap-3 mb-4">
-        <div className="p-2 bg-purple-100 rounded-lg"><FileText size={20} className="text-purple-600" /></div>
+        <div className="p-2 bg-purple-100 dark:bg-purple-500/20 rounded-lg"><FileText size={20} className="text-purple-700 dark:text-purple-300" /></div>
         <h3 className="font-semibold text-slate-800">주간 보고서</h3>
       </div>
       {report ? (
         <div>
           <p className="text-sm text-slate-600 mb-2">{weekInfo?.label || '이번 주'}</p>
           <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs ${
-            report.status === 'submitted' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+            report.status === 'submitted'
+              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300'
+              : 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300'
           }`}>
             {report.status === 'submitted' ? '제출 완료' : '작성 중'}
           </span>
@@ -755,19 +773,19 @@ function MyStatsCard({ linearIssues, reports }: { linearIssues: LinearIssue[], r
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
       <div className="flex items-center gap-3 mb-4">
-        <div className="p-2 bg-orange-100 rounded-lg"><TrendingUp size={20} className="text-orange-600" /></div>
+        <div className="p-2 bg-orange-100 dark:bg-orange-500/20 rounded-lg"><TrendingUp size={20} className="text-orange-700 dark:text-orange-300" /></div>
         <h3 className="font-semibold text-slate-800">업무 통계</h3>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <div className="bg-slate-50 rounded-lg p-3 text-center">
+        <div className="bg-slate-50 dark:bg-slate-700/40 rounded-lg p-3 text-center">
           <div className="text-2xl font-bold text-green-600">{doneCount}</div>
           <div className="text-xs text-slate-500">완료한 태스크</div>
         </div>
-        <div className="bg-slate-50 rounded-lg p-3 text-center">
+        <div className="bg-slate-50 dark:bg-slate-700/40 rounded-lg p-3 text-center">
           <div className="text-2xl font-bold text-blue-600">{inProgressCount}</div>
           <div className="text-xs text-slate-500">진행 중</div>
         </div>
-        <div className="bg-slate-50 rounded-lg p-3 text-center">
+        <div className="bg-slate-50 dark:bg-slate-700/40 rounded-lg p-3 text-center">
           <div className="text-2xl font-bold text-purple-600">{reports.length}</div>
           <div className="text-xs text-slate-500">총 보고서</div>
         </div>

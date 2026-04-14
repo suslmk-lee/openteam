@@ -98,15 +98,15 @@ export default function Layout() {
       <aside
         className={`${
           collapsed ? 'w-16' : 'w-60'
-        } bg-slate-800 text-slate-200 flex flex-col transition-all duration-200 shrink-0`}
+        } bg-[var(--color-sidebar)] text-[var(--color-sidebar-text)] flex flex-col transition-all duration-200 shrink-0`}
       >
         {/* Logo */}
-        <div className="h-14 flex items-center px-4 border-b border-slate-700">
+        <div className="h-14 flex items-center px-4 border-b border-slate-700 dark:border-slate-600">
           {!collapsed && (
             <div>
               <h1 className="text-base font-bold text-white tracking-tight leading-tight">OpenReport</h1>
               {teamTypeLabel && (
-                <p className="text-xs text-slate-400 leading-tight">{profile?.teamName || teamTypeLabel}</p>
+                <p className="text-xs text-slate-400 dark:text-slate-500 leading-tight">{profile?.teamName || teamTypeLabel}</p>
               )}
             </div>
           )}
@@ -124,7 +124,7 @@ export default function Layout() {
             <button
               onClick={() => setReportMenuOpen(!reportMenuOpen)}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-                reportMenuOpen ? 'bg-slate-700 text-white' : 'text-slate-300 hover:bg-slate-700 hover:text-white'
+                reportMenuOpen ? 'bg-slate-700 dark:bg-slate-600 text-white' : 'text-slate-300 hover:bg-slate-700 dark:hover:bg-slate-600 hover:text-white dark:text-slate-300'
               } ${collapsed ? 'justify-center' : ''}`}
             >
               <FileText size={20} />
@@ -149,7 +149,7 @@ export default function Layout() {
             <button
               onClick={() => setTeamMenuOpen(!teamMenuOpen)}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-                teamMenuOpen ? 'bg-slate-700 text-white' : 'text-slate-300 hover:bg-slate-700 hover:text-white'
+                teamMenuOpen ? 'bg-slate-700 dark:bg-slate-600 text-white' : 'text-slate-300 hover:bg-slate-700 dark:hover:bg-slate-600 hover:text-white dark:text-slate-300'
               } ${collapsed ? 'justify-center' : ''}`}
             >
               <Users size={20} />
@@ -175,7 +175,7 @@ export default function Layout() {
             <button
               onClick={() => setWorkDataMenuOpen(!workDataMenuOpen)}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-                workDataMenuOpen ? 'bg-slate-700 text-white' : 'text-slate-300 hover:bg-slate-700 hover:text-white'
+                workDataMenuOpen ? 'bg-slate-700 dark:bg-slate-600 text-white' : 'text-slate-300 hover:bg-slate-700 dark:hover:bg-slate-600 hover:text-white dark:text-slate-300'
               } ${collapsed ? 'justify-center' : ''}`}
             >
               <Database size={20} />
@@ -200,7 +200,7 @@ export default function Layout() {
             <button
               onClick={() => setSettingsMenuOpen(!settingsMenuOpen)}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-                settingsMenuOpen ? 'bg-slate-700 text-white' : 'text-slate-300 hover:bg-slate-700 hover:text-white'
+                settingsMenuOpen ? 'bg-slate-700 dark:bg-slate-600 text-white' : 'text-slate-300 hover:bg-slate-700 dark:hover:bg-slate-600 hover:text-white dark:text-slate-300'
               } ${collapsed ? 'justify-center' : ''}`}
             >
               <Settings size={20} />
@@ -213,7 +213,7 @@ export default function Layout() {
             </button>
 
             {!collapsed && settingsMenuOpen && (
-              <div className="ml-2 space-y-1 border-l-2 border-slate-700 pl-2">
+              <div className="ml-2 space-y-1 border-l-2 border-slate-700 dark:border-slate-600 pl-2">
                 <SidebarLink to="/settings/team-profile" icon={<Users size={18} />} label="팀 프로필" collapsed={false} />
                 <SidebarLink to="/settings/user" icon={<Settings size={18} />} label="사용자 정보" collapsed={false} />
                 <SidebarLink to="/settings/attendance" icon={<User size={18} />} label="내 근태 관리" collapsed={false} />
@@ -231,14 +231,14 @@ export default function Layout() {
         {/* Collapse toggle */}
         <button
           onClick={() => setCollapsed(!collapsed)}
-          className="h-10 flex items-center justify-center border-t border-slate-700 hover:bg-slate-700 transition-colors"
+          className="h-10 flex items-center justify-center border-t border-slate-700 dark:border-slate-600 hover:bg-slate-700 dark:hover:bg-slate-600 transition-colors text-slate-300 dark:text-slate-400"
         >
           {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
         </button>
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-y-auto bg-slate-50">
+      <main className="flex-1 overflow-y-auto bg-slate-50 dark:bg-[var(--color-bg)]">
         <Outlet />
       </main>
     </div>
@@ -263,7 +263,7 @@ function SidebarLink({
         `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
           isActive
             ? 'bg-blue-600 text-white font-medium'
-            : 'text-slate-300 hover:bg-slate-700 hover:text-white'
+            : 'text-slate-300 hover:bg-slate-700 dark:hover:bg-slate-600 hover:text-white dark:text-slate-300'
         } ${collapsed ? 'justify-center' : ''}`
       }
     >

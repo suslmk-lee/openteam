@@ -529,6 +529,104 @@ export namespace db {
 		    return a;
 		}
 	}
+	export class ReportInsightActivity {
+	    activityId: number;
+	    source: string;
+	    title: string;
+	    summary: string;
+	    activityDate: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ReportInsightActivity(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.activityId = source["activityId"];
+	        this.source = source["source"];
+	        this.title = source["title"];
+	        this.summary = source["summary"];
+	        this.activityDate = source["activityDate"];
+	    }
+	}
+	export class ReportInsightDraft {
+	    key: string;
+	    suggestedSection: string;
+	    suggestedCategory: string;
+	    suggestedWorkType: string;
+	    content: string;
+	    activityIds: number[];
+	    reason: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ReportInsightDraft(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.key = source["key"];
+	        this.suggestedSection = source["suggestedSection"];
+	        this.suggestedCategory = source["suggestedCategory"];
+	        this.suggestedWorkType = source["suggestedWorkType"];
+	        this.content = source["content"];
+	        this.activityIds = source["activityIds"];
+	        this.reason = source["reason"];
+	    }
+	}
+	export class ReportInsightSummary {
+	    totalActivities: number;
+	    linkedActivities: number;
+	    unlinkedActivities: number;
+	    needsReview: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new ReportInsightSummary(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.totalActivities = source["totalActivities"];
+	        this.linkedActivities = source["linkedActivities"];
+	        this.unlinkedActivities = source["unlinkedActivities"];
+	        this.needsReview = source["needsReview"];
+	    }
+	}
+	export class ReportInsights {
+	    summary: ReportInsightSummary;
+	    unlinkedActivities: ReportInsightActivity[];
+	    draftCandidates: ReportInsightDraft[];
+	    needsReview: ReportInsightActivity[];
+	
+	    static createFrom(source: any = {}) {
+	        return new ReportInsights(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.summary = this.convertValues(source["summary"], ReportInsightSummary);
+	        this.unlinkedActivities = this.convertValues(source["unlinkedActivities"], ReportInsightActivity);
+	        this.draftCandidates = this.convertValues(source["draftCandidates"], ReportInsightDraft);
+	        this.needsReview = this.convertValues(source["needsReview"], ReportInsightActivity);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class ReportItem {
 	    id: number;
 	    reportId: number;
@@ -1339,6 +1437,7 @@ export namespace main {
 	    priority?: number;
 	    dueDate?: string;
 	    assigneeId?: string;
+	    labelIds?: string[];
 	
 	    static createFrom(source: any = {}) {
 	        return new LinearIssueUpdateInput(source);
@@ -1350,6 +1449,7 @@ export namespace main {
 	        this.priority = source["priority"];
 	        this.dueDate = source["dueDate"];
 	        this.assigneeId = source["assigneeId"];
+	        this.labelIds = source["labelIds"];
 	    }
 	}
 	

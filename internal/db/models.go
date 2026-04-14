@@ -64,6 +64,45 @@ type ReportItem struct {
 	IsSelected bool   `json:"isSelected"`
 }
 
+type ReportInsightSummary struct {
+	TotalActivities    int `json:"totalActivities"`
+	LinkedActivities   int `json:"linkedActivities"`
+	UnlinkedActivities int `json:"unlinkedActivities"`
+	NeedsReview        int `json:"needsReview"`
+}
+
+type ReportInsightActivity struct {
+	ActivityID   int64  `json:"activityId"`
+	Source       string `json:"source"`
+	Title        string `json:"title"`
+	Summary      string `json:"summary"`
+	ActivityDate string `json:"activityDate"`
+}
+
+type ReportInsightDraft struct {
+	Key               string  `json:"key"`
+	SuggestedSection  string  `json:"suggestedSection"`
+	SuggestedCategory string  `json:"suggestedCategory"`
+	SuggestedWorkType string  `json:"suggestedWorkType"`
+	Content           string  `json:"content"`
+	ActivityIDs       []int64 `json:"activityIds"`
+	Reason            string  `json:"reason"`
+}
+
+type ReportInsights struct {
+	Summary            ReportInsightSummary    `json:"summary"`
+	UnlinkedActivities []ReportInsightActivity `json:"unlinkedActivities"`
+	DraftCandidates    []ReportInsightDraft    `json:"draftCandidates"`
+	NeedsReview        []ReportInsightActivity `json:"needsReview"`
+}
+
+type ReportInsightIgnore struct {
+	ID         int64     `json:"id"`
+	ReportID   int64     `json:"reportId"`
+	ActivityID int64     `json:"activityId"`
+	CreatedAt  time.Time `json:"createdAt"`
+}
+
 type ExcelTemplate struct {
 	ID            int64     `json:"id"`
 	UserID        int64     `json:"userId"`

@@ -1,12 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Calendar, Clock, Plus, Trash2, User } from 'lucide-react'
-import { 
-  GetMyAttendanceSummary, 
-  SaveAttendanceRecord, 
-  DeleteAttendanceRecord,
-  ListAttendanceRecords
-} from '../../wailsjs/go/main/App'
+import { useAppApi } from '../hooks/useAppApi'
 import { db } from '../../wailsjs/go/models'
 
 type AttendanceRecord = db.AttendanceRecord
@@ -30,6 +25,9 @@ function formatDateWithWeekday(dateStr: string): string {
 }
 
 export default function PersonalAttendance() {
+  const appApi = useAppApi()
+  const { GetMyAttendanceSummary, SaveAttendanceRecord, DeleteAttendanceRecord, ListAttendanceRecords } = appApi
+
   const navigate = useNavigate()
   const [records, setRecords] = useState<AttendanceRecord[]>([])
   const [summary, setSummary] = useState<MyAttendanceSummary | null>(null)
@@ -112,55 +110,55 @@ export default function PersonalAttendance() {
   const usedHalfDays = (summary?.morningHalfDays || 0) + (summary?.afternoonHalfDays || 0)
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col bg-slate-50 dark:bg-[var(--color-bg)]">
       {/* Header - unified with Settings style */}
-      <header className="h-14 border-b border-slate-200 bg-white flex items-center justify-between px-6 shrink-0">
-        <h2 className="text-lg font-semibold text-slate-800">설정 · 내 근태 관리</h2>
+      <header className="h-14 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-[var(--color-card)] flex items-center justify-between px-6 shrink-0">
+        <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100">설정 · 내 근태 관리</h2>
       </header>
 
       <div className="flex-1 overflow-y-auto p-6">
         <div className="max-w-3xl mx-auto space-y-8">
         {/* Annual Leave Settings */}
-        <div className="bg-white border border-slate-200 rounded-xl p-6 mb-6">
-          <h2 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
-            <Calendar size={20} className="text-blue-600" />
+        <div className="bg-white dark:bg-[var(--color-card)] border border-slate-200 dark:border-slate-700 rounded-xl p-6 mb-6">
+          <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-4 flex items-center gap-2">
+            <Calendar size={20} className="text-blue-600 dark:text-blue-300" />
             연차 설정
           </h2>
           <div className="flex items-center gap-4">
-            <label className="text-sm text-slate-600">올해 연차 일수:</label>
+            <label className="text-sm text-slate-600 dark:text-slate-300">올해 연차 일수:</label>
             <input
               type="number"
               value={totalAnnualLeave}
               onChange={(e) => saveAnnualLeave(parseInt(e.target.value) || 0)}
-              className="w-20 px-3 py-2 border border-slate-300 rounded-lg text-center font-semibold"
+              className="w-20 px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-lg text-center font-semibold"
               min={0}
               max={30}
             />
-            <span className="text-sm text-slate-500">일</span>
+            <span className="text-sm text-slate-500 dark:text-slate-400">일</span>
           </div>
         </div>
 
         {/* Summary Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white border border-slate-200 rounded-xl p-4">
-            <p className="text-xs text-slate-500 mb-1">총 연차</p>
-            <p className="text-2xl font-bold text-blue-600">{totalAnnualLeave}</p>
-            <p className="text-xs text-slate-400">일</p>
+          <div className="bg-white dark:bg-[var(--color-card)] border border-slate-200 dark:border-slate-700 rounded-xl p-4">
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">총 연차</p>
+            <p className="text-2xl font-bold text-blue-600 dark:text-blue-300">{totalAnnualLeave}</p>
+            <p className="text-xs text-slate-400 dark:text-slate-500">일</p>
           </div>
-          <div className="bg-white border border-slate-200 rounded-xl p-4">
-            <p className="text-xs text-slate-500 mb-1">사용 연차</p>
-            <p className="text-2xl font-bold text-rose-600">{summary?.vacationDays || 0}</p>
-            <p className="text-xs text-slate-400">일</p>
+          <div className="bg-white dark:bg-[var(--color-card)] border border-slate-200 dark:border-slate-700 rounded-xl p-4">
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">사용 연차</p>
+            <p className="text-2xl font-bold text-rose-600 dark:text-rose-300">{summary?.vacationDays || 0}</p>
+            <p className="text-xs text-slate-400 dark:text-slate-500">일</p>
           </div>
-          <div className="bg-white border border-slate-200 rounded-xl p-4">
-            <p className="text-xs text-slate-500 mb-1">남은 연차</p>
-            <p className="text-2xl font-bold text-green-600">{remainingLeave}</p>
-            <p className="text-xs text-slate-400">일</p>
+          <div className="bg-white dark:bg-[var(--color-card)] border border-slate-200 dark:border-slate-700 rounded-xl p-4">
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">남은 연차</p>
+            <p className="text-2xl font-bold text-green-600 dark:text-emerald-300">{remainingLeave}</p>
+            <p className="text-xs text-slate-400 dark:text-slate-500">일</p>
           </div>
-          <div className="bg-white border border-slate-200 rounded-xl p-4">
-            <p className="text-xs text-slate-500 mb-1">반차 사용</p>
-            <p className="text-2xl font-bold text-amber-600">{usedHalfDays}</p>
-            <p className="text-xs text-slate-400">회</p>
+          <div className="bg-white dark:bg-[var(--color-card)] border border-slate-200 dark:border-slate-700 rounded-xl p-4">
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">반차 사용</p>
+            <p className="text-2xl font-bold text-amber-600 dark:text-amber-300">{usedHalfDays}</p>
+            <p className="text-xs text-slate-400 dark:text-slate-500">회</p>
           </div>
         </div>
 
@@ -177,24 +175,24 @@ export default function PersonalAttendance() {
 
         {/* Add Form */}
         {showAddForm && (
-          <div className="bg-white border border-slate-200 rounded-xl p-6 mb-6">
-            <h3 className="font-semibold text-slate-800 mb-4">근태 등록</h3>
+          <div className="bg-white dark:bg-[var(--color-card)] border border-slate-200 dark:border-slate-700 rounded-xl p-6 mb-6">
+            <h3 className="font-semibold text-slate-800 dark:text-slate-100 mb-4">근태 등록</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
               <div>
-                <label className="block text-sm text-slate-600 mb-1">날짜</label>
+                <label className="block text-sm text-slate-600 dark:text-slate-300 mb-1">날짜</label>
                 <input
                   type="date"
                   value={selectedDate}
                   onChange={(e) => setSelectedDate(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-lg"
                 />
               </div>
               <div>
-                <label className="block text-sm text-slate-600 mb-1">유형</label>
+                <label className="block text-sm text-slate-600 dark:text-slate-300 mb-1">유형</label>
                 <select
                   value={selectedType}
                   onChange={(e) => setSelectedType(e.target.value as any)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-lg"
                 >
                   <option value="vacation">휴가 (연차)</option>
                   <option value="morning_half">오전 반차</option>
@@ -202,13 +200,13 @@ export default function PersonalAttendance() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm text-slate-600 mb-1">메모 (선택)</label>
+                <label className="block text-sm text-slate-600 dark:text-slate-300 mb-1">메모 (선택)</label>
                 <input
                   type="text"
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   placeholder="예: 개인 사유"
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-lg"
                 />
               </div>
             </div>
@@ -222,7 +220,7 @@ export default function PersonalAttendance() {
               </button>
               <button
                 onClick={() => setShowAddForm(false)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors"
+                className="px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg transition-colors"
               >
                 취소
               </button>
@@ -231,36 +229,36 @@ export default function PersonalAttendance() {
         )}
 
         {/* Records List */}
-        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-          <div className="px-6 py-4 border-b border-slate-200">
-            <h3 className="font-semibold text-slate-800">근태 기록</h3>
+        <div className="bg-white dark:bg-[var(--color-card)] border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+          <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-700">
+            <h3 className="font-semibold text-slate-800 dark:text-slate-100">근태 기록</h3>
           </div>
           {loading ? (
-            <div className="p-8 text-center text-slate-400">로딩 중...</div>
+            <div className="p-8 text-center text-slate-400 dark:text-slate-500">로딩 중...</div>
           ) : records.length === 0 ? (
-            <div className="p-8 text-center text-slate-400">
-              <Clock size={48} className="mx-auto mb-3 text-slate-300" />
+            <div className="p-8 text-center text-slate-400 dark:text-slate-500">
+              <Clock size={48} className="mx-auto mb-3 text-slate-300 dark:text-slate-600" />
               <p>등록된 근태가 없습니다</p>
             </div>
           ) : (
-            <div className="divide-y divide-slate-100">
+            <div className="divide-y divide-slate-100 dark:divide-slate-700">
               {records.map((record) => (
                 <div key={record.id} className="px-6 py-4 flex items-center justify-between">
                   <div className="flex items-center gap-4">
-                    <span className="text-sm font-medium text-slate-800">{formatDateWithWeekday(record.recordDate)}</span>
+                    <span className="text-sm font-medium text-slate-800 dark:text-slate-100">{formatDateWithWeekday(record.recordDate)}</span>
                     <span className={`px-2 py-1 rounded text-xs ${
-                      record.type === 'vacation' ? 'bg-rose-100 text-rose-700' :
-                      record.type === 'morning_half' ? 'bg-amber-100 text-amber-700' :
-                      'bg-orange-100 text-orange-700'
+                      record.type === 'vacation' ? 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300' :
+                      record.type === 'morning_half' ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300' :
+                      'bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-300'
                     }`}>
                       {record.type === 'vacation' ? '휴가' :
                        record.type === 'morning_half' ? '오전 반차' : '오후 반차'}
                     </span>
                     {record.notes && (
-                      <span className="text-sm text-slate-500">{record.notes}</span>
+                      <span className="text-sm text-slate-500 dark:text-slate-400">{record.notes}</span>
                     )}
                     {/* Approval Status - placeholder for future approval system */}
-                    <span className="px-2 py-1 rounded text-xs bg-slate-100 text-slate-600 border border-slate-200">
+                    <span className="px-2 py-1 rounded text-xs bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-600">
                       대기중
                     </span>
                   </div>
@@ -268,7 +266,7 @@ export default function PersonalAttendance() {
                     {/* Approval Button - placeholder for future approval system */}
                     <button
                       onClick={() => alert('결재 시스템 연동 예정입니다.')}
-                      className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 text-xs rounded-lg transition-colors"
+                      className="px-3 py-1.5 bg-blue-50 dark:bg-blue-500/20 hover:bg-blue-100 dark:hover:bg-blue-500/30 text-blue-600 dark:text-blue-300 text-xs rounded-lg transition-colors"
                     >
                       결재
                     </button>
@@ -282,7 +280,7 @@ export default function PersonalAttendance() {
                           console.error('Failed to delete:', err)
                         }
                       }}
-                      className="p-2 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg transition-colors"
+                      className="p-2 hover:bg-rose-50 dark:hover:bg-rose-500/20 text-slate-400 dark:text-slate-500 hover:text-rose-600 dark:hover:text-rose-300 rounded-lg transition-colors"
                     >
                       <Trash2 size={16} />
                     </button>

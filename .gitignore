@@ -30,3 +30,4 @@ openreport.db
 *.xlsx
 CLAUDE.md
 .claude/*
+.docs/*

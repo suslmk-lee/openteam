@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
-import { GetTeamProfile } from '../../wailsjs/go/main/App'
+import { useAppApi } from '../hooks/useAppApi'
 
 export interface TeamProfile {
   teamType: string       // si_business | si_field | small_team | ''
@@ -9,6 +9,7 @@ export interface TeamProfile {
   setupDone: boolean
   linearApiKey: string
   linearTeamId: string
+  linearUserId?: string
 }
 
 interface TeamProfileContextValue {
@@ -26,10 +27,11 @@ const TeamProfileContext = createContext<TeamProfileContextValue>({
 export function TeamProfileProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<TeamProfile | null>(null)
   const [loading, setLoading] = useState(true)
+  const appApi = useAppApi()
 
   async function reload() {
     try {
-      const p = await GetTeamProfile()
+      const p = await appApi.GetTeamProfile()
       setProfile(p as TeamProfile)
     } catch {
       setProfile(null)

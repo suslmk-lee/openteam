@@ -14,10 +14,17 @@ type App struct {
 	ctx      context.Context
 	database *db.Database
 	dataDir  string
+	report   *ReportService
+	team     *TeamService
+	external *ExternalService
 }
 
 func NewApp() *App {
-	return &App{}
+	app := &App{}
+	app.report = NewReportService(app)
+	app.team = NewTeamService(app)
+	app.external = NewExternalService(app)
+	return app
 }
 
 func (a *App) startup(ctx context.Context) {

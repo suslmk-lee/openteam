@@ -1,29 +1,5 @@
 import { useEffect, useState } from 'react'
-import {
-  GetCurrentWeek,
-  GetWeekByOffset,
-  GetClientStatuses,
-  GetSIWeeklySnapshot,
-  ListMemberAssignments,
-  ListTeamMembers,
-  ListClients,
-  ListSIProjects,
-  SaveMemberAssignment,
-  SaveSIProject,
-  SaveClient,
-  DeleteMemberAssignment,
-  DeleteSIProject,
-  UpdateSIProjectStatus,
-  // SI Weekly Reporting APIs
-  GetSIProjectTypes,
-  GetSIPhases,
-  GetSIRoles,
-  GetSIProjectView,
-  SaveSIProjectDetail,
-  SaveSIWeeklyReport,
-  SaveSIProjectMember,
-  DeleteSIProjectMember,
-} from '../../wailsjs/go/main/App'
+import { useTeamService } from '../hooks/useTeamService'
 import { Plus, X, Edit3, Users, FileText, ChevronLeft, ChevronRight } from 'lucide-react'
 import type { db } from '../../wailsjs/go/models'
 import { useTeamProfile } from '../contexts/TeamProfileContext'
@@ -113,6 +89,32 @@ function formatDateOnly(value?: string) {
 }
 
 export default function TeamProjects() {
+  const teamService = useTeamService()
+  const {
+    getCurrentWeek: GetCurrentWeek,
+    getWeekByOffset: GetWeekByOffset,
+    getClientStatuses: GetClientStatuses,
+    getSIWeeklySnapshot: GetSIWeeklySnapshot,
+    listMemberAssignments: ListMemberAssignments,
+    listTeamMembers: ListTeamMembers,
+    listClients: ListClients,
+    listSIProjects: ListSIProjects,
+    saveMemberAssignment: SaveMemberAssignment,
+    saveSIProject: SaveSIProject,
+    saveClient: SaveClient,
+    deleteMemberAssignment: DeleteMemberAssignment,
+    deleteSIProject: DeleteSIProject,
+    updateSIProjectStatus: UpdateSIProjectStatus,
+    getSIProjectTypes: GetSIProjectTypes,
+    getSIPhases: GetSIPhases,
+    getSIRoles: GetSIRoles,
+    getSIProjectView: GetSIProjectView,
+    saveSIProjectDetail: SaveSIProjectDetail,
+    saveSIWeeklyReport: SaveSIWeeklyReport,
+    saveSIProjectMember: SaveSIProjectMember,
+    deleteSIProjectMember: DeleteSIProjectMember,
+  } = teamService
+
   const { profile } = useTeamProfile()
   const currentTeamType = profile?.teamType || ''
 
@@ -1072,6 +1074,11 @@ interface WeeklyReportModalProps {
 }
 
 function WeeklyReportModal({ project, week, existingReport, onSave, onClose }: WeeklyReportModalProps) {
+  const teamService = useTeamService()
+  const {
+    getWeekByOffset: GetWeekByOffset,
+    getSIProjectView: GetSIProjectView,
+  } = teamService
   const [progress, setProgress] = useState(existingReport?.thisWeekProgress || '')
   const [plan, setPlan] = useState(existingReport?.nextWeekPlan || '')
   const [risks, setRisks] = useState(existingReport?.risks || '')

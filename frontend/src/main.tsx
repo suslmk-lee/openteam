@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import './style.css'
 import { TeamProfileProvider } from './contexts/TeamProfileContext'
+import { ThemeProvider } from './contexts/ThemeContext'
 import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
 import Settings from './pages/Settings'
@@ -21,6 +22,7 @@ import TaskBoard from './pages/TaskBoard'
 import WeeklyRetro from './pages/WeeklyRetro'
 import GmailPage from './pages/GmailPage'
 import CalendarPage from './pages/CalendarPage'
+import PersonalAttendance from './pages/PersonalAttendance'
 
 const container = document.getElementById('root')
 const root = createRoot(container!)
@@ -28,8 +30,9 @@ const root = createRoot(container!)
 root.render(
   <React.StrictMode>
     <HashRouter>
-      <TeamProfileProvider>
-        <Routes>
+      <ThemeProvider>
+        <TeamProfileProvider>
+          <Routes>
           <Route path="/onboarding" element={<Onboarding />} />
           <Route element={<Layout />}>
             <Route path="/" element={<Dashboard />} />
@@ -54,10 +57,12 @@ root.render(
             <Route path="/settings/categories" element={<Settings section="categories" />} />
             <Route path="/settings/common-codes" element={<CommonCodes />} />
             <Route path="/settings/team-profile" element={<Settings section="team-profile" />} />
+            <Route path="/settings/attendance" element={<PersonalAttendance />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>
-      </TeamProfileProvider>
+        </TeamProfileProvider>
+      </ThemeProvider>
     </HashRouter>
   </React.StrictMode>
 )

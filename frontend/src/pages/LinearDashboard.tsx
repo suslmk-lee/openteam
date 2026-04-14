@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { GetLinearDashboard } from '../../wailsjs/go/main/App'
+import { useAppApi } from '../hooks/useAppApi'
 import { useTeamProfile } from '../contexts/TeamProfileContext'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -92,6 +92,9 @@ const STATE_TYPE_COLORS: Record<string, string> = {
 }
 
 export default function LinearDashboard() {
+  const appApi = useAppApi()
+  const { GetLinearDashboard } = appApi
+
   const { profile } = useTeamProfile()
   const navigate = useNavigate()
   const [data, setData] = useState<LinearDashboardData | null>(null)

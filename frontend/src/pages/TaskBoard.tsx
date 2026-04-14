@@ -1,21 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { GetLinearDashboard, GetLinearTeamStates, UpdateLinearIssueState, ListTeamMembers, GetIntegrations } from '../../wailsjs/go/main/App'
-import * as AppModuleStatic from '../../wailsjs/go/main/App'
+import { useAppApi } from '../hooks/useAppApi'
 import { useTeamProfile } from '../contexts/TeamProfileContext'
 import { useNavigate } from 'react-router-dom'
 import { Kanban, RefreshCw, ExternalLink, AlertCircle, Settings, X, User, Calendar, Tag, Flag, Loader2, Check, ChevronDown, Link2, Briefcase, AlignLeft, Hash, MessageSquare, Send, Bot, ChevronUp, Minimize2, Maximize2 } from 'lucide-react'
-
-// Dynamic bindings — cast via any until wails dev regenerates App.d.ts
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const UpdateLinearIssue: (id: string, input: any) => Promise<void> = (AppModuleStatic as any).UpdateLinearIssue ?? (() => Promise.resolve())
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const CheckClaudeCLI: () => Promise<{ ok: boolean; version: string }> = (AppModuleStatic as any).CheckClaudeCLI ?? (() => Promise.resolve({ ok: false, version: '' }))
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const ClaudeChat: (prompt: string, ctx: string) => Promise<string> = (AppModuleStatic as any).ClaudeChat ?? (() => Promise.reject(new Error('ClaudeChat not available')))
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const ClaudeChatWithSession: (prompt: string, ctx: string, sessionID: string) => Promise<{ reply: string; sessionId: string; model: string; numTurns: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreateTokens: number; costUsd: number }> = (AppModuleStatic as any).ClaudeChatWithSession ?? (() => Promise.reject(new Error('ClaudeChatWithSession not available')))
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const ScanClaudeSkills: () => Promise<{ skill: string; cmd: string; desc: string }[]> = (AppModuleStatic as any).ScanClaudeSkills ?? (() => Promise.resolve([]))
 
 // Simple markdown to HTML converter for basic formatting
 function renderMarkdown(text: string): string {
@@ -213,8 +200,12 @@ function IssueModal({
   onClose: () => void
   onUpdate: (updated: Partial<LinearIssue>) => void
 }) {
+  const appApi = useAppApi()
+  const { ListTeamMembers, GetLinearTeamLabels, UpdateLinearIssue } = appApi
   const { profile } = useTeamProfile()
+  const navigate = useNavigate()
   const [members, setMembers] = useState<AppTeamMember[]>([])
+  const [teamLabels, setTeamLabels] = useState<LinearIssueLabel[]>([])
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [saved, setSaved] = useState(false)
@@ -225,14 +216,52 @@ function IssueModal({
   // selAssigneeId is the app member's linearUserId (= Linear user ID)
   const [selAssigneeLinearId, setSelAssigneeLinearId] = useState(issue.assignee?.id ?? '')
   const [selDueDate, setSelDueDate] = useState(issue.dueDate ? issue.dueDate.slice(0, 10) : '')
+  const [selLabelIds, setSelLabelIds] = useState<string[]>((issue.labels?.nodes || []).map(l => l.id))
+  const [labelPickerOpen, setLabelPickerOpen] = useState(false)
+  const [labelQuery, setLabelQuery] = useState('')
+  const labelPickerRef = useRef<HTMLDivElement | null>(null)
 
+  const teamType = (profile?.teamType || 'personal').trim().toLowerCase()
   const canEdit = !!profile?.linearTeamId
+  const isPersonalTeam = teamType === 'personal'
+  const personalLinearUserId = (profile?.linearUserId || '').trim()
+  const personalAssigneeName = (issue.assignee?.name || '').trim() || '본인'
 
   useEffect(() => {
     ListTeamMembers().then(r => setMembers((r as AppTeamMember[]) || [])).catch(() => {})
   }, [])
 
+  useEffect(() => {
+    if (!canEdit) return
+    GetLinearTeamLabels()
+      .then(r => setTeamLabels((r as LinearIssueLabel[]) || []))
+      .catch(() => {})
+  }, [canEdit])
+
+  useEffect(() => {
+    if (!labelPickerOpen) return
+    const onDocMouseDown = (event: MouseEvent) => {
+      const target = event.target as Node | null
+      if (labelPickerRef.current && target && !labelPickerRef.current.contains(target)) {
+        setLabelPickerOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDocMouseDown)
+    return () => document.removeEventListener('mousedown', onDocMouseDown)
+  }, [labelPickerOpen])
+
   const currentState = states.find(s => s.id === selStateId) ?? issue.state
+  const allLabelOptions: LinearIssueLabel[] = Array.from(
+    new Map([...(teamLabels || []), ...((issue.labels?.nodes || []) as LinearIssueLabel[])]
+      .map(lbl => [lbl.id, lbl]))
+      .values(),
+  )
+  const filteredLabelOptions = allLabelOptions.filter(lbl =>
+    lbl.name.toLowerCase().includes(labelQuery.trim().toLowerCase()),
+  )
+  const selectedLabels = canEdit
+    ? allLabelOptions.filter(lbl => selLabelIds.includes(lbl.id))
+    : (issue.labels?.nodes || [])
 
   async function handleSave() {
     setSaving(true)
@@ -244,8 +273,17 @@ function IssueModal({
       const origDue = issue.dueDate ? issue.dueDate.slice(0, 10) : ''
       if (selDueDate !== origDue) input.dueDate = selDueDate === '' ? '__clear__' : selDueDate
       const origAssignee = issue.assignee?.id ?? ''
-      if (selAssigneeLinearId !== origAssignee) {
+      if (isPersonalTeam) {
+        if (personalLinearUserId && personalLinearUserId !== origAssignee) {
+          input.assigneeId = personalLinearUserId
+        }
+      } else if (selAssigneeLinearId !== origAssignee) {
         input.assigneeId = selAssigneeLinearId === '' ? '__clear__' : selAssigneeLinearId
+      }
+      const origLabelIds = (issue.labels?.nodes || []).map(l => l.id).sort().join(',')
+      const nextLabelIds = [...selLabelIds].sort().join(',')
+      if (origLabelIds !== nextLabelIds) {
+        input.labelIds = selLabelIds
       }
 
       if (Object.keys(input).length === 0) { setSaving(false); return }
@@ -265,6 +303,11 @@ function IssueModal({
         else {
           const m = members.find(m => m.linearUserId === input.assigneeId)
           if (m) updated.assignee = { id: m.linearUserId, name: m.name }
+        }
+      }
+      if (input.labelIds !== undefined) {
+        updated.labels = {
+          nodes: allLabelOptions.filter(lbl => (input.labelIds as string[]).includes(lbl.id)),
         }
       }
       onUpdate(updated)
@@ -358,7 +401,31 @@ function IssueModal({
               <label className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
                 <User size={12} /> 담당자
               </label>
-              {canEdit && members.length > 0 ? (
+              {isPersonalTeam ? (
+                <div className="space-y-1">
+                  <div
+                    className={`text-sm px-3 py-2 rounded-lg border ${
+                      personalLinearUserId
+                        ? 'border-slate-300 bg-slate-50 text-slate-700 dark:border-slate-600 dark:bg-slate-800/70 dark:text-slate-200'
+                        : 'border-amber-300/80 bg-amber-50/70 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200'
+                    }`}
+                  >
+                    {personalLinearUserId
+                      ? `담당자: ${personalAssigneeName}`
+                      : '개인 모드에서는 본인 Linear ID 연결이 필요합니다.'}
+                  </div>
+                  {!personalLinearUserId && (
+                    <button
+                      type="button"
+                      onClick={() => navigate('/settings/integrations')}
+                      className="flex items-center gap-1 text-xs text-amber-600 hover:text-amber-700 underline underline-offset-2"
+                    >
+                      <Link2 size={10} />
+                      연동 설정으로 이동
+                    </button>
+                  )}
+                </div>
+              ) : canEdit && members.length > 0 ? (
                 <div className="space-y-1">
                   <div className="relative">
                     <select
@@ -411,14 +478,139 @@ function IssueModal({
             </div>
           </div>
 
+          {(canEdit || allLabelOptions.length > 0) && (
+            <div className="space-y-2">
+              <label className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
+                <Tag size={12} /> 레이블
+              </label>
+              {canEdit && allLabelOptions.length > 0 && (
+                <div className="relative" ref={labelPickerRef}>
+                  <button
+                    type="button"
+                    onClick={() => setLabelPickerOpen(v => !v)}
+                    className="w-full flex items-center justify-between border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 bg-white hover:bg-slate-50 transition-colors"
+                  >
+                    <span>{selLabelIds.length > 0 ? `${selLabelIds.length}개 선택됨` : '레이블 선택'}</span>
+                    <ChevronDown size={14} className={`text-slate-400 transition-transform ${labelPickerOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  {labelPickerOpen && (
+                    <div className="absolute z-20 mt-2 w-full rounded-xl border border-slate-200 bg-white shadow-lg p-2">
+                      <input
+                        type="text"
+                        placeholder="레이블 검색..."
+                        value={labelQuery}
+                        onChange={e => setLabelQuery(e.target.value)}
+                        className="w-full px-2.5 py-1.5 mb-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-violet-400"
+                      />
+                      <div className="max-h-44 overflow-y-auto space-y-1">
+                        {filteredLabelOptions.map(lbl => {
+                          const active = selLabelIds.includes(lbl.id)
+                          return (
+                            <button
+                              key={lbl.id}
+                              type="button"
+                              onClick={() => {
+                                setSelLabelIds(prev =>
+                                  prev.includes(lbl.id) ? prev.filter(id => id !== lbl.id) : [...prev, lbl.id],
+                                )
+                              }}
+                              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-slate-50 text-left"
+                            >
+                              <span className={`w-4 h-4 rounded border flex items-center justify-center ${active ? 'bg-violet-600 border-violet-600 text-white' : 'border-slate-300'}`}>
+                                {active && <Check size={11} />}
+                              </span>
+                              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: lbl.color }} />
+                              <span className="text-sm text-slate-700">{lbl.name}</span>
+                            </button>
+                          )
+                        })}
+                        {filteredLabelOptions.length === 0 && (
+                          <p className="px-2 py-2 text-xs text-slate-400">검색 결과가 없습니다.</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+              <div className="flex flex-wrap gap-1.5">
+                {selectedLabels.map(lbl => (
+                  <span
+                    key={lbl.id}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+                    style={{ backgroundColor: lbl.color + '22', color: lbl.color, border: `1px solid ${lbl.color}44` }}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: lbl.color }} />
+                    {lbl.name}
+                  </span>
+                ))}
+                {selectedLabels.length === 0 && (
+                  <span className="text-xs text-slate-400">선택된 레이블 없음</span>
+                )}
+              </div>
+              {canEdit && allLabelOptions.length === 0 && (
+                <p className="text-xs text-slate-400">Team ID가 설정되어야 레이블을 불러올 수 있습니다.</p>
+              )}
+            </div>
+          )}
+
+          {false && (canEdit || allLabelOptions.length > 0) && (
+            <div className="space-y-1.5">
+              <label className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
+                <Tag size={12} /> 레이블
+              </label>
+              {canEdit && allLabelOptions.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {allLabelOptions.map(lbl => {
+                    const active = selLabelIds.includes(lbl.id)
+                    return (
+                      <button
+                        key={lbl.id}
+                        type="button"
+                        onClick={() => {
+                          setSelLabelIds(prev =>
+                            prev.includes(lbl.id) ? prev.filter(id => id !== lbl.id) : [...prev, lbl.id],
+                          )
+                        }}
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border transition-colors ${
+                          active ? '' : 'opacity-55 hover:opacity-80'
+                        }`}
+                        style={{ backgroundColor: lbl.color + '22', color: lbl.color, borderColor: lbl.color + '66' }}
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: lbl.color }} />
+                        {lbl.name}
+                        {active && <Check size={11} />}
+                      </button>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {(issue.labels?.nodes || []).map(lbl => (
+                    <span
+                      key={lbl.id}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+                      style={{ backgroundColor: lbl.color + '22', color: lbl.color, border: `1px solid ${lbl.color}44` }}
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: lbl.color }} />
+                      {lbl.name}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {canEdit && allLabelOptions.length === 0 && (
+                <p className="text-xs text-slate-400">Team ID가 설정되어야 레이블을 불러올 수 있습니다.</p>
+              )}
+            </div>
+          )}
+
           {/* Labels */}
-          {issue.labels && issue.labels.nodes.length > 0 && (
+          {false && (issue.labels?.nodes?.length || 0) > 0 && (
             <div className="space-y-1.5">
               <label className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
                 <Tag size={12} /> 레이블
               </label>
               <div className="flex flex-wrap gap-1.5">
-                {issue.labels.nodes.map(lbl => (
+                {(issue.labels?.nodes || []).map(lbl => (
                   <span
                     key={lbl.id}
                     className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
@@ -496,13 +688,12 @@ function IssueModal({
             </button>
             {canEdit && (() => {
               // block save if a member without linearUserId is selected
-              const selectedMember = members.find(m => m.linearUserId === selAssigneeLinearId)
-              const assigneeBlocked = selAssigneeLinearId !== '' && selectedMember && !selectedMember.linearUserId
+              const assigneeBlocked = isPersonalTeam && !personalLinearUserId
               return (
                 <button
                   onClick={handleSave}
                   disabled={saving || !!assigneeBlocked}
-                  title={assigneeBlocked ? 'Linear ID가 연결되지 않은 팀원입니다' : undefined}
+                  title={assigneeBlocked ? '개인 모드에서는 연동 설정에서 본인 Linear ID를 먼저 연결해야 저장할 수 있습니다.' : undefined}
                   className="flex items-center gap-1.5 px-4 py-2 text-sm bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white rounded-lg transition-colors"
                 >
                   {saving ? <Loader2 size={14} className="animate-spin" /> : saved ? <Check size={14} /> : null}
@@ -581,6 +772,8 @@ function AiChatPanel({
   setCumOutputTokens: (n: number | ((prev: number) => number)) => void
   setCumCostUsd: (n: number | ((prev: number) => number)) => void
 }) {
+  const appApi = useAppApi()
+  const { ScanClaudeSkills, ClaudeChatWithSession, CheckClaudeCLI } = appApi
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [showKeyInput, setShowKeyInput] = useState(false)
@@ -809,35 +1002,35 @@ function AiChatPanel({
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="px-4 pt-3 pb-0 border-b border-slate-100 shrink-0">
+      <div className="px-4 pt-3 pb-0 border-b border-slate-100 dark:border-slate-700 shrink-0">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 bg-violet-100 rounded-lg flex items-center justify-center">
-              <Bot size={14} className="text-violet-600" />
+            <div className="w-7 h-7 bg-violet-100 dark:bg-violet-500/20 rounded-lg flex items-center justify-center">
+              <Bot size={14} className="text-violet-600 dark:text-violet-300" />
             </div>
             <div>
-              <p className="text-sm font-semibold text-slate-800">AI 어시스턴트</p>
-              <p className="text-[10px] text-slate-400">{issues.length}개 이슈 컨텍스트 로드됨</p>
+              <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">AI 어시스턴트</p>
+              <p className="text-[10px] text-slate-400 dark:text-slate-500">{issues.length}개 이슈 컨텍스트 로드됨</p>
             </div>
           </div>
           <div className="flex items-center gap-1.5">
             {chatModel === 'openai' && keyLoaded && (
               apiKey
-                ? <span className="text-[10px] px-2 py-0.5 bg-green-100 text-green-600 rounded-full font-medium">API 연결됨</span>
+                ? <span className="text-[10px] px-2 py-0.5 bg-green-100 dark:bg-emerald-500/20 text-green-600 dark:text-emerald-300 rounded-full font-medium">API 연결됨</span>
                 : <button
                     onClick={() => setShowKeyInput(v => !v)}
-                    className="text-[10px] px-2 py-0.5 bg-amber-100 text-amber-600 rounded-full font-medium hover:bg-amber-200 transition-colors"
+                    className="text-[10px] px-2 py-0.5 bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-300 rounded-full font-medium hover:bg-amber-200 dark:hover:bg-amber-500/30 transition-colors"
                   >
                     API Key 설정
                   </button>
             )}
             {chatModel === 'claude' && (
-              <span className="text-[10px] px-2 py-0.5 bg-violet-100 text-violet-600 rounded-full font-medium">로컬 Claude</span>
+              <span className="text-[10px] px-2 py-0.5 bg-violet-100 dark:bg-violet-500/20 text-violet-600 dark:text-violet-300 rounded-full font-medium">로컬 Claude</span>
             )}
-            <button onClick={onMaximize} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors">
+            <button onClick={onMaximize} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">
               {isMaximized ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
             </button>
-            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors">
+            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">
               <X size={14} />
             </button>
           </div>
@@ -849,8 +1042,8 @@ function AiChatPanel({
               onClick={() => setChatModel('claude')}
               className={`px-3 py-1.5 text-xs font-medium rounded-t-lg border-b-2 transition-colors ${
                 chatModel === 'claude'
-                  ? 'text-violet-700 border-violet-500 bg-violet-50'
-                  : 'text-slate-400 border-transparent hover:text-slate-600'
+                  ? 'text-violet-700 dark:text-violet-300 border-violet-500 bg-violet-50 dark:bg-violet-500/15'
+                  : 'text-slate-400 dark:text-slate-500 border-transparent hover:text-slate-600 dark:hover:text-slate-300'
               }`}
             >
               Claude (로컬)
@@ -860,8 +1053,8 @@ function AiChatPanel({
             onClick={() => setChatModel('openai')}
             className={`px-3 py-1.5 text-xs font-medium rounded-t-lg border-b-2 transition-colors ${
               chatModel === 'openai'
-                ? 'text-blue-700 border-blue-500 bg-blue-50'
-                : 'text-slate-400 border-transparent hover:text-slate-600'
+                ? 'text-blue-700 dark:text-blue-300 border-blue-500 bg-blue-50 dark:bg-blue-500/15'
+                : 'text-slate-400 dark:text-slate-500 border-transparent hover:text-slate-600 dark:hover:text-slate-300'
             }`}
           >
             OpenAI
@@ -871,36 +1064,36 @@ function AiChatPanel({
 
       {/* Claude session metadata bar */}
       {chatModel === 'claude' && claudeMeta && (
-        <div className="px-3 py-1.5 bg-violet-50 border-b border-violet-100 shrink-0 flex items-center gap-2 flex-wrap">
+        <div className="px-3 py-1.5 bg-violet-50 dark:bg-violet-500/10 border-b border-violet-100 dark:border-violet-500/20 shrink-0 flex items-center gap-2 flex-wrap">
           <span
             style={{ fontFamily: "'Fira Code', monospace" }}
-            className="text-[9px] font-semibold text-violet-600 bg-violet-100 px-1.5 py-0.5 rounded truncate max-w-[140px]"
+            className="text-[9px] font-semibold text-violet-600 dark:text-violet-300 bg-violet-100 dark:bg-violet-500/20 px-1.5 py-0.5 rounded truncate max-w-[140px]"
             title={claudeMeta.model}
           >{claudeMeta.model || '—'}</span>
-          <span className="text-[9px] text-slate-400">턴 {Math.ceil(messages.length / 2)}</span>
+          <span className="text-[9px] text-slate-400 dark:text-slate-500">턴 {Math.ceil(messages.length / 2)}</span>
           <span
             style={{ fontFamily: "'Fira Code', monospace" }}
-            className="text-[9px] font-medium text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded"
+            className="text-[9px] font-medium text-amber-600 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/20 px-1.5 py-0.5 rounded"
           >in {cumInputTokens.toLocaleString()}</span>
           <span
             style={{ fontFamily: "'Fira Code', monospace" }}
-            className="text-[9px] font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded"
+            className="text-[9px] font-medium text-blue-600 dark:text-blue-300 bg-blue-50 dark:bg-blue-500/20 px-1.5 py-0.5 rounded"
           >out {cumOutputTokens.toLocaleString()}</span>
-          <span className="text-[9px] text-slate-400 ml-auto">${cumCostUsd.toFixed(4)}</span>
+          <span className="text-[9px] text-slate-400 dark:text-slate-500 ml-auto">${cumCostUsd.toFixed(4)}</span>
         </div>
       )}
 
       {/* API Key input */}
       {showKeyInput && (
-        <div className="px-4 py-2 bg-amber-50 border-b border-amber-100 shrink-0">
-          <p className="text-xs text-amber-700 mb-1.5">OpenAI API Key</p>
+        <div className="px-4 py-2 bg-amber-50 dark:bg-amber-500/10 border-b border-amber-100 dark:border-amber-500/20 shrink-0">
+          <p className="text-xs text-amber-700 dark:text-amber-300 mb-1.5">OpenAI API Key</p>
           <div className="flex gap-2">
             <input
               type="password"
               value={localKeyInput}
               onChange={e => setLocalKeyInput(e.target.value)}
               placeholder="sk-..."
-              className="flex-1 text-xs border border-amber-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-amber-400"
+              className="flex-1 text-xs border border-amber-200 dark:border-amber-500/30 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-amber-400"
             />
             <button onClick={saveKey} className="text-xs px-3 py-1.5 bg-amber-500 text-white rounded-lg hover:bg-amber-600">
               저장
@@ -913,19 +1106,19 @@ function AiChatPanel({
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full gap-4 py-6">
-            <div className="w-12 h-12 bg-violet-100 rounded-2xl flex items-center justify-center">
-              <Bot size={22} className="text-violet-500" />
+            <div className="w-12 h-12 bg-violet-100 dark:bg-violet-500/20 rounded-2xl flex items-center justify-center">
+              <Bot size={22} className="text-violet-500 dark:text-violet-300" />
             </div>
             <div className="text-center">
-              <p className="text-sm font-semibold text-slate-700">태스크보드 AI</p>
-              <p className="text-xs text-slate-400 mt-1">이슈에 대해 무엇이든 물어보세요</p>
+              <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">태스크보드 AI</p>
+              <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">이슈에 대해 무엇이든 물어보세요</p>
             </div>
             <div className="flex flex-col gap-1.5 w-full">
               {SUGGESTIONS.map(s => (
                 <button
                   key={s}
                   onClick={() => { setInput(s) }}
-                  className="text-xs text-left px-3 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-slate-600 transition-colors"
+                  className="text-xs text-left px-3 py-2 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-600 dark:text-slate-300 transition-colors"
                 >
                   {s}
                 </button>
@@ -936,15 +1129,15 @@ function AiChatPanel({
         {messages.map((m, i) => (
           <div key={i} className={`flex gap-2 ${m.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
             {m.role === 'assistant' && (
-              <div className="w-6 h-6 bg-violet-100 rounded-lg flex items-center justify-center shrink-0 mt-0.5">
-                <Bot size={11} className="text-violet-600" />
-              </div>
+                <div className="w-6 h-6 bg-violet-100 dark:bg-violet-500/20 rounded-lg flex items-center justify-center shrink-0 mt-0.5">
+                  <Bot size={11} className="text-violet-600 dark:text-violet-300" />
+                </div>
             )}
             <div
               className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm leading-relaxed ${
                 m.role === 'user'
                   ? 'bg-violet-600 text-white rounded-tr-sm'
-                  : 'bg-slate-100 text-slate-700 rounded-tl-sm'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-tl-sm'
               }`}
               dangerouslySetInnerHTML={{
                 __html: m.role === 'assistant' ? renderMarkdown(m.content) : renderInline(m.content).replace(/\n/g, '<br/>'),
@@ -954,11 +1147,11 @@ function AiChatPanel({
         ))}
         {sending && (
           <div className="flex gap-2">
-            <div className="w-6 h-6 bg-violet-100 rounded-lg flex items-center justify-center shrink-0">
-              <Bot size={11} className="text-violet-600" />
+            <div className="w-6 h-6 bg-violet-100 dark:bg-violet-500/20 rounded-lg flex items-center justify-center shrink-0">
+              <Bot size={11} className="text-violet-600 dark:text-violet-300" />
             </div>
-            <div className="bg-slate-100 rounded-2xl rounded-tl-sm px-3 py-2">
-              <Loader2 size={14} className="text-slate-400 animate-spin" />
+            <div className="bg-slate-100 dark:bg-slate-800 rounded-2xl rounded-tl-sm px-3 py-2">
+              <Loader2 size={14} className="text-slate-400 dark:text-slate-500 animate-spin" />
             </div>
           </div>
         )}
@@ -966,12 +1159,12 @@ function AiChatPanel({
       </div>
 
       {/* Input */}
-      <div className="px-4 py-3 border-t border-slate-100 shrink-0">
+      <div className="px-4 py-3 border-t border-slate-100 dark:border-slate-700 shrink-0">
         {/* Slash command popup */}
         {cmdPopup && filteredCmds.length > 0 && (
-          <div ref={cmdListRef} className="mb-2 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden max-h-52 overflow-y-auto">
-            <div className="px-3 py-1 bg-slate-50 border-b border-slate-100 sticky top-0">
-              <p className="text-[9px] text-slate-400 tracking-wide">↑↓ 이동 · Tab/Enter 선택 · Esc 닫기</p>
+          <div ref={cmdListRef} className="mb-2 bg-white dark:bg-[var(--color-card)] border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg overflow-hidden max-h-52 overflow-y-auto">
+            <div className="px-3 py-1 bg-slate-50 dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700 sticky top-0">
+              <p className="text-[9px] text-slate-400 dark:text-slate-500 tracking-wide">↑↓ 이동 · Tab/Enter 선택 · Esc 닫기</p>
             </div>
             {filteredCmds.map((c, idx) => (
               <button
@@ -980,14 +1173,14 @@ function AiChatPanel({
                 onMouseDown={e => { e.preventDefault(); c.run(); textareaRef.current?.focus() }}
                 onMouseEnter={() => setCmdIndex(idx)}
                 className={`w-full flex items-center gap-3 px-3 py-1.5 transition-colors text-left ${
-                  idx === cmdIndex ? 'bg-violet-50' : 'hover:bg-slate-50'
+                  idx === cmdIndex ? 'bg-violet-50 dark:bg-violet-500/15' : 'hover:bg-slate-50 dark:hover:bg-slate-800'
                 }`}
               >
                 <span
                   style={{ fontFamily: "'Fira Code', monospace" }}
-                  className={`text-[11px] font-semibold shrink-0 w-36 truncate ${idx === cmdIndex ? 'text-violet-700' : 'text-violet-500'}`}
+                   className={`text-[11px] font-semibold shrink-0 w-36 truncate ${idx === cmdIndex ? 'text-violet-700 dark:text-violet-300' : 'text-violet-500 dark:text-violet-400'}`}
                 >{c.cmd}</span>
-                <span className="text-[10px] text-slate-400 truncate">{c.desc}</span>
+                <span className="text-[10px] text-slate-400 dark:text-slate-500 truncate">{c.desc}</span>
               </button>
             ))}
           </div>
@@ -1026,7 +1219,7 @@ function AiChatPanel({
             }}
             placeholder="질문하거나 / 로 명령어 입력 (Enter 전송)"
             rows={1}
-            className="flex-1 resize-none text-sm border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-400 max-h-24 overflow-y-auto"
+            className="flex-1 resize-none text-sm border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-400 max-h-24 overflow-y-auto"
           />
           <button
             onClick={handleSend}
@@ -1036,7 +1229,7 @@ function AiChatPanel({
             <Send size={14} />
           </button>
         </div>
-        <p className="mt-1.5 text-[10px] text-slate-300 text-center">/help 으로 명령어 목록 확인</p>
+        <p className="mt-1.5 text-[10px] text-slate-300 dark:text-slate-500 text-center">/help 으로 명령어 목록 확인</p>
       </div>
     </div>
   )
@@ -1059,6 +1252,20 @@ function resolveStateType(type: string): string {
 
 export default function TaskBoard() {
   const { profile } = useTeamProfile()
+  const appApi = useAppApi()
+  const {
+    GetLinearDashboard,
+    GetMyLinearIssues,
+    GetLinearTeamStates,
+    UpdateLinearIssueState,
+    ListTeamMembers,
+    GetIntegrations,
+    UpdateLinearIssue,
+    CheckClaudeCLI,
+    ClaudeChat,
+    ClaudeChatWithSession,
+    ScanClaudeSkills,
+  } = appApi
   const navigate = useNavigate()
   const [issues, setIssues] = useState<LinearIssue[]>([])
   const [states, setStates] = useState<WorkflowState[]>([])
@@ -1092,6 +1299,22 @@ export default function TaskBoard() {
   const [cumCostUsd, setCumCostUsd] = useState(0)
 
   const hasKey = profile?.linearApiKey
+  const teamType = (profile?.teamType || 'personal').trim().toLowerCase()
+  const isPersonalTeam = teamType === 'personal'
+
+  function normalizeIssues(result: any): LinearIssue[] {
+    if (Array.isArray(result)) return result as LinearIssue[]
+    return (result?.issues || []) as LinearIssue[]
+  }
+
+  async function fetchBoardIssues(): Promise<LinearIssue[]> {
+    if (isPersonalTeam) {
+      const mine = await GetMyLinearIssues()
+      return normalizeIssues(mine)
+    }
+    const dash = await GetLinearDashboard()
+    return normalizeIssues(dash)
+  }
 
   // Check claude CLI availability once on mount
   useEffect(() => {
@@ -1154,15 +1377,21 @@ export default function TaskBoard() {
     return () => clearInterval(t)
   }, [lastUpdated])
 
-  useEffect(() => { if (hasKey) load() }, [hasKey])
+  useEffect(() => {
+    if (hasKey) load()
+  }, [hasKey, isPersonalTeam])
+
+  useEffect(() => {
+    if (isPersonalTeam && assigneeFilter) {
+      setAssigneeFilter('')
+    }
+  }, [isPersonalTeam, assigneeFilter])
 
   // Silent background refresh — does not show loading spinner
   async function loadSilent() {
     try {
-      const [dashResult] = await Promise.all([
-        GetLinearDashboard(),
-      ])
-      setIssues((dashResult as any)?.issues || [])
+      const boardIssues = await fetchBoardIssues()
+      setIssues(boardIssues)
       setLastUpdated(new Date())
     } catch { /* silent */ }
   }
@@ -1171,11 +1400,11 @@ export default function TaskBoard() {
     setLoading(true)
     setError('')
     try {
-      const [dashResult, statesResult] = await Promise.all([
-        GetLinearDashboard(),
+      const [boardIssues, statesResult] = await Promise.all([
+        fetchBoardIssues(),
         profile?.linearTeamId ? GetLinearTeamStates() : Promise.resolve([]),
       ])
-      setIssues((dashResult as any)?.issues || [])
+      setIssues(boardIssues)
       setStates((statesResult as WorkflowState[]) || [])
       setLastUpdated(new Date())
       setCountdown(pollInterval)
@@ -1285,11 +1514,11 @@ export default function TaskBoard() {
           )}
         </div>
         <div className="flex items-center gap-3">
-          {(assignees.length > 0 || hasUnassigned) && (
+          {!isPersonalTeam && (assignees.length > 0 || hasUnassigned) && (
             <select
               value={assigneeFilter}
               onChange={e => setAssigneeFilter(e.target.value)}
-              className="text-sm border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="text-sm border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="">전체 담당자</option>
               {hasUnassigned && <option value="__unassigned__">담당자 없음</option>}
@@ -1307,7 +1536,7 @@ export default function TaskBoard() {
           <select
             value={pollInterval}
             onChange={e => setPollInterval(Number(e.target.value))}
-            className="text-xs border border-slate-200 rounded-lg px-2 py-1 text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-400"
+            className="text-xs border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-400"
           >
             <option value={0}>자동갱신 off</option>
             <option value={15}>15초</option>
@@ -1458,7 +1687,7 @@ export default function TaskBoard() {
 
       {/* ── AI Chat floating panel (always mounted to preserve session) ── */}
       <div
-        className="fixed z-40 bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden"
+        className="fixed z-40 bg-white dark:bg-[var(--color-card)] rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 flex flex-col overflow-hidden"
         style={{
           transition: 'top 0.35s cubic-bezier(0.4, 0, 0.2, 1), right 0.35s cubic-bezier(0.4, 0, 0.2, 1), bottom 0.35s cubic-bezier(0.4, 0, 0.2, 1), left 0.35s cubic-bezier(0.4, 0, 0.2, 1), width 0.35s cubic-bezier(0.4, 0, 0.2, 1), height 0.35s cubic-bezier(0.4, 0, 0.2, 1)',
           top: chatMaximized ? 16 : 'calc(100vh - 680px - 24px)',

@@ -1,3 +1,6 @@
+//go:build legacy_handlers
+// +build legacy_handlers
+
 package main
 
 import (
@@ -168,6 +171,11 @@ func (a *App) ListWeeklyReports() ([]db.WeeklyReport, error) {
 		return nil, err
 	}
 	return a.database.ListWeeklyReports(user.ID)
+}
+
+// ListMyWeeklyReports is an alias for ListWeeklyReports for personal dashboard
+func (a *App) ListMyWeeklyReports() ([]db.WeeklyReport, error) {
+	return a.ListWeeklyReports()
 }
 
 func (a *App) GetWeeklyReport(reportID int64) (*db.WeeklyReport, error) {
@@ -1926,6 +1934,16 @@ func (a *App) SaveAttendanceRecord(record db.AttendanceRecord) (*db.AttendanceRe
 		return nil, fmt.Errorf("invalid attendance type: %s", record.Type)
 	}
 	record.UserID = user.ID
+
+	// For personal attendance, auto-create self team member if teamMemberId is 0
+	if record.TeamMemberID == 0 {
+		selfMemberID, err := a.database.GetOrCreateSelfTeamMember(user.ID, user.Name)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get or create self team member: %w", err)
+		}
+		record.TeamMemberID = selfMemberID
+	}
+
 	id, err := a.database.SaveAttendanceRecord(&record)
 	if err != nil {
 		return nil, err
@@ -1955,7 +1973,46 @@ func (a *App) GetAttendanceSummary(startDate, endDate string) ([]db.AttendanceSu
 	return a.database.GetAttendanceSummary(user.ID, startDate, endDate)
 }
 
+// GetMyAttendanceSummary returns personal attendance summary for the date range
+func (a *App) GetMyAttendanceSummary(startDate, endDate string) (*db.MyAttendanceSummary, error) {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(startDate) == "" || strings.TrimSpace(endDate) == "" {
+		now := time.Now()
+		startDate = now.Format("2006-01-02")
+		endDate = now.Format("2006-01-02")
+	}
+
+	log.Printf("[GetMyAttendanceSummary] userID=%d, startDate=%s, endDate=%s", user.ID, startDate, endDate)
+
+	records, err := a.database.ListAttendanceRecords(user.ID, 0, startDate, endDate)
+	if err != nil {
+		return nil, err
+	}
+
+	summary := &db.MyAttendanceSummary{}
+	for _, r := range records {
+		switch r.Type {
+		case "vacation":
+			summary.VacationDays++
+		case "morning_half":
+			summary.MorningHalfDays++
+		case "afternoon_half":
+			summary.AfternoonHalfDays++
+		}
+		summary.TotalDays++
+	}
+	return summary, nil
+}
+
 // --- Manual Activity ---
+
+// ListActivitiesByDateRange returns activities within a date range
+func (a *App) ListActivitiesByDateRange(startDate, endDate string) ([]db.Activity, error) {
+	return a.database.ListActivities(startDate, endDate)
+}
 
 func (a *App) AddManualActivity(title, summary, date string) (*db.Activity, error) {
 	act := &db.Activity{
@@ -2551,6 +2608,18 @@ func (a *App) GetLinearTeamMembers() ([]LinearTeamMember, error) {
 		return nil, fmt.Errorf("Linear API Key가 설정되지 않았습니다")
 	}
 	return GetLinearTeamMembers(profile.LinearAPIKey, profile.LinearTeamID)
+}
+
+// GetMyLinearIssues retrieves Linear issues assigned to the current user
+func (a *App) GetMyLinearIssues() ([]LinearIssue, error) {
+	profile, err := a.GetTeamProfile()
+	if err != nil {
+		return nil, fmt.Errorf("팀 프로필을 불러올 수 없습니다")
+	}
+	if profile.LinearAPIKey == "" {
+		return nil, fmt.Errorf("Linear API Key가 설정되지 않았습니다")
+	}
+	return GetMyLinearIssues(profile.LinearAPIKey, profile.LinearTeamID, profile.LinearUserID)
 }
 
 // AutoMapLinearMembers matches app team members to Linear members by email then name,

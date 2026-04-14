@@ -9,11 +9,11 @@ export namespace db {
 	    summary: string;
 	    rawData: string;
 	    activityDate: string;
+	    date: string;
 	    activityDateTime?: string;
 	    endDateTime?: string;
 	    calendarId?: string;
-	    // Go type: time
-	    fetchedAt: any;
+	    fetchedAt: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Activity(source);
@@ -29,29 +29,12 @@ export namespace db {
 	        this.summary = source["summary"];
 	        this.rawData = source["rawData"];
 	        this.activityDate = source["activityDate"];
+	        this.date = source["date"];
 	        this.activityDateTime = source["activityDateTime"];
 	        this.endDateTime = source["endDateTime"];
 	        this.calendarId = source["calendarId"];
-	        this.fetchedAt = this.convertValues(source["fetchedAt"], null);
+	        this.fetchedAt = source["fetchedAt"];
 	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
 	}
 	export class AttendanceRecord {
 	    id: number;
@@ -65,8 +48,7 @@ export namespace db {
 	    notes: string;
 	    integrationSource: string;
 	    externalId: string;
-	    // Go type: time
-	    createdAt: any;
+	    createdAt: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new AttendanceRecord(source);
@@ -85,26 +67,8 @@ export namespace db {
 	        this.notes = source["notes"];
 	        this.integrationSource = source["integrationSource"];
 	        this.externalId = source["externalId"];
-	        this.createdAt = this.convertValues(source["createdAt"], null);
+	        this.createdAt = source["createdAt"];
 	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
 	}
 	export class AttendanceSummary {
 	    teamMemberId: number;
@@ -137,8 +101,7 @@ export namespace db {
 	    contactEmail: string;
 	    notes: string;
 	    active: boolean;
-	    // Go type: time
-	    createdAt: any;
+	    createdAt: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Client(source);
@@ -154,26 +117,8 @@ export namespace db {
 	        this.contactEmail = source["contactEmail"];
 	        this.notes = source["notes"];
 	        this.active = source["active"];
-	        this.createdAt = this.convertValues(source["createdAt"], null);
+	        this.createdAt = source["createdAt"];
 	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
 	}
 	export class ExcelTemplate {
 	    id: number;
@@ -182,8 +127,7 @@ export namespace db {
 	    name: string;
 	    filePath: string;
 	    structureJson: string;
-	    // Go type: time
-	    createdAt: any;
+	    createdAt: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ExcelTemplate(source);
@@ -197,26 +141,8 @@ export namespace db {
 	        this.name = source["name"];
 	        this.filePath = source["filePath"];
 	        this.structureJson = source["structureJson"];
-	        this.createdAt = this.convertValues(source["createdAt"], null);
+	        this.createdAt = source["createdAt"];
 	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
 	}
 	export class Integration {
 	    id: number;
@@ -224,8 +150,7 @@ export namespace db {
 	    toolType: string;
 	    configJson: string;
 	    enabled: boolean;
-	    // Go type: time
-	    lastSyncedAt?: any;
+	    lastSyncedAt?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Integration(source);
@@ -238,26 +163,8 @@ export namespace db {
 	        this.toolType = source["toolType"];
 	        this.configJson = source["configJson"];
 	        this.enabled = source["enabled"];
-	        this.lastSyncedAt = this.convertValues(source["lastSyncedAt"], null);
+	        this.lastSyncedAt = source["lastSyncedAt"];
 	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
 	}
 	export class Issue {
 	    id: number;
@@ -269,8 +176,7 @@ export namespace db {
 	    status: string;
 	    assignee: string;
 	    dueDate?: string;
-	    // Go type: time
-	    createdAt: any;
+	    createdAt: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Issue(source);
@@ -287,26 +193,8 @@ export namespace db {
 	        this.status = source["status"];
 	        this.assignee = source["assignee"];
 	        this.dueDate = source["dueDate"];
-	        this.createdAt = this.convertValues(source["createdAt"], null);
+	        this.createdAt = source["createdAt"];
 	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
 	}
 	export class MemberAssignment {
 	    id: number;
@@ -318,8 +206,7 @@ export namespace db {
 	    endDate?: string;
 	    workMode: string;
 	    notes: string;
-	    // Go type: time
-	    createdAt: any;
+	    createdAt: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new MemberAssignment(source);
@@ -336,26 +223,28 @@ export namespace db {
 	        this.endDate = source["endDate"];
 	        this.workMode = source["workMode"];
 	        this.notes = source["notes"];
-	        this.createdAt = this.convertValues(source["createdAt"], null);
+	        this.createdAt = source["createdAt"];
+	    }
+	}
+	export class MyAttendanceSummary {
+	    vacationDays: number;
+	    morningHalfDays: number;
+	    afternoonHalfDays: number;
+	    totalDays: number;
+	    lateCount: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new MyAttendanceSummary(source);
 	    }
 	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.vacationDays = source["vacationDays"];
+	        this.morningHalfDays = source["morningHalfDays"];
+	        this.afternoonHalfDays = source["afternoonHalfDays"];
+	        this.totalDays = source["totalDays"];
+	        this.lateCount = source["lateCount"];
+	    }
 	}
 	export class Project {
 	    id: number;
@@ -368,8 +257,7 @@ export namespace db {
 	    description: string;
 	    startDate: string;
 	    endDate?: string;
-	    // Go type: time
-	    createdAt: any;
+	    createdAt: string;
 	    projectType: string;
 	    pmName: string;
 	    totalMM: number;
@@ -391,30 +279,12 @@ export namespace db {
 	        this.description = source["description"];
 	        this.startDate = source["startDate"];
 	        this.endDate = source["endDate"];
-	        this.createdAt = this.convertValues(source["createdAt"], null);
+	        this.createdAt = source["createdAt"];
 	        this.projectType = source["projectType"];
 	        this.pmName = source["pmName"];
 	        this.totalMM = source["totalMM"];
 	        this.progressRate = source["progressRate"];
 	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
 	}
 	export class ProjectCategory {
 	    id: number;
@@ -459,8 +329,7 @@ export namespace db {
 	    description: string;
 	    startDate: string;
 	    endDate?: string;
-	    // Go type: time
-	    createdAt: any;
+	    createdAt: string;
 	    projectType: string;
 	    pmName: string;
 	    totalMM: number;
@@ -482,11 +351,91 @@ export namespace db {
 	        this.description = source["description"];
 	        this.startDate = source["startDate"];
 	        this.endDate = source["endDate"];
-	        this.createdAt = this.convertValues(source["createdAt"], null);
+	        this.createdAt = source["createdAt"];
 	        this.projectType = source["projectType"];
 	        this.pmName = source["pmName"];
 	        this.totalMM = source["totalMM"];
 	        this.progressRate = source["progressRate"];
+	    }
+	}
+	export class ReportInsightActivity {
+	    activityId: number;
+	    source: string;
+	    title: string;
+	    summary: string;
+	    activityDate: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ReportInsightActivity(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.activityId = source["activityId"];
+	        this.source = source["source"];
+	        this.title = source["title"];
+	        this.summary = source["summary"];
+	        this.activityDate = source["activityDate"];
+	    }
+	}
+	export class ReportInsightDraft {
+	    key: string;
+	    suggestedSection: string;
+	    suggestedCategory: string;
+	    suggestedWorkType: string;
+	    content: string;
+	    activityIds: number[];
+	    reason: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ReportInsightDraft(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.key = source["key"];
+	        this.suggestedSection = source["suggestedSection"];
+	        this.suggestedCategory = source["suggestedCategory"];
+	        this.suggestedWorkType = source["suggestedWorkType"];
+	        this.content = source["content"];
+	        this.activityIds = source["activityIds"];
+	        this.reason = source["reason"];
+	    }
+	}
+	export class ReportInsightSummary {
+	    totalActivities: number;
+	    linkedActivities: number;
+	    unlinkedActivities: number;
+	    needsReview: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new ReportInsightSummary(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.totalActivities = source["totalActivities"];
+	        this.linkedActivities = source["linkedActivities"];
+	        this.unlinkedActivities = source["unlinkedActivities"];
+	        this.needsReview = source["needsReview"];
+	    }
+	}
+	export class ReportInsights {
+	    summary: ReportInsightSummary;
+	    unlinkedActivities: ReportInsightActivity[];
+	    draftCandidates: ReportInsightDraft[];
+	    needsReview: ReportInsightActivity[];
+	
+	    static createFrom(source: any = {}) {
+	        return new ReportInsights(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.summary = this.convertValues(source["summary"], ReportInsightSummary);
+	        this.unlinkedActivities = this.convertValues(source["unlinkedActivities"], ReportInsightActivity);
+	        this.draftCandidates = this.convertValues(source["draftCandidates"], ReportInsightDraft);
+	        this.needsReview = this.convertValues(source["needsReview"], ReportInsightActivity);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -545,8 +494,7 @@ export namespace db {
 	    wentWell: string;
 	    toImprove: string;
 	    actionItems: string;
-	    // Go type: time
-	    createdAt: any;
+	    createdAt: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Retrospective(source);
@@ -561,26 +509,8 @@ export namespace db {
 	        this.wentWell = source["wentWell"];
 	        this.toImprove = source["toImprove"];
 	        this.actionItems = source["actionItems"];
-	        this.createdAt = this.convertValues(source["createdAt"], null);
+	        this.createdAt = source["createdAt"];
 	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
 	}
 	export class SIProjectDetail {
 	    id: number;
@@ -591,8 +521,7 @@ export namespace db {
 	    totalMM: number;
 	    currentPhase: string;
 	    progressRate: number;
-	    // Go type: time
-	    createdAt: any;
+	    createdAt: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new SIProjectDetail(source);
@@ -608,26 +537,8 @@ export namespace db {
 	        this.totalMM = source["totalMM"];
 	        this.currentPhase = source["currentPhase"];
 	        this.progressRate = source["progressRate"];
-	        this.createdAt = this.convertValues(source["createdAt"], null);
+	        this.createdAt = source["createdAt"];
 	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
 	}
 	export class SIProjectMember {
 	    id: number;
@@ -667,8 +578,7 @@ export namespace db {
 	    nextWeekPlan: string;
 	    risks: string;
 	    notes: string;
-	    // Go type: time
-	    createdAt: any;
+	    createdAt: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new SIWeeklyReport(source);
@@ -685,26 +595,8 @@ export namespace db {
 	        this.nextWeekPlan = source["nextWeekPlan"];
 	        this.risks = source["risks"];
 	        this.notes = source["notes"];
-	        this.createdAt = this.convertValues(source["createdAt"], null);
+	        this.createdAt = source["createdAt"];
 	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
 	}
 	export class SIProjectView {
 	    project: Project;
@@ -815,8 +707,7 @@ export namespace db {
 	    resignDate?: string;
 	    active: boolean;
 	    linearUserId: string;
-	    // Go type: time
-	    createdAt: any;
+	    createdAt: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new TeamMember(source);
@@ -835,26 +726,8 @@ export namespace db {
 	        this.resignDate = source["resignDate"];
 	        this.active = source["active"];
 	        this.linearUserId = source["linearUserId"];
-	        this.createdAt = this.convertValues(source["createdAt"], null);
+	        this.createdAt = source["createdAt"];
 	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
 	}
 	export class TeamProfile {
 	    teamType: string;
@@ -886,8 +759,7 @@ export namespace db {
 	    id: number;
 	    name: string;
 	    team: string;
-	    // Go type: time
-	    createdAt: any;
+	    createdAt: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new User(source);
@@ -898,26 +770,8 @@ export namespace db {
 	        this.id = source["id"];
 	        this.name = source["name"];
 	        this.team = source["team"];
-	        this.createdAt = this.convertValues(source["createdAt"], null);
+	        this.createdAt = source["createdAt"];
 	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
 	}
 	
 	export class WeeklyReport {
@@ -926,8 +780,7 @@ export namespace db {
 	    weekStart: string;
 	    weekEnd: string;
 	    status: string;
-	    // Go type: time
-	    createdAt: any;
+	    createdAt: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new WeeklyReport(source);
@@ -940,26 +793,8 @@ export namespace db {
 	        this.weekStart = source["weekStart"];
 	        this.weekEnd = source["weekEnd"];
 	        this.status = source["status"];
-	        this.createdAt = this.convertValues(source["createdAt"], null);
+	        this.createdAt = source["createdAt"];
 	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
 	}
 
 }
@@ -998,11 +833,11 @@ export namespace main {
 	    summary: string;
 	    rawData: string;
 	    activityDate: string;
+	    date: string;
 	    activityDateTime?: string;
 	    endDateTime?: string;
 	    calendarId?: string;
-	    // Go type: time
-	    fetchedAt: any;
+	    fetchedAt: string;
 	    sourceLabel: string;
 	    sourceIcon: string;
 	
@@ -1020,31 +855,14 @@ export namespace main {
 	        this.summary = source["summary"];
 	        this.rawData = source["rawData"];
 	        this.activityDate = source["activityDate"];
+	        this.date = source["date"];
 	        this.activityDateTime = source["activityDateTime"];
 	        this.endDateTime = source["endDateTime"];
 	        this.calendarId = source["calendarId"];
-	        this.fetchedAt = this.convertValues(source["fetchedAt"], null);
+	        this.fetchedAt = source["fetchedAt"];
 	        this.sourceLabel = source["sourceLabel"];
 	        this.sourceIcon = source["sourceIcon"];
 	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
 	}
 	export class ClaudeChatResult {
 	    reply: string;
@@ -1315,6 +1133,7 @@ export namespace main {
 	    priority?: number;
 	    dueDate?: string;
 	    assigneeId?: string;
+	    labelIds?: string[];
 	
 	    static createFrom(source: any = {}) {
 	        return new LinearIssueUpdateInput(source);
@@ -1326,6 +1145,7 @@ export namespace main {
 	        this.priority = source["priority"];
 	        this.dueDate = source["dueDate"];
 	        this.assigneeId = source["assigneeId"];
+	        this.labelIds = source["labelIds"];
 	    }
 	}
 	

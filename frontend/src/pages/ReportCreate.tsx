@@ -16,7 +16,7 @@ import {
   Filter,
   Users,
 } from 'lucide-react'
-import { GetCurrentWeek, GetWeekByOffset, GetOrCreateWeeklyReport, GetWeekActivities, AddActivityToReport, GetReportItems, AddManualActivity, SyncAll, PopulateReportFromTeamData, PopulateReportFromProjects } from '../../wailsjs/go/main/App'
+import { useAppApi } from '../hooks/useAppApi'
 import { Briefcase } from 'lucide-react'
 import { useTeamProfile } from '../contexts/TeamProfileContext'
 
@@ -56,6 +56,20 @@ interface ReportItem {
 }
 
 export default function Dashboard() {
+  const appApi = useAppApi()
+  const {
+    GetCurrentWeek,
+    GetWeekByOffset,
+    GetOrCreateWeeklyReport,
+    GetWeekActivities,
+    AddActivityToReport,
+    GetReportItems,
+    AddManualActivity,
+    SyncAll,
+    PopulateReportFromTeamData,
+    PopulateReportFromProjects,
+  } = appApi
+
   const navigate = useNavigate()
   const { profile } = useTeamProfile()
   const teamType = profile?.teamType || 'personal'

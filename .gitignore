@@ -31,4 +31,4 @@ openreport.db
 CLAUDE.md
 .claude/*
 .docs/*
-docs/*
+.gstack/

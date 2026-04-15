@@ -454,6 +454,21 @@ func (a *App) RetrieveVaultContext(query string, limit int) ([]db.VaultReference
 	}
 
 	if len(candidateByPath) == 0 {
+		// Follow-up prompts like "한국어로 요약해줘" often don't contain retrievable
+		// keywords. In that case, fall back to recently indexed files so the
+		// assistant can stay grounded in the configured Vault.
+		fallbackItems, fallbackErr := a.database.ListVaultFileItems(candidateLimit)
+		if fallbackErr != nil {
+			return nil, fmt.Errorf("failed to collect fallback vault context: %w", fallbackErr)
+		}
+		for _, item := range fallbackItems {
+			pushCandidate(item, 10)
+			if len(candidateByPath) >= candidateLimit {
+				break
+			}
+		}
+	}
+	if len(candidateByPath) == 0 {
 		return []db.VaultReference{}, nil
 	}
 

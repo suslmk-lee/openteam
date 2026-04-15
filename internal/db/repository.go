@@ -1703,6 +1703,34 @@ func (d *Database) SearchVaultFileItems(keyword string, limit int) ([]VaultItem,
 	return items, rows.Err()
 }
 
+func (d *Database) ListVaultFileItems(limit int) ([]VaultItem, error) {
+	query := `SELECT id, type, name, path, parent_id, COALESCE(modified_at, ''), size, COALESCE(created_at, '')
+		FROM vault_items
+		WHERE type = 'file'
+		ORDER BY COALESCE(modified_at, '') DESC, path ASC`
+	args := []any{}
+	if limit > 0 {
+		query += ` LIMIT ?`
+		args = append(args, limit)
+	}
+
+	rows, err := d.conn.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []VaultItem
+	for rows.Next() {
+		item, err := scanVaultItem(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, *item)
+	}
+	return items, rows.Err()
+}
+
 func (d *Database) ClearVaultItems() error {
 	_, err := d.conn.Exec(`DELETE FROM vault_items`)
 	return err

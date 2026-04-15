@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"openreport/internal/db"
@@ -75,7 +76,7 @@ func TestRetrieveVaultContextDefaultLimit(t *testing.T) {
 	}
 }
 
-func TestRetrieveVaultContextEmptyAndNoResult(t *testing.T) {
+func TestRetrieveVaultContextEmptyQueryReturnsNoReferences(t *testing.T) {
 	app := setupVaultRetrievalTest(t)
 
 	writeVaultTestFile(t, app.vaultRoot, "misc/general.md", "General vault content without the search term.\n")
@@ -95,12 +96,84 @@ func TestRetrieveVaultContextEmptyAndNoResult(t *testing.T) {
 	if len(emptyRefs) != 0 {
 		t.Fatalf("expected no references for empty query, got %d", len(emptyRefs))
 	}
+}
 
-	noResultRefs, err := app.RetrieveVaultContext("missing-term", 0)
+func TestRetrieveVaultContextFallsBackWhenNoKeywordMatch(t *testing.T) {
+	app := setupVaultRetrievalTest(t)
+
+	writeVaultTestFile(
+		t,
+		app.vaultRoot,
+		"knowledge-base/wiki/sources/weekly-report.md",
+		"---\ntitle: 'Weekly Report'\n---\n\n# Weekly Report\n\n어제 작업 내역 정리 문서입니다.\n",
+	)
+
+	count, err := app.RefreshVault()
+	if err != nil {
+		t.Fatalf("RefreshVault failed: %v", err)
+	}
+	if count < 3 {
+		t.Fatalf("expected vault refresh to index knowledge files and folders, got %d items", count)
+	}
+
+	noResultRefs, err := app.RetrieveVaultContext("한글로 알려줘", 3)
 	if err != nil {
 		t.Fatalf("no-result query failed: %v", err)
 	}
-	if len(noResultRefs) != 0 {
-		t.Fatalf("expected no references for missing query, got %d", len(noResultRefs))
+	if len(noResultRefs) == 0 {
+		t.Fatalf("expected fallback references for natural-language follow-up query, got 0")
+	}
+	if noResultRefs[0].Path == "" || noResultRefs[0].Content == "" {
+		t.Fatalf("expected populated fallback reference, got %+v", noResultRefs[0])
+	}
+}
+
+func TestUpdateTeamProfileRefreshesVaultCacheForNewRoot(t *testing.T) {
+	app := setupVaultRetrievalTest(t)
+
+	writeVaultTestFile(t, app.vaultRoot, "legacy/old-notes.md", "Legacy vault file.\n")
+	if _, err := app.RefreshVault(); err != nil {
+		t.Fatalf("initial RefreshVault failed: %v", err)
+	}
+
+	newVaultRoot := filepath.Join(app.dataDir, "vault-new")
+	if err := os.MkdirAll(newVaultRoot, 0o755); err != nil {
+		t.Fatalf("failed to create new vault root: %v", err)
+	}
+	writeVaultTestFile(
+		t,
+		newVaultRoot,
+		"knowledge-base/wiki/sources/newdoc.md",
+		"---\ntitle: 'New Doc'\n---\n\n# New Doc\n\nThis file should be retrievable after profile update.\n",
+	)
+
+	err := app.UpdateTeamProfile(db.TeamProfile{
+		TeamType:    "personal",
+		TeamName:    "Test Team",
+		UserName:    "Tester",
+		SetupDone:   true,
+		VaultRoot:   newVaultRoot,
+		MemberCount: 1,
+	})
+	if err != nil {
+		t.Fatalf("UpdateTeamProfile failed: %v", err)
+	}
+
+	refs, err := app.RetrieveVaultContext("newdoc", 3)
+	if err != nil {
+		t.Fatalf("RetrieveVaultContext failed: %v", err)
+	}
+	if len(refs) == 0 {
+		t.Fatalf("expected references from new vault root after profile update, got 0")
+	}
+	foundNewRootDoc := false
+	for _, ref := range refs {
+		if strings.Contains(ref.Path, "newdoc.md") {
+			foundNewRootDoc = true
+			break
+		}
+	}
+	if !foundNewRootDoc {
+		t.Fatalf("expected to include newdoc.md from updated vault root, got refs: %+v", refs)
 	}
 }

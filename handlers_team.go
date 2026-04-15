@@ -813,6 +813,10 @@ func (a *App) UpdateTeamProfile(profile db.TeamProfile) error {
 	} else {
 		a.vaultRoot = root
 	}
+
+	if _, err := a.RefreshVault(); err != nil {
+		return fmt.Errorf("failed to refresh vault cache: %w", err)
+	}
 	return nil
 }
 

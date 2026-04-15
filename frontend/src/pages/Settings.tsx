@@ -140,6 +140,7 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
   const [profileTeamName, setProfileTeamName] = useState('')
   const [profileUserName, setProfileUserName] = useState('')
   const [profileMemberCount, setProfileMemberCount] = useState(4)
+  const [vaultRootPath, setVaultRootPath] = useState('')
 
   useEffect(() => {
     loadSettings()
@@ -154,6 +155,7 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
       setLinearApiKey(teamProfile.linearApiKey || '')
       setLinearTeamId(teamProfile.linearTeamId || '')
       setLinearUserId(teamProfile.linearUserId || '')
+      setVaultRootPath(teamProfile.vaultRoot || '')
 
       // Load personal template if user is personal type
       if (teamProfile.teamType === 'personal') {
@@ -929,6 +931,44 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
                 className="px-4 py-2 text-sm bg-violet-600 text-white hover:bg-violet-700 rounded-lg transition-colors"
               >
                 Linear 설정 저장
+              </button>
+            </div>
+          </section>
+          )}
+
+          {section === 'integrations' && (
+          <section className="bg-white border border-slate-200 rounded-xl p-6">
+            <h3 className="text-base font-semibold text-slate-800 mb-2">지식베이스</h3>
+            <p className="text-xs text-slate-500 mb-4">지식베이스 경로는 Linear 연동 설정과 분리되어 관리됩니다.</p>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Vault Root Path</label>
+                <input
+                  type="text"
+                  value={vaultRootPath}
+                  onChange={e => setVaultRootPath(e.target.value)}
+                  placeholder="D:\\Vault"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="text-xs text-slate-400 mt-1">비워두면 기본 경로를 사용합니다.</p>
+              </div>
+              <button
+                onClick={async () => {
+                  try {
+                    if (!teamProfile) return
+                    await UpdateTeamProfile({
+                      ...teamProfile,
+                      vaultRoot: vaultRootPath.trim(),
+                    } as any)
+                    await reloadProfile()
+                    showStatus('지식베이스 설정이 저장되었습니다')
+                  } catch (err) {
+                    console.error('Failed to save vault root path:', err)
+                  }
+                }}
+                className="px-4 py-2 text-sm bg-blue-600 text-white hover:bg-blue-700 rounded-lg transition-colors"
+              >
+                지식베이스 설정 저장
               </button>
             </div>
           </section>

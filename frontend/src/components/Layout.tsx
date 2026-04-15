@@ -22,6 +22,7 @@ import {
   Mail,
   Calendar,
   Database,
+  BookOpen,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTeamProfile } from '../contexts/TeamProfileContext'
@@ -118,6 +119,7 @@ export default function Layout() {
         {/* Nav */}
         <nav className="flex-1 py-4 space-y-1 px-2 overflow-y-auto">
           <SidebarLink to="/" icon={<LayoutDashboard size={20} />} label="대시보드" collapsed={collapsed} />
+          <SidebarLink to="/vault" icon={<BookOpen size={20} />} label="지식베이스" collapsed={collapsed} />
           
           {/* Reports Accordion */}
           <div className="space-y-1">

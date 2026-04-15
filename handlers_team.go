@@ -803,7 +803,17 @@ func (a *App) UpdateTeamProfile(profile db.TeamProfile) error {
 		}
 	}
 
-	return a.database.SaveTeamProfile(user.ID, &profile)
+	if err := a.database.SaveTeamProfile(user.ID, &profile); err != nil {
+		return err
+	}
+
+	root := strings.TrimSpace(profile.VaultRoot)
+	if root == "" {
+		a.vaultRoot = defaultVaultRoot
+	} else {
+		a.vaultRoot = root
+	}
+	return nil
 }
 
 // --- Issues ---

@@ -122,6 +122,10 @@ export function GetTeamProfile():Promise<db.TeamProfile>;
 
 export function GetUtilizationByDate(arg1:string):Promise<Array<db.UtilizationMemberRow>>;
 
+export function GetVaultFile(arg1:string):Promise<db.VaultFile>;
+
+export function GetVaultStructure(arg1:any):Promise<Array<db.VaultItem>>;
+
 export function GetWeekActivities(arg1:string,arg2:string):Promise<Array<main.ActivityWithSource>>;
 
 export function GetWeekByOffset(arg1:number):Promise<main.WeekInfo>;
@@ -131,6 +135,10 @@ export function GetWeeklyReport(arg1:number):Promise<db.WeeklyReport>;
 export function Greet(arg1:string):Promise<string>;
 
 export function IgnoreInsightActivity(arg1:number,arg2:number):Promise<void>;
+
+export function IngestKnowledgeBatch(arg1:string,arg2:Array<string>,arg3:string,arg4:string):Promise<Array<db.IngestResult>>;
+
+export function IngestKnowledgeSource(arg1:string,arg2:string,arg3:string,arg4:string):Promise<db.IngestResult>;
 
 export function ListActivitiesByDateRange(arg1:string,arg2:string):Promise<Array<db.Activity>>;
 
@@ -166,6 +174,12 @@ export function PreprocessReportItemsWithAI(arg1:number):Promise<main.SyncResult
 
 export function RefineMarkdownWithAI(arg1:string):Promise<string>;
 
+export function RefreshVault():Promise<number>;
+
+export function RetrieveVaultContext(arg1:string,arg2:number):Promise<Array<db.VaultReference>>;
+
+export function RunKnowledgeBaseLint():Promise<db.IngestResult>;
+
 export function SaveAttendanceRecord(arg1:db.AttendanceRecord):Promise<db.AttendanceRecord>;
 
 export function SaveClient(arg1:db.Client):Promise<db.Client>;
@@ -173,6 +187,8 @@ export function SaveClient(arg1:db.Client):Promise<db.Client>;
 export function SaveIntegration(arg1:string,arg2:string,arg3:boolean):Promise<void>;
 
 export function SaveIssue(arg1:db.Issue):Promise<number>;
+
+export function SaveKnowledgeQuery(arg1:string,arg2:string,arg3:string,arg4:string,arg5:Array<string>):Promise<db.IngestResult>;
 
 export function SaveMemberAssignment(arg1:db.MemberAssignment):Promise<db.MemberAssignment>;
 
@@ -189,6 +205,8 @@ export function SaveSIWeeklyReport(arg1:db.SIWeeklyReport):Promise<db.SIWeeklyRe
 export function SaveTeamMember(arg1:db.TeamMember):Promise<db.TeamMember>;
 
 export function ScanClaudeSkills():Promise<Array<main.SkillCommand>>;
+
+export function SearchVault(arg1:string):Promise<Array<db.VaultItem>>;
 
 export function SetupGWSAuth():Promise<string>;
 

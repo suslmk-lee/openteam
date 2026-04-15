@@ -1391,10 +1391,10 @@ func (d *Database) GetTeamProfile(userID int64) (*TeamProfile, error) {
 	profile.MemberCount = memberCount
 
 	// Load team_type from team_type_configs
-	var teamType, linearAPIKey, linearTeamID, linearUserID string
+	var teamType, linearAPIKey, linearTeamID, linearUserID, vaultRoot string
 	err = d.conn.QueryRow(
-		"SELECT team_type, COALESCE(linear_api_key,''), COALESCE(linear_team_id,''), COALESCE(linear_user_id,'') FROM team_type_configs WHERE user_id = ? ORDER BY id DESC LIMIT 1", userID,
-	).Scan(&teamType, &linearAPIKey, &linearTeamID, &linearUserID)
+		"SELECT team_type, COALESCE(linear_api_key,''), COALESCE(linear_team_id,''), COALESCE(linear_user_id,''), COALESCE(vault_root,'') FROM team_type_configs WHERE user_id = ? ORDER BY id DESC LIMIT 1", userID,
+	).Scan(&teamType, &linearAPIKey, &linearTeamID, &linearUserID, &vaultRoot)
 	if err == sql.ErrNoRows {
 		profile.TeamType = ""
 	} else if err != nil {
@@ -1404,6 +1404,7 @@ func (d *Database) GetTeamProfile(userID int64) (*TeamProfile, error) {
 		profile.LinearAPIKey = linearAPIKey
 		profile.LinearTeamID = linearTeamID
 		profile.LinearUserID = linearUserID
+		profile.VaultRoot = vaultRoot
 	}
 	return profile, nil
 }
@@ -1427,8 +1428,8 @@ func (d *Database) SaveTeamProfile(userID int64, p *TeamProfile) error {
 		return err
 	}
 	_, err = d.conn.Exec(
-		"INSERT INTO team_type_configs (user_id, team_type, linear_api_key, linear_team_id, linear_user_id) VALUES (?, ?, ?, ?, ?)",
-		userID, p.TeamType, p.LinearAPIKey, p.LinearTeamID, p.LinearUserID,
+		"INSERT INTO team_type_configs (user_id, team_type, linear_api_key, linear_team_id, linear_user_id, vault_root) VALUES (?, ?, ?, ?, ?, ?)",
+		userID, p.TeamType, p.LinearAPIKey, p.LinearTeamID, p.LinearUserID, p.VaultRoot,
 	)
 	return err
 }
@@ -1527,4 +1528,182 @@ func (d *Database) SaveRetrospective(r *Retrospective) (int64, error) {
 		r.WentWell, r.ToImprove, r.ActionItems, r.ID, r.UserID,
 	)
 	return r.ID, err
+}
+
+// --- Vault Knowledge Base ---
+
+func scanVaultItem(scanner interface{ Scan(...any) error }) (*VaultItem, error) {
+	var item VaultItem
+	var parentID sql.NullInt64
+	if err := scanner.Scan(&item.ID, &item.Type, &item.Name, &item.Path, &parentID, &item.ModifiedAt, &item.Size, &item.CreatedAt); err != nil {
+		return nil, err
+	}
+	if parentID.Valid {
+		item.ParentID = &parentID.Int64
+	}
+	return &item, nil
+}
+
+func (d *Database) SaveVaultItem(item *VaultItem) (int64, error) {
+	if item == nil {
+		return 0, fmt.Errorf("vault item is nil")
+	}
+
+	var parentID any
+	if item.ParentID != nil {
+		parentID = *item.ParentID
+	}
+
+	if item.ID > 0 {
+		_, err := d.conn.Exec(
+			`UPDATE vault_items
+			 SET type = ?, name = ?, path = ?, parent_id = ?, modified_at = ?, size = ?
+			 WHERE id = ?`,
+			item.Type, item.Name, item.Path, parentID, item.ModifiedAt, item.Size, item.ID,
+		)
+		return item.ID, err
+	}
+
+	var existingID int64
+	err := d.conn.QueryRow(`SELECT id FROM vault_items WHERE path = ?`, item.Path).Scan(&existingID)
+	if err == nil {
+		item.ID = existingID
+		_, err = d.conn.Exec(
+			`UPDATE vault_items
+			 SET type = ?, name = ?, path = ?, parent_id = ?, modified_at = ?, size = ?
+			 WHERE id = ?`,
+			item.Type, item.Name, item.Path, parentID, item.ModifiedAt, item.Size, item.ID,
+		)
+		return item.ID, err
+	}
+	if err != sql.ErrNoRows {
+		return 0, err
+	}
+
+	res, err := d.conn.Exec(
+		`INSERT INTO vault_items (type, name, path, parent_id, modified_at, size)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		item.Type, item.Name, item.Path, parentID, item.ModifiedAt, item.Size,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+func (d *Database) GetVaultItemsByParent(parentID *int64) ([]VaultItem, error) {
+	query := `SELECT id, type, name, path, parent_id, COALESCE(modified_at, ''), size, COALESCE(created_at, '')
+		FROM vault_items`
+	var args []any
+	if parentID == nil {
+		query += ` WHERE parent_id IS NULL`
+	} else {
+		query += ` WHERE parent_id = ?`
+		args = append(args, *parentID)
+	}
+	query += ` ORDER BY type DESC, name ASC, path ASC`
+
+	rows, err := d.conn.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []VaultItem
+	for rows.Next() {
+		item, err := scanVaultItem(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, *item)
+	}
+	return items, rows.Err()
+}
+
+func (d *Database) GetVaultItemByPath(path string) (*VaultItem, error) {
+	row := d.conn.QueryRow(
+		`SELECT id, type, name, path, parent_id, COALESCE(modified_at, ''), size, COALESCE(created_at, '')
+		 FROM vault_items WHERE path = ?`,
+		path,
+	)
+	item, err := scanVaultItem(row)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return item, nil
+}
+
+func (d *Database) DeleteVaultItemByPath(path string) error {
+	_, err := d.conn.Exec(`DELETE FROM vault_items WHERE path = ? OR path LIKE ?`, path, path+"/%")
+	return err
+}
+
+func (d *Database) SearchVaultItems(keyword string) ([]VaultItem, error) {
+	if keyword == "" {
+		return []VaultItem{}, nil
+	}
+
+	pattern := "%" + keyword + "%"
+	rows, err := d.conn.Query(
+		`SELECT id, type, name, path, parent_id, COALESCE(modified_at, ''), size, COALESCE(created_at, '')
+		 FROM vault_items
+		 WHERE name LIKE ? OR path LIKE ?
+		 ORDER BY type DESC, name ASC, path ASC`,
+		pattern, pattern,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []VaultItem
+	for rows.Next() {
+		item, err := scanVaultItem(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, *item)
+	}
+	return items, rows.Err()
+}
+
+func (d *Database) SearchVaultFileItems(keyword string, limit int) ([]VaultItem, error) {
+	if keyword == "" {
+		return []VaultItem{}, nil
+	}
+
+	pattern := "%" + keyword + "%"
+	query := `SELECT id, type, name, path, parent_id, COALESCE(modified_at, ''), size, COALESCE(created_at, '')
+		FROM vault_items
+		WHERE type = 'file' AND (name LIKE ? OR path LIKE ?)
+		ORDER BY name ASC, path ASC`
+	args := []any{pattern, pattern}
+	if limit > 0 {
+		query += ` LIMIT ?`
+		args = append(args, limit)
+	}
+
+	rows, err := d.conn.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []VaultItem
+	for rows.Next() {
+		item, err := scanVaultItem(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, *item)
+	}
+	return items, rows.Err()
+}
+
+func (d *Database) ClearVaultItems() error {
+	_, err := d.conn.Exec(`DELETE FROM vault_items`)
+	return err
 }

@@ -23,6 +23,7 @@ import WeeklyRetro from './pages/WeeklyRetro'
 import GmailPage from './pages/GmailPage'
 import CalendarPage from './pages/CalendarPage'
 import PersonalAttendance from './pages/PersonalAttendance'
+import VaultPage from './pages/VaultPage'
 
 const container = document.getElementById('root')
 const root = createRoot(container!)
@@ -50,6 +51,7 @@ root.render(
             <Route path="/team/common-codes" element={<Navigate to="/settings/common-codes" replace />} />
             <Route path="/workdata/gmail" element={<GmailPage />} />
             <Route path="/workdata/calendar" element={<CalendarPage />} />
+            <Route path="/vault" element={<VaultPage />} />
             <Route path="/settings" element={<Navigate to="/settings/user" replace />} />
             <Route path="/settings/user" element={<Settings section="user" />} />
             <Route path="/settings/template" element={<Settings section="template" />} />

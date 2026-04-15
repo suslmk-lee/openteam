@@ -10,6 +10,7 @@ export interface TeamProfile {
   linearApiKey: string
   linearTeamId: string
   linearUserId?: string
+  vaultRoot?: string
 }
 
 interface TeamProfileContextValue {

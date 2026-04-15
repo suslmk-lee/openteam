@@ -144,6 +144,28 @@ export namespace db {
 	        this.createdAt = source["createdAt"];
 	    }
 	}
+	export class IngestResult {
+	    sourceType: string;
+	    source: string;
+	    model: string;
+	    requestedBy: string;
+	    status: string;
+	    warnings?: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new IngestResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.sourceType = source["sourceType"];
+	        this.source = source["source"];
+	        this.model = source["model"];
+	        this.requestedBy = source["requestedBy"];
+	        this.status = source["status"];
+	        this.warnings = source["warnings"];
+	    }
+	}
 	export class Integration {
 	    id: number;
 	    userId: number;
@@ -738,6 +760,7 @@ export namespace db {
 	    linearApiKey: string;
 	    linearTeamId: string;
 	    linearUserId: string;
+	    vaultRoot: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new TeamProfile(source);
@@ -753,6 +776,7 @@ export namespace db {
 	        this.linearApiKey = source["linearApiKey"];
 	        this.linearTeamId = source["linearTeamId"];
 	        this.linearUserId = source["linearUserId"];
+	        this.vaultRoot = source["vaultRoot"];
 	    }
 	}
 	export class User {
@@ -774,6 +798,72 @@ export namespace db {
 	    }
 	}
 	
+	export class VaultFile {
+	    id: number;
+	    name: string;
+	    path: string;
+	    content: string;
+	    modifiedAt: string;
+	    size: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new VaultFile(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.path = source["path"];
+	        this.content = source["content"];
+	        this.modifiedAt = source["modifiedAt"];
+	        this.size = source["size"];
+	    }
+	}
+	export class VaultItem {
+	    id: number;
+	    type: string;
+	    name: string;
+	    path: string;
+	    parentId?: number;
+	    modifiedAt: string;
+	    size: number;
+	    createdAt: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new VaultItem(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.type = source["type"];
+	        this.name = source["name"];
+	        this.path = source["path"];
+	        this.parentId = source["parentId"];
+	        this.modifiedAt = source["modifiedAt"];
+	        this.size = source["size"];
+	        this.createdAt = source["createdAt"];
+	    }
+	}
+	export class VaultReference {
+	    path: string;
+	    title: string;
+	    snippet: string;
+	    content: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new VaultReference(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.path = source["path"];
+	        this.title = source["title"];
+	        this.snippet = source["snippet"];
+	        this.content = source["content"];
+	    }
+	}
 	export class WeeklyReport {
 	    id: number;
 	    userId: number;

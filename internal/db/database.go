@@ -253,6 +253,18 @@ func (d *Database) migrate() error {
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			UNIQUE(user_id, week_start)
 		)`,
+		`CREATE TABLE IF NOT EXISTS vault_items (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			type TEXT NOT NULL,
+			name TEXT NOT NULL,
+			path TEXT NOT NULL UNIQUE,
+			parent_id INTEGER,
+			modified_at TEXT NOT NULL DEFAULT '',
+			size INTEGER NOT NULL DEFAULT 0,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY(parent_id) REFERENCES vault_items(id)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_vault_items_parent_id ON vault_items(parent_id)`,
 	}
 
 	for _, m := range migrations {
@@ -327,6 +339,10 @@ func (d *Database) migrate() error {
 	}
 	// Add Linear user ID to team_type_configs (current user's Linear ID)
 	if err := d.ensureColumnExists("team_type_configs", "linear_user_id", "ALTER TABLE team_type_configs ADD COLUMN linear_user_id TEXT DEFAULT ''"); err != nil {
+		return err
+	}
+	// Add Vault root path to team_type_configs (user-specific Knowledge Base root)
+	if err := d.ensureColumnExists("team_type_configs", "vault_root", "ALTER TABLE team_type_configs ADD COLUMN vault_root TEXT DEFAULT ''"); err != nil {
 		return err
 	}
 	// Add Linear user mapping to team_members

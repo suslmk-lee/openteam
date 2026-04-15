@@ -24,6 +24,18 @@ OpenReport is a Windows desktop app that generates weekly work reports from coll
 - Excel template upload and report export
 - Team operations support (members, attendance, projects, issues, retrospectives)
 
+## Knowledge Base Ingest
+
+Use the Vault chat panel to add content to the knowledge base:
+
+- `/ingest` ingests the latest non-command user message.
+- `/ingest <url>` ingests a web page by URL.
+- `/ingest <path>` ingests a local file path or vault file path.
+- Shortcut aliases such as `이 내용도 ingest해줘`, `이 내용도 ingest해주세요`, `ingest this message`, and `ingest this message please` map to `/ingest` with no arguments.
+- The shortcut uses the previous non-command user message as the source, not the shortcut phrase itself.
+
+For a Korean walkthrough, see [docs/ko/knowledge-base-ingest.md](./docs/ko/knowledge-base-ingest.md).
+
 ## Prerequisites
 
 - Go 1.21+ (project currently uses Go 1.25 in `go.mod`)

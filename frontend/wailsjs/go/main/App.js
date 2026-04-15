@@ -238,6 +238,14 @@ export function GetUtilizationByDate(arg1) {
   return window['go']['main']['App']['GetUtilizationByDate'](arg1);
 }
 
+export function GetVaultFile(arg1) {
+  return window['go']['main']['App']['GetVaultFile'](arg1);
+}
+
+export function GetVaultStructure(arg1) {
+  return window['go']['main']['App']['GetVaultStructure'](arg1);
+}
+
 export function GetWeekActivities(arg1, arg2) {
   return window['go']['main']['App']['GetWeekActivities'](arg1, arg2);
 }
@@ -256,6 +264,14 @@ export function Greet(arg1) {
 
 export function IgnoreInsightActivity(arg1, arg2) {
   return window['go']['main']['App']['IgnoreInsightActivity'](arg1, arg2);
+}
+
+export function IngestKnowledgeBatch(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['IngestKnowledgeBatch'](arg1, arg2, arg3, arg4);
+}
+
+export function IngestKnowledgeSource(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['IngestKnowledgeSource'](arg1, arg2, arg3, arg4);
 }
 
 export function ListActivitiesByDateRange(arg1, arg2) {
@@ -326,6 +342,18 @@ export function RefineMarkdownWithAI(arg1) {
   return window['go']['main']['App']['RefineMarkdownWithAI'](arg1);
 }
 
+export function RefreshVault() {
+  return window['go']['main']['App']['RefreshVault']();
+}
+
+export function RetrieveVaultContext(arg1, arg2) {
+  return window['go']['main']['App']['RetrieveVaultContext'](arg1, arg2);
+}
+
+export function RunKnowledgeBaseLint() {
+  return window['go']['main']['App']['RunKnowledgeBaseLint']();
+}
+
 export function SaveAttendanceRecord(arg1) {
   return window['go']['main']['App']['SaveAttendanceRecord'](arg1);
 }
@@ -340,6 +368,10 @@ export function SaveIntegration(arg1, arg2, arg3) {
 
 export function SaveIssue(arg1) {
   return window['go']['main']['App']['SaveIssue'](arg1);
+}
+
+export function SaveKnowledgeQuery(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['main']['App']['SaveKnowledgeQuery'](arg1, arg2, arg3, arg4, arg5);
 }
 
 export function SaveMemberAssignment(arg1) {
@@ -372,6 +404,10 @@ export function SaveTeamMember(arg1) {
 
 export function ScanClaudeSkills() {
   return window['go']['main']['App']['ScanClaudeSkills']();
+}
+
+export function SearchVault(arg1) {
+  return window['go']['main']['App']['SearchVault'](arg1);
 }
 
 export function SetupGWSAuth() {

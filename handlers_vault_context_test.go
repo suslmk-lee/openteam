@@ -27,6 +27,38 @@ func setupVaultRetrievalTest(t *testing.T) *App {
 		t.Fatalf("failed to create vault root: %v", err)
 	}
 
+	originalExtractor := ingestKnowledgeExtractor
+	ingestKnowledgeExtractor = func(_ *App, src *ingestSource) (*ingestStructuredKnowledge, error) {
+		if src == nil {
+			return nil, fmt.Errorf("ingest source is nil")
+		}
+
+		title := strings.TrimSpace(ingestSourceTitle(src))
+		if title == "" {
+			title = "Source"
+		}
+
+		concept := "Documentation"
+		switch strings.TrimSpace(src.SourceType) {
+		case "url":
+			concept = "Web Source"
+		case "file":
+			concept = "File Source"
+		case "text":
+			concept = "Text Note"
+		}
+
+		return &ingestStructuredKnowledge{
+			Entities: []string{title},
+			Concepts: []string{concept},
+			Summary:  fmt.Sprintf("%s knowledge summary.", title),
+			Claims:   []string{fmt.Sprintf("Source type is %s.", strings.TrimSpace(src.SourceType))},
+		}, nil
+	}
+	t.Cleanup(func() {
+		ingestKnowledgeExtractor = originalExtractor
+	})
+
 	return &App{
 		database:  database,
 		dataDir:   dataDir,

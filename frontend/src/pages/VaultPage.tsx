@@ -1,5 +1,6 @@
 import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BookOpen, RefreshCw, Search, X } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { CanResolveFilePaths, ResolveFilePaths } from '../../wailsjs/runtime/runtime'
 import { VaultFolderTree } from '../components/VaultFolderTree'
 import { VaultFileList } from '../components/VaultFileList'
@@ -9,6 +10,7 @@ import { AiChatPanel as SharedAiChatPanel } from '../features/chat/AiChatPanel'
 import { buildVaultChatContext } from '../features/chat/providers/vaultContext'
 import type { ChatCommand } from '../features/chat/types'
 import { useAiChatSession } from '../features/chat/useAiChatSession'
+import { formatIngestCompletionMessage } from '../features/vault/ingestResultSummary'
 import { useAppApi } from '../hooks/useAppApi'
 import type { VaultFile, VaultItem } from '../services/appApi'
 
@@ -68,6 +70,12 @@ type ResolvedFile = File & {
   path?: string
 }
 
+type VaultPageMode = 'explore' | 'ingest'
+
+interface VaultPageProps {
+  mode?: VaultPageMode
+}
+
 function truncateText(value: string, maxLength = 80) {
   if (value.length <= maxLength) return value
   return `${value.slice(0, Math.max(0, maxLength - 1))}…`
@@ -107,7 +115,7 @@ function sanitizeErrorMessage(error: unknown, fallback: string) {
   return normalized ? truncateText(normalized) : fallback
 }
 
-export default function VaultPage() {
+export default function VaultPage({ mode = 'explore' }: VaultPageProps) {
   const appApi = useAppApi()
   const {
     GetVaultStructure,
@@ -130,13 +138,14 @@ export default function VaultPage() {
   const [searchResults, setSearchResults] = useState<VaultItem[]>([])
   const [selectedFile, setSelectedFile] = useState<VaultFile | null>(null)
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null)
-  const [structureLoading, setStructureLoading] = useState(true)
+  const [structureLoading, setStructureLoading] = useState(mode === 'explore')
   const [searchLoading, setSearchLoading] = useState(false)
   const [fileLoading, setFileLoading] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [refreshCount, setRefreshCount] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [urlDraft, setUrlDraft] = useState('')
+  const [batchDraft, setBatchDraft] = useState('')
   const [showUrlInput, setShowUrlInput] = useState(false)
   const [ingestingSource, setIngestingSource] = useState<IngestSourceType | null>(null)
   const [linting, setLinting] = useState(false)
@@ -149,6 +158,8 @@ export default function VaultPage() {
   const currentParentId = breadcrumbs.length ? breadcrumbs[breadcrumbs.length - 1].id : null
   const currentFolderName = breadcrumbs.length ? breadcrumbs[breadcrumbs.length - 1].name : '루트 폴더'
   const currentPath = breadcrumbs.length ? breadcrumbs.map(item => item.name).join(' / ') : '최상위 폴더'
+  const isExploreMode = mode === 'explore'
+  const isIngestMode = mode === 'ingest'
   const isSearchMode = searchQuery.trim().length > 0
   const visibleItems = isSearchMode ? searchResults : files
   const requestedBy = profile?.userName?.trim() || profile?.teamName?.trim() || 'default-user'
@@ -222,8 +233,9 @@ export default function VaultPage() {
   )
 
   useEffect(() => {
+    if (!isExploreMode) return
     void loadFolder(null, [])
-  }, [loadFolder])
+  }, [isExploreMode, loadFolder])
 
   const handleSelectFolder = useCallback(
     (folder: VaultItem) => {
@@ -271,13 +283,17 @@ export default function VaultPage() {
   )
 
   const reloadVisibleItems = useCallback(async () => {
+    if (!isExploreMode) {
+      return
+    }
+
     if (isSearchMode) {
       await runSearch(searchQuery)
       return
     }
 
     await loadFolder(currentParentId, breadcrumbs)
-  }, [breadcrumbs, currentParentId, isSearchMode, loadFolder, runSearch, searchQuery])
+  }, [breadcrumbs, currentParentId, isExploreMode, isSearchMode, loadFolder, runSearch, searchQuery])
 
   const refreshVisibleItems = useCallback(async () => {
     const count = await RefreshVault()
@@ -398,10 +414,18 @@ export default function VaultPage() {
 
       try {
         const result = await IngestKnowledgeSource(sourceType, trimmedSource, chatSession.chatModel, requestedBy)
+        const metadataBits: string[] = []
+        if ((result.elapsedMs ?? 0) > 0) metadataBits.push(`elapsed ${result.elapsedMs}ms`)
+        if ((result.createdPaths?.length ?? 0) > 0) metadataBits.push(`files ${result.createdPaths?.length}`)
+
+        const detailBits = [`status: ${result.status}`]
+        if (metadataBits.length > 0) detailBits.push(metadataBits.join(', '))
+        if (sourceSummary) detailBits.push(sourceSummary)
+
         setIngestFeedback({
           tone: 'success',
           message: successMessage,
-          detail: sourceSummary ? `status: ${result.status} · ${sourceSummary}` : `status: ${result.status}`,
+          detail: detailBits.join(' · '),
           warnings: result.warnings ?? [],
         })
 
@@ -508,6 +532,65 @@ export default function VaultPage() {
     [pageBusy, runIngest, urlDraft],
   )
 
+  const handleBatchIngestSubmit = useCallback(
+    async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault()
+      if (pageBusy) return
+
+      const sources = batchDraft
+        .split(/[\n,]/)
+        .map(token => token.trim())
+        .filter(Boolean)
+
+      if (sources.length === 0) {
+        setIngestFeedback({
+          tone: 'error',
+          message: '배치 ingest 대상이 없습니다.',
+          detail: 'URL 또는 파일 경로를 한 줄에 하나씩 입력해주세요.',
+          warnings: [],
+        })
+        return
+      }
+
+      const sourceType: IngestSourceType = sources.every(isIngestURL) ? 'url' : 'file'
+      setIngestingSource(sourceType)
+      setIngestFeedback({
+        tone: 'info',
+        message: '배치 ingest를 실행하는 중입니다.',
+        detail: `대상 ${sources.length}건`,
+        warnings: [],
+      })
+      setError(null)
+
+      try {
+        const results = await IngestKnowledgeBatch(sourceType, sources, chatSession.chatModel, requestedBy)
+        const successCount = results.filter(result => result.status !== 'failed').length
+        const failedCount = results.length - successCount
+        const warnings = results.flatMap(result => result.warnings ?? [])
+
+        setIngestFeedback({
+          tone: failedCount > 0 ? 'error' : 'success',
+          message: failedCount > 0 ? '배치 ingest가 경고와 함께 완료되었습니다.' : '배치 ingest가 완료되었습니다.',
+          detail: `총 ${results.length}건 · 성공 ${successCount}건 · 실패 ${failedCount}건`,
+          warnings,
+        })
+        setBatchDraft('')
+        setShowUrlInput(false)
+        await refreshVisibleItems()
+      } catch (batchError) {
+        setIngestFeedback({
+          tone: 'error',
+          message: '배치 ingest에 실패했습니다.',
+          detail: sanitizeErrorMessage(batchError, 'unknown error'),
+          warnings: [],
+        })
+      } finally {
+        setIngestingSource(null)
+      }
+    },
+    [IngestKnowledgeBatch, batchDraft, chatSession.chatModel, pageBusy, refreshVisibleItems, requestedBy],
+  )
+
   const handleIngestCommand = useCallback(
     async (rawInput?: string) => {
       if (pageBusy) return false
@@ -551,7 +634,7 @@ export default function VaultPage() {
           ...prev,
           {
             role: 'assistant',
-            content: `Ingest completed.\n\n- status: \`${result.status}\`\n- source type: \`${result.sourceType}\`\n- model: \`${result.model}\`${warningText}`,
+            content: `${formatIngestCompletionMessage(result)}${warningText}`,
           },
         ])
         return true
@@ -774,11 +857,12 @@ export default function VaultPage() {
     if (ingestingSource === 'url') return 'URL을 추가하는 중입니다.'
     if (ingestingSource === 'text') return '지식 소스를 추가하는 중입니다.'
     if (refreshing) return '지식 베이스 인덱스를 새로고침하는 중입니다.'
+    if (isIngestMode) return '지식 추가 준비 완료'
     if (searchLoading) return `"${searchQuery.trim()}" 검색 중입니다.`
     if (structureLoading) return '지식 베이스 구조를 불러오는 중입니다.'
     if (refreshCount !== null) return `마지막 새로고침: ${refreshCount}개 항목 인덱싱`
     return '지식 베이스 인덱스 준비 완료'
-  }, [ingestingSource, refreshCount, refreshing, searchLoading, searchQuery, structureLoading])
+  }, [ingestingSource, isIngestMode, refreshCount, refreshing, searchLoading, searchQuery, structureLoading])
 
   const ingestFeedbackClassName =
     ingestFeedback?.tone === 'success'
@@ -797,36 +881,46 @@ export default function VaultPage() {
             </div>
             <div>
               <h1 className="text-xl font-semibold text-slate-900 dark:text-slate-100">지식 베이스</h1>
-              <p className="mt-1 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
-                현재 Vault 인덱스를 탐색하고 마크다운 문서를 확인할 수 있습니다. 변경 사항이 있으면 새로고침으로 목록을 갱신하세요.
-              </p>
+              {isExploreMode ? (
+                <p className="mt-1 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
+                  현재 Vault 인덱스를 탐색하고 마크다운 문서를 확인할 수 있습니다. 변경 사항이 있으면 새로고침으로 목록을 갱신하세요.
+                </p>
+              ) : (
+                <p className="mt-1 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
+                  파일과 URL을 지식 베이스에 추가하고, 배치 ingest 및 lint로 품질을 확인하세요.
+                </p>
+              )}
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
             <span className="rounded-full bg-slate-100 px-3 py-1 dark:bg-slate-800">{statusText}</span>
-            {isSearchMode && (
+            {isExploreMode && isSearchMode && (
               <span className="rounded-full bg-sky-100 px-3 py-1 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300">
                 {formatCount('검색 결과', searchResults.length)}
               </span>
             )}
             <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileInputChange} />
-            <button
-              type="button"
-              onClick={handleOpenFilePicker}
-              disabled={pageBusy}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-            >
-              파일 추가
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowUrlInput(current => !current)}
-              disabled={pageBusy}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-            >
-              URL 추가
-            </button>
+            {isIngestMode && (
+              <>
+                <button
+                  type="button"
+                  onClick={handleOpenFilePicker}
+                  disabled={pageBusy}
+                  className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                >
+                  파일 추가
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowUrlInput(current => !current)}
+                  disabled={pageBusy}
+                  className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                >
+                  URL 추가
+                </button>
+              </>
+            )}
             <button
               type="button"
               onClick={handleRefresh}
@@ -839,46 +933,48 @@ export default function VaultPage() {
           </div>
         </div>
 
-        <form onSubmit={handleSearchSubmit} className="mt-4 flex flex-col gap-2 sm:flex-row">
-          <div className="relative flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <input
-              value={searchDraft}
-              onChange={event => setSearchDraft(event.target.value)}
-              placeholder="지식 베이스 파일 검색"
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-10 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-sky-400 focus:bg-white dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-sky-500"
-            />
-            {searchDraft && (
+        {isExploreMode && (
+          <form onSubmit={handleSearchSubmit} className="mt-4 flex flex-col gap-2 sm:flex-row">
+            <div className="relative flex-1">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input
+                value={searchDraft}
+                onChange={event => setSearchDraft(event.target.value)}
+                placeholder="지식 베이스 파일 검색"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-10 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-sky-400 focus:bg-white dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-sky-500"
+              />
+              {searchDraft && (
+                <button
+                  type="button"
+                  onClick={handleClearSearch}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                disabled={searchLoading || pageBusy}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+              >
+                <Search size={16} />
+                검색
+              </button>
               <button
                 type="button"
-                onClick={handleClearSearch}
-                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                onClick={handleGoRoot}
+                disabled={pageBusy}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
               >
-                <X size={14} />
+                루트
               </button>
-            )}
-          </div>
-          <div className="flex gap-2">
-            <button
-              type="submit"
-              disabled={searchLoading || pageBusy}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
-            >
-              <Search size={16} />
-              검색
-            </button>
-            <button
-              type="button"
-              onClick={handleGoRoot}
-              disabled={pageBusy}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-            >
-              루트
-            </button>
-          </div>
-        </form>
+            </div>
+          </form>
+        )}
 
-        {showUrlInput && (
+        {isIngestMode && showUrlInput && (
           <form
             onSubmit={handleUrlSubmit}
             className="mt-3 flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:flex-row sm:items-center dark:border-slate-700 dark:bg-slate-900/70"
@@ -956,70 +1052,134 @@ export default function VaultPage() {
         </div>
       )}
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[280px_320px_minmax(0,1fr)]">
-        <section
-          className={`min-h-0 border-b border-slate-200 lg:border-b-0 lg:border-r dark:border-slate-700 ${
-            pageBusy ? 'pointer-events-none opacity-70' : ''
-          }`}
-        >
-          <VaultFolderTree
-            breadcrumbs={breadcrumbs}
-            folders={folders}
-            loading={structureLoading}
-            onGoBack={handleGoBack}
-            onGoRoot={handleGoRoot}
-            onSelectFolder={handleSelectFolder}
-          />
-        </section>
+      {isExploreMode && (
+        <div data-testid="vault-explore-panel" className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[280px_320px_minmax(0,1fr)]">
+          <section
+            className={`min-h-0 border-b border-slate-200 lg:border-b-0 lg:border-r dark:border-slate-700 ${
+              pageBusy ? 'pointer-events-none opacity-70' : ''
+            }`}
+          >
+            <VaultFolderTree
+              breadcrumbs={breadcrumbs}
+              folders={folders}
+              loading={structureLoading}
+              onGoBack={handleGoBack}
+              onGoRoot={handleGoRoot}
+              onSelectFolder={handleSelectFolder}
+            />
+          </section>
 
-        <section
-          className={`min-h-0 border-b border-slate-200 lg:border-b-0 lg:border-r dark:border-slate-700 ${
-            pageBusy ? 'pointer-events-none opacity-70' : ''
-          }`}
-        >
-          <VaultFileList
-            items={visibleItems}
-            loading={structureLoading || searchLoading}
-            selectedPath={selectedFilePath}
-            title={listTitle}
-            subtitle={listSubtitle}
-            emptyText={listEmptyText}
-            showPath={isSearchMode}
-            onSelectFile={handleSelectFile}
-          />
-        </section>
+          <section
+            className={`min-h-0 border-b border-slate-200 lg:border-b-0 lg:border-r dark:border-slate-700 ${
+              pageBusy ? 'pointer-events-none opacity-70' : ''
+            }`}
+          >
+            <VaultFileList
+              items={visibleItems}
+              loading={structureLoading || searchLoading}
+              selectedPath={selectedFilePath}
+              title={listTitle}
+              subtitle={listSubtitle}
+              emptyText={listEmptyText}
+              showPath={isSearchMode}
+              onSelectFile={handleSelectFile}
+            />
+          </section>
 
-        <section className="min-h-0">
-          <VaultFileViewer file={selectedFile} loading={fileLoading} />
-        </section>
-      </div>
+          <section className="min-h-0">
+            <VaultFileViewer file={selectedFile} loading={fileLoading} />
+          </section>
+        </div>
+      )}
 
-      <div className="pointer-events-none fixed bottom-24 right-6 z-30">
-        <button
-          type="button"
-          onClick={() => {
-            void runKnowledgeBaseLint()
-          }}
-          disabled={pageBusy}
-          className="pointer-events-auto inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-lg transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-        >
-          {linting ? 'Linting...' : 'KB Lint'}
-        </button>
-      </div>
+      {isIngestMode && (
+        <div data-testid="vault-ingest-panel" className="flex-1 overflow-y-auto p-6">
+          <div className="mx-auto flex max-w-5xl flex-col gap-4">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900">
+              <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">지식 추가 작업</h2>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                파일/URL/배치 입력으로 지식을 수집하고, Lint로 문서 상태를 확인할 수 있습니다.
+              </p>
+            </div>
 
-      <SharedAiChatPanel
-        session={vaultChatSession}
-        title="Knowledge Base AI"
-        subtitle="검색된 지식 베이스 문서를 바탕으로 질문하세요."
-        buttonLabel="지식 베이스 채팅"
-        badgeCount={isSearchMode ? searchResults.length : files.length}
-        suggestions={[
-          '현재 폴더 내용을 요약해줘',
-          '보안 관련 문서를 찾아줘',
-          '이 주제와 관련된 힌트를 보여줘',
-        ]}
-        commands={vaultCommands}
-      />
+            <form
+              onSubmit={handleBatchIngestSubmit}
+              className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">배치 ingest</h3>
+                <button
+                  type="submit"
+                  disabled={pageBusy}
+                  className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+                >
+                  배치 실행
+                </button>
+              </div>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                URL 또는 파일 경로를 콤마(,) 또는 줄바꿈으로 구분해 입력하세요.
+              </p>
+              <textarea
+                value={batchDraft}
+                onChange={event => setBatchDraft(event.target.value)}
+                rows={6}
+                placeholder="https://example.com/a
+https://example.com/b
+D:\\Vault\\knowledge-base\\wiki\\sources\\sample.md"
+                className="mt-3 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-sky-400 focus:bg-white dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-sky-500"
+              />
+            </form>
+
+            <div className="flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900">
+              <button
+                type="button"
+                onClick={() => {
+                  void runKnowledgeBaseLint()
+                }}
+                disabled={pageBusy}
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-800"
+              >
+                {linting ? 'Linting...' : 'KB Lint'}
+              </button>
+              <button
+                type="button"
+                onClick={handleRefresh}
+                disabled={pageBusy}
+                className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
+                인덱스 새로고침
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900">
+              <p className="text-sm text-slate-500 dark:text-slate-400">지식 추가 후 문서 확인과 질의는 탐색 화면에서 진행하세요.</p>
+              <Link
+                to="/vault/explore"
+                className="rounded-lg bg-sky-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-sky-700"
+              >
+                탐색으로 이동
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isExploreMode && (
+        <SharedAiChatPanel
+          session={vaultChatSession}
+          title="Knowledge Base AI"
+          subtitle="검색된 지식 베이스 문서를 바탕으로 질문하세요."
+          buttonLabel="지식 베이스 채팅"
+          badgeCount={isSearchMode ? searchResults.length : files.length}
+          suggestions={[
+            '현재 폴더 내용을 요약해줘',
+            '보안 관련 문서를 찾아줘',
+            '이 주제와 관련된 힌트를 보여줘',
+          ]}
+          commands={vaultCommands}
+        />
+      )}
     </div>
   )
 }

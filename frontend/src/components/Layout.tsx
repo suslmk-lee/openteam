@@ -1,4 +1,4 @@
-import { Outlet, NavLink, useNavigate } from 'react-router-dom'
+import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard,
   Users,
@@ -30,11 +30,13 @@ import { useTeamProfile } from '../contexts/TeamProfileContext'
 export default function Layout() {
   const [collapsed, setCollapsed] = useState(false)
   const [teamMenuOpen, setTeamMenuOpen] = useState(false)
+  const [vaultMenuOpen, setVaultMenuOpen] = useState(false)
   const [reportMenuOpen, setReportMenuOpen] = useState(false)
   const [workDataMenuOpen, setWorkDataMenuOpen] = useState(false)
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false)
   const { profile, loading } = useTeamProfile()
   const navigate = useNavigate()
+  const location = useLocation()
 
   // Redirect to onboarding if not setup
   useEffect(() => {
@@ -44,6 +46,12 @@ export default function Layout() {
       navigate('/onboarding', { replace: true })
     }
   }, [loading, profile, navigate])
+
+  useEffect(() => {
+    if (location.pathname.startsWith('/vault')) {
+      setVaultMenuOpen(true)
+    }
+  }, [location.pathname])
 
   if (loading) return null
 
@@ -119,7 +127,43 @@ export default function Layout() {
         {/* Nav */}
         <nav className="flex-1 py-4 space-y-1 px-2 overflow-y-auto">
           <SidebarLink to="/" icon={<LayoutDashboard size={20} />} label="대시보드" collapsed={collapsed} />
-          <SidebarLink to="/vault" icon={<BookOpen size={20} />} label="지식베이스" collapsed={collapsed} />
+          {collapsed ? (
+            <SidebarLink to="/vault/explore" icon={<BookOpen size={20} />} label="지식베이스" collapsed />
+          ) : (
+            <div className="space-y-1">
+              <button
+                type="button"
+                aria-label="지식베이스 메뉴"
+                onClick={() => setVaultMenuOpen(prev => !prev)}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                  vaultMenuOpen ? 'bg-slate-700 dark:bg-slate-600 text-white' : 'text-slate-300 hover:bg-slate-700 dark:hover:bg-slate-600 hover:text-white dark:text-slate-300'
+                }`}
+              >
+                <BookOpen size={20} />
+                <span className="flex-1 text-left">지식베이스</span>
+                {vaultMenuOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+              </button>
+
+              {vaultMenuOpen && (
+                <div className="ml-2 space-y-1 border-l-2 border-slate-700 pl-2">
+                  <SidebarLink
+                    to="/vault/explore"
+                    icon={<BookOpen size={18} />}
+                    label="탐색"
+                    collapsed={false}
+                    ariaLabel="지식베이스 탐색"
+                  />
+                  <SidebarLink
+                    to="/vault/ingest"
+                    icon={<FilePlus size={18} />}
+                    label="추가"
+                    collapsed={false}
+                    ariaLabel="지식베이스 추가"
+                  />
+                </div>
+              )}
+            </div>
+          )}
           
           {/* Reports Accordion */}
           <div className="space-y-1">
@@ -252,15 +296,18 @@ function SidebarLink({
   icon,
   label,
   collapsed,
+  ariaLabel,
 }: {
   to: string
   icon: React.ReactNode
   label: string
   collapsed: boolean
+  ariaLabel?: string
 }) {
   return (
     <NavLink
       to={to}
+      aria-label={ariaLabel ?? label}
       className={({ isActive }) =>
         `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
           isActive

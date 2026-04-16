@@ -23,7 +23,9 @@ import WeeklyRetro from './pages/WeeklyRetro'
 import GmailPage from './pages/GmailPage'
 import CalendarPage from './pages/CalendarPage'
 import PersonalAttendance from './pages/PersonalAttendance'
-import VaultPage from './pages/VaultPage'
+import VaultRouteRedirect from './pages/VaultRouteRedirect'
+import VaultExplorePage from './pages/VaultExplorePage'
+import VaultIngestPage from './pages/VaultIngestPage'
 
 const container = document.getElementById('root')
 const root = createRoot(container!)
@@ -51,7 +53,9 @@ root.render(
             <Route path="/team/common-codes" element={<Navigate to="/settings/common-codes" replace />} />
             <Route path="/workdata/gmail" element={<GmailPage />} />
             <Route path="/workdata/calendar" element={<CalendarPage />} />
-            <Route path="/vault" element={<VaultPage />} />
+            <Route path="/vault" element={<VaultRouteRedirect />} />
+            <Route path="/vault/explore" element={<VaultExplorePage />} />
+            <Route path="/vault/ingest" element={<VaultIngestPage />} />
             <Route path="/settings" element={<Navigate to="/settings/user" replace />} />
             <Route path="/settings/user" element={<Settings section="user" />} />
             <Route path="/settings/template" element={<Settings section="template" />} />

@@ -151,6 +151,17 @@ export namespace db {
 	    requestedBy: string;
 	    status: string;
 	    warnings?: string[];
+	    rawPath?: string;
+	    wikiSourcePath?: string;
+	    derivedPaths?: string[];
+	    createdPaths?: string[];
+	    indexPath?: string;
+	    logPath?: string;
+	    elapsedMs?: number;
+	    extractorUsed?: boolean;
+	    extractorWarning?: string;
+	    skillSourceDir?: string;
+	    processLogs?: string[];
 	
 	    static createFrom(source: any = {}) {
 	        return new IngestResult(source);
@@ -164,6 +175,17 @@ export namespace db {
 	        this.requestedBy = source["requestedBy"];
 	        this.status = source["status"];
 	        this.warnings = source["warnings"];
+	        this.rawPath = source["rawPath"];
+	        this.wikiSourcePath = source["wikiSourcePath"];
+	        this.derivedPaths = source["derivedPaths"];
+	        this.createdPaths = source["createdPaths"];
+	        this.indexPath = source["indexPath"];
+	        this.logPath = source["logPath"];
+	        this.elapsedMs = source["elapsedMs"];
+	        this.extractorUsed = source["extractorUsed"];
+	        this.extractorWarning = source["extractorWarning"];
+	        this.skillSourceDir = source["skillSourceDir"];
+	        this.processLogs = source["processLogs"];
 	    }
 	}
 	export class Integration {
@@ -1339,4 +1361,3 @@ export namespace main {
 	}
 
 }
-

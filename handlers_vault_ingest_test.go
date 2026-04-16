@@ -33,7 +33,7 @@ func TestIngestKnowledgeSource_WhitespaceSourceTrimmed(t *testing.T) {
 	if result.Source != "hello world" {
 		t.Fatalf("expected trimmed source, got %q", result.Source)
 	}
-	if result.Status != "completed" {
+	if result.Status != "completed" && result.Status != "completed_with_warnings" {
 		t.Fatalf("expected completed status, got %q", result.Status)
 	}
 }
@@ -45,7 +45,7 @@ func TestIngest_WritesRawSource(t *testing.T) {
 	if err != nil {
 		t.Fatalf("IngestKnowledgeSource returned error: %v", err)
 	}
-	if result.Status != "completed" {
+	if result.Status != "completed" && result.Status != "completed_with_warnings" {
 		t.Fatalf("expected completed status, got %q", result.Status)
 	}
 
@@ -84,7 +84,7 @@ func TestIngest_CreatesWikiSourcePage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("IngestKnowledgeSource returned error: %v", err)
 	}
-	if result.Status != "completed" {
+	if result.Status != "completed" && result.Status != "completed_with_warnings" {
 		t.Fatalf("expected completed status, got %q", result.Status)
 	}
 
@@ -125,7 +125,7 @@ func TestIngest_UpdatesIndexAndLog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("IngestKnowledgeSource returned error: %v", err)
 	}
-	if result.Status != "completed" {
+	if result.Status != "completed" && result.Status != "completed_with_warnings" {
 		t.Fatalf("expected completed status, got %q", result.Status)
 	}
 
@@ -232,7 +232,12 @@ func TestIngest_UsesStructuredExtractorWhenAvailable(t *testing.T) {
 	assertContainsAll(t, entityContent, "# Hermes Agent")
 
 	conceptContent := readVaultTestFile(t, app.vaultRoot, "knowledge-base/wiki/concepts/knowledge-graph.md")
-	assertContainsAll(t, conceptContent, "# Knowledge Graph")
+	assertContainsAll(t, conceptContent,
+		"# Knowledge Graph",
+		"## Related Entities",
+		"[Hermes Agent](/knowledge-base/wiki/entities/hermes-agent.md)",
+		"## Related Synthesis",
+	)
 
 	synthesisFiles := listIngestMarkdownFiles(t, app.vaultRoot, "knowledge-base/wiki/synthesis")
 	if len(synthesisFiles) == 0 {
@@ -249,6 +254,205 @@ func TestIngest_UsesStructuredExtractorWhenAvailable(t *testing.T) {
 	)
 }
 
+func TestIngest_ResultIncludesArtifactMetadata(t *testing.T) {
+	app := setupVaultRetrievalTest(t)
+	skillDir := filepath.Join(app.vaultRoot, ".claude", "skills")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("failed to create skill directory: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(skillDir, "ingest.md"),
+		[]byte("# Ingest Skill\n\nPrefer concept names that match plugin and workflow terms.\n"),
+		0o644,
+	); err != nil {
+		t.Fatalf("failed to seed ingest skill file: %v", err)
+	}
+
+	originalExtractor := ingestKnowledgeExtractor
+	ingestKnowledgeExtractor = func(_ *App, _ *ingestSource) (*ingestStructuredKnowledge, error) {
+		return &ingestStructuredKnowledge{
+			Entities: []string{"AmebaHead"},
+			Concepts: []string{"Skills Cleaner"},
+			Summary:  "Skills Cleaner provides slash-command based skill inventory workflows.",
+			Claims: []string{
+				"Supports /profile-skills and /clean-skills command flows.",
+			},
+		}, nil
+	}
+	defer func() {
+		ingestKnowledgeExtractor = originalExtractor
+	}()
+
+	result, err := app.IngestKnowledgeSource(
+		"text",
+		"skills-cleaner plugin tracks skill usage with /profile-skills and /clean-skills commands.",
+		"claude",
+		"tester",
+	)
+	if err != nil {
+		t.Fatalf("IngestKnowledgeSource returned error: %v", err)
+	}
+
+	if !result.ExtractorUsed {
+		t.Fatalf("expected extractorUsed=true, got false")
+	}
+	if result.ExtractorWarning != "" {
+		t.Fatalf("expected empty extractor warning, got %q", result.ExtractorWarning)
+	}
+	if result.ElapsedMs <= 0 {
+		t.Fatalf("expected elapsedMs > 0, got %d", result.ElapsedMs)
+	}
+	if result.RawPath == "" {
+		t.Fatal("expected rawPath to be populated")
+	}
+	if result.WikiSourcePath == "" {
+		t.Fatal("expected wikiSourcePath to be populated")
+	}
+	if result.IndexPath != wikiIndexPath {
+		t.Fatalf("expected index path %q, got %q", wikiIndexPath, result.IndexPath)
+	}
+	if result.LogPath != wikiLogPath {
+		t.Fatalf("expected log path %q, got %q", wikiLogPath, result.LogPath)
+	}
+	if len(result.DerivedPaths) == 0 {
+		t.Fatal("expected derived paths to be populated")
+	}
+	if len(result.CreatedPaths) < 4 {
+		t.Fatalf("expected created paths to include raw/source/derived/index/log, got %#v", result.CreatedPaths)
+	}
+	if result.SkillSourceDir == "" {
+		t.Fatal("expected skill source directory to be populated")
+	}
+	if len(result.ProcessLogs) == 0 {
+		t.Fatal("expected process logs to be populated")
+	}
+	foundSkillLog := false
+	for _, line := range result.ProcessLogs {
+		if strings.Contains(line, "skills loaded") {
+			foundSkillLog = true
+			break
+		}
+	}
+	if !foundSkillLog {
+		t.Fatalf("expected process logs to include skills loaded entry, got %#v", result.ProcessLogs)
+	}
+}
+
+func TestBuildIngestKnowledgeExtractionPrompt_IncludesSkillGuidance(t *testing.T) {
+	src := &ingestSource{
+		Title:      "skills-cleaner README",
+		SourceType: "url",
+		Content:    "Tracks usage with /profile-skills and /clean-skills hooks.",
+		SkillHints: []ingestSkillHint{
+			{Name: "ingest", Description: "Collect evidence and keep claims grounded in source content."},
+			{Name: "query", Description: "Prefer repository-specific terms for concepts and entities."},
+		},
+	}
+
+	prompt := buildIngestKnowledgeExtractionPrompt(src)
+	assertContainsAll(t, prompt,
+		"Skill Guidance (local Claude skills):",
+		"- ingest: Collect evidence and keep claims grounded in source content.",
+		"- query: Prefer repository-specific terms for concepts and entities.",
+	)
+}
+
+func TestIngest_WikiSourcePageIncludesSummaryKeyPointsAndCommands(t *testing.T) {
+	app := setupVaultRetrievalTest(t)
+
+	originalExtractor := ingestKnowledgeExtractor
+	ingestKnowledgeExtractor = func(_ *App, _ *ingestSource) (*ingestStructuredKnowledge, error) {
+		return &ingestStructuredKnowledge{
+			Entities: []string{"Skills Cleaner"},
+			Concepts: []string{"Skill Cleanup Workflow"},
+			Summary:  "Skills Cleaner summarizes skill usage and duplicate cleanup opportunities.",
+			Claims: []string{
+				"Tracks skill calls from PostToolUse and UserPromptSubmit hooks.",
+				"Shows duplicate cleanup candidates above 90 percent similarity.",
+			},
+		}, nil
+	}
+	defer func() {
+		ingestKnowledgeExtractor = originalExtractor
+	}()
+
+	sourcePath := filepath.Join(t.TempDir(), "skills-cleaner.md")
+	sourceContent := strings.Join([]string{
+		"# Skills Cleaner",
+		"",
+		"Commands:",
+		"- /profile-skills",
+		"- /clean-skills",
+		"",
+		"Tracks tool usage events for analysis.",
+	}, "\n")
+	if err := os.WriteFile(sourcePath, []byte(sourceContent), 0o644); err != nil {
+		t.Fatalf("failed to write source file: %v", err)
+	}
+
+	result, err := app.IngestKnowledgeSource("file", sourcePath, "claude", "tester")
+	if err != nil {
+		t.Fatalf("IngestKnowledgeSource returned error: %v", err)
+	}
+	if result.Status != "completed" && result.Status != "completed_with_warnings" {
+		t.Fatalf("expected completed status, got %q", result.Status)
+	}
+
+	_, wikiContent := readSingleIngestMarkdownFile(t, app.vaultRoot, "knowledge-base/wiki/sources", "skills-cleaner")
+	assertContainsAll(t, wikiContent,
+		"## Summary",
+		"Skills Cleaner summarizes skill usage and duplicate cleanup opportunities.",
+		"## Key Points",
+		"Tracks skill calls from PostToolUse and UserPromptSubmit hooks.",
+		"## Commands",
+		"`/profile-skills`",
+		"`/clean-skills`",
+	)
+}
+
+func TestIngest_FailsWhenStructuredExtractionFails(t *testing.T) {
+	app := setupVaultRetrievalTest(t)
+
+	originalExtractor := ingestKnowledgeExtractor
+	ingestKnowledgeExtractor = func(_ *App, _ *ingestSource) (*ingestStructuredKnowledge, error) {
+		return nil, fmt.Errorf("extractor unavailable")
+	}
+	defer func() {
+		ingestKnowledgeExtractor = originalExtractor
+	}()
+
+	result, err := app.IngestKnowledgeSource("text", "구조화 추출 실패 케이스", "claude", "tester")
+	_ = result
+	if err == nil {
+		t.Fatal("expected ingest failure when structured extraction fails")
+	}
+	if !strings.Contains(err.Error(), "structured knowledge extraction failed") {
+		t.Fatalf("expected structured extraction failure error, got %q", err.Error())
+	}
+}
+
+func TestIngest_FailsWhenStructuredExtractionMissingEntityOrConcept(t *testing.T) {
+	app := setupVaultRetrievalTest(t)
+
+	originalExtractor := ingestKnowledgeExtractor
+	ingestKnowledgeExtractor = func(_ *App, _ *ingestSource) (*ingestStructuredKnowledge, error) {
+		return &ingestStructuredKnowledge{
+			Summary: "요약은 있지만 엔티티/컨셉이 없습니다.",
+		}, nil
+	}
+	defer func() {
+		ingestKnowledgeExtractor = originalExtractor
+	}()
+
+	_, err := app.IngestKnowledgeSource("text", "LLM 위키 필수 링크 검증", "claude", "tester")
+	if err == nil {
+		t.Fatal("expected ingest failure when structured extraction lacks entity/concept")
+	}
+	if !strings.Contains(err.Error(), "must include at least one entity and one concept") {
+		t.Fatalf("unexpected error: %q", err.Error())
+	}
+}
+
 func TestIngest_UpdatesIndexAndLog_RebuildsCatalogRowWhenMalformedRowExists(t *testing.T) {
 	app := setupVaultRetrievalTest(t)
 
@@ -262,7 +466,7 @@ func TestIngest_UpdatesIndexAndLog_RebuildsCatalogRowWhenMalformedRowExists(t *t
 	if err != nil {
 		t.Fatalf("IngestKnowledgeSource returned error: %v", err)
 	}
-	if result.Status != "completed" {
+	if result.Status != "completed" && result.Status != "completed_with_warnings" {
 		t.Fatalf("expected completed status, got %q", result.Status)
 	}
 
@@ -815,6 +1019,22 @@ func TestMapSpecialMarkdownURL_GitHubRepoToReadmeAPI(t *testing.T) {
 		t.Fatalf("unexpected title: %q", title)
 	}
 	if accept != "application/vnd.github.raw" {
+		t.Fatalf("unexpected accept header: %q", accept)
+	}
+}
+
+func TestMapSpecialMarkdownURL_GitHubReleaseTagToAPI(t *testing.T) {
+	fetchURL, title, accept, ok := mapSpecialMarkdownURL("https://github.com/openai/codex/releases/tag/rust-v0.121.0")
+	if !ok {
+		t.Fatal("expected github release tag url mapping")
+	}
+	if fetchURL != "https://api.github.com/repos/openai/codex/releases/tags/rust-v0.121.0" {
+		t.Fatalf("unexpected fetch url: %q", fetchURL)
+	}
+	if title != "codex release rust-v0.121.0" {
+		t.Fatalf("unexpected title: %q", title)
+	}
+	if accept != "application/vnd.github+json" {
 		t.Fatalf("unexpected accept header: %q", accept)
 	}
 }

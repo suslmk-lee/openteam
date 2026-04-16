@@ -28,14 +28,16 @@ const (
 var ingestIndexLogMu sync.Mutex
 
 type ingestSource struct {
-	Title       string
-	Content     string
-	SourcePath  string
-	SourceURL   string
-	SourceType  string
-	IngestedAt  string
-	Model       string
-	RequestedBy string
+	Title          string
+	Content        string
+	SourcePath     string
+	SourceURL      string
+	SourceType     string
+	IngestedAt     string
+	Model          string
+	RequestedBy    string
+	SkillHints     []ingestSkillHint
+	SkillSourceDir string
 }
 
 type ingestStructuredKnowledge struct {
@@ -53,6 +55,11 @@ type wikiIndexEntry struct {
 	UpdatedAt string
 	Type      string
 	Category  string
+}
+
+type ingestSkillHint struct {
+	Name        string
+	Description string
 }
 
 type ingestStructuredExtractor func(app *App, src *ingestSource) (*ingestStructuredKnowledge, error)
@@ -149,7 +156,7 @@ func (a *App) writeRawSource(src *ingestSource) (string, error) {
 	return relPath, nil
 }
 
-func (a *App) writeWikiSourcePage(src *ingestSource, rawPath string) (string, error) {
+func (a *App) writeWikiSourcePage(src *ingestSource, rawPath string, knowledge *ingestStructuredKnowledge) (string, error) {
 	if src == nil {
 		return "", fmt.Errorf("ingest source is nil")
 	}
@@ -196,8 +203,31 @@ func (a *App) writeWikiSourcePage(src *ingestSource, rawPath string) (string, er
 		fmt.Sprintf("# %s", title),
 		"",
 		fmt.Sprintf("Raw source: `%s`", rawPath),
-		"",
 	)
+
+	summary := ""
+	if knowledge != nil {
+		summary = strings.TrimSpace(knowledge.Summary)
+	}
+	if summary != "" {
+		lines = append(lines, "", "## Summary", summary)
+	}
+
+	if knowledge != nil && len(knowledge.Claims) > 0 {
+		lines = append(lines, "", "## Key Points")
+		for _, claim := range normalizeIngestTerms(knowledge.Claims, 8) {
+			lines = append(lines, "- "+claim)
+		}
+	}
+
+	commands := extractIngestSlashCommands(src.Content)
+	if len(commands) > 0 {
+		lines = append(lines, "", "## Commands")
+		for _, command := range commands {
+			lines = append(lines, fmt.Sprintf("- `%s`", command))
+		}
+	}
+	lines = append(lines, "")
 
 	if err := os.WriteFile(absPath, []byte(strings.Join(lines, "\n")), 0o644); err != nil {
 		return "", fmt.Errorf("failed to write wiki source page: %w", err)
@@ -316,25 +346,11 @@ func (a *App) generateDerivedWikiArtifacts(src *ingestSource, sourcePage string,
 	}
 
 	knowledge := precomputedKnowledge
-	if knowledge == nil {
-		extracted, err := ingestKnowledgeExtractor(a, src)
-		if err == nil {
-			knowledge = extracted
-		}
+	if err := validateIngestStructuredKnowledge(knowledge); err != nil {
+		return nil, fmt.Errorf("structured knowledge is required for derived artifacts: %w", err)
 	}
-
-	entities, concepts := extractIngestEntityConceptCandidates(src)
-	if knowledge != nil {
-		if len(knowledge.Entities) > 0 {
-			entities = normalizeIngestTerms(knowledge.Entities, 8)
-		}
-		if len(knowledge.Concepts) > 0 {
-			concepts = normalizeIngestTerms(knowledge.Concepts, 8)
-		}
-	}
-	if len(entities) == 0 && len(concepts) == 0 {
-		return nil, nil
-	}
+	entities := knowledge.Entities
+	concepts := knowledge.Concepts
 
 	createdPaths := make([]string, 0, len(entities)+len(concepts)+1)
 	conceptPages := make(map[string]string, len(concepts))
@@ -367,6 +383,10 @@ func (a *App) generateDerivedWikiArtifacts(src *ingestSource, sourcePage string,
 	}
 	if synthesisPath != "" {
 		createdPaths = append(createdPaths, synthesisPath)
+	}
+
+	if err := a.enrichConceptPagesWithRelations(conceptPages, entityPages, synthesisPath); err != nil {
+		return nil, err
 	}
 
 	if err := a.appendDerivedLinksToSourcePage(sourcePage, entityPages, conceptPages, synthesisPath); err != nil {
@@ -424,6 +444,31 @@ func buildIngestKnowledgeExtractionPrompt(src *ingestSource) string {
 		content = string([]rune(content)[:4000])
 	}
 
+	skillGuidance := ""
+	if len(src.SkillHints) > 0 {
+		lines := make([]string, 0, len(src.SkillHints)+2)
+		lines = append(lines, "Skill Guidance (local Claude skills):")
+		for _, hint := range src.SkillHints {
+			name := strings.TrimSpace(hint.Name)
+			description := strings.TrimSpace(hint.Description)
+			if name == "" && description == "" {
+				continue
+			}
+			if name == "" {
+				lines = append(lines, "- "+description)
+				continue
+			}
+			if description == "" {
+				lines = append(lines, "- "+name)
+				continue
+			}
+			lines = append(lines, fmt.Sprintf("- %s: %s", name, description))
+		}
+		if len(lines) > 1 {
+			skillGuidance = strings.Join(lines, "\n") + "\n\n"
+		}
+	}
+
 	return fmt.Sprintf(`Extract structured knowledge from the source text and return JSON only.
 Schema:
 {
@@ -439,12 +484,157 @@ Rules:
 - max 8 items per list
 - summary in 1-2 sentences
 - no markdown, no prose, no code block wrapper
+- prioritize repository/domain naming patterns suggested by skill guidance when present
 
-Title: %s
+%sTitle: %s
 SourceType: %s
+SkillSourceDir: %s
 Content:
 %s
-`, title, src.SourceType, content)
+`, skillGuidance, title, src.SourceType, strings.TrimSpace(src.SkillSourceDir), content)
+}
+
+func (a *App) loadIngestSkillHints(limit int) ([]ingestSkillHint, string, string) {
+	candidates := a.ingestSkillCandidateDirs()
+	for _, dir := range candidates {
+		info, err := os.Stat(dir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, "", fmt.Sprintf("skills directory stat failed (%s): %v", dir, err)
+		}
+		if !info.IsDir() {
+			continue
+		}
+
+		hints, readErr := readIngestSkillHintsFromDir(dir, limit)
+		if readErr != nil {
+			return nil, "", fmt.Sprintf("failed to read skills from %s: %v", dir, readErr)
+		}
+		if len(hints) == 0 {
+			continue
+		}
+		return hints, filepath.Clean(dir), ""
+	}
+	return nil, "", ""
+}
+
+func (a *App) ingestSkillCandidateDirs() []string {
+	root := strings.TrimSpace(a.vaultRootDir())
+	candidates := []string{
+		strings.TrimSpace(os.Getenv("OPENREPORT_INGEST_SKILLS_DIR")),
+		filepath.Join(root, ".claude", "skills"),
+		filepath.Join(root, "knowledge-base", ".claude", "skills"),
+		filepath.Join(root, "AI-News", "knowledge-base", ".claude", "skills"),
+		`D:\vault\.claude\skills`,
+		`D:\vault\AI-News\knowledge-base\.claude\skills`,
+		`D:\valut\.claude\skills`,
+	}
+
+	seen := map[string]struct{}{}
+	unique := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			continue
+		}
+		normalized := filepath.Clean(candidate)
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		unique = append(unique, normalized)
+	}
+	return unique
+}
+
+func readIngestSkillHintsFromDir(dir string, limit int) ([]ingestSkillHint, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	if limit <= 0 {
+		limit = len(entries)
+	}
+
+	hints := make([]ingestSkillHint, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		ext := strings.ToLower(filepath.Ext(entry.Name()))
+		if ext != ".md" && ext != ".markdown" {
+			continue
+		}
+
+		path := filepath.Join(dir, entry.Name())
+		content, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return nil, readErr
+		}
+		name, description := extractIngestSkillHint(string(content), entry.Name())
+		if name == "" && description == "" {
+			continue
+		}
+		hints = append(hints, ingestSkillHint{Name: name, Description: description})
+	}
+
+	sort.SliceStable(hints, func(i, j int) bool {
+		return strings.ToLower(hints[i].Name) < strings.ToLower(hints[j].Name)
+	})
+	if len(hints) > limit {
+		hints = hints[:limit]
+	}
+	return hints, nil
+}
+
+func extractIngestSkillHint(content, fallbackName string) (string, string) {
+	name := strings.TrimSpace(strings.TrimSuffix(fallbackName, filepath.Ext(fallbackName)))
+	description := ""
+
+	frontmatter, ok := extractSimpleFrontmatter(content)
+	if ok {
+		if value := strings.TrimSpace(extractSimpleFrontmatterValue(content, "name")); value != "" {
+			name = value
+		}
+		for _, line := range strings.Split(frontmatter, "\n") {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(strings.ToLower(trimmed), "description:") {
+				description = strings.TrimSpace(strings.TrimPrefix(trimmed, "description:"))
+				description = strings.Trim(description, "\"'")
+				break
+			}
+		}
+	}
+
+	for _, line := range strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "#") {
+			heading := strings.TrimSpace(strings.TrimLeft(trimmed, "#"))
+			if heading != "" {
+				name = heading
+			}
+			continue
+		}
+		if strings.HasPrefix(trimmed, "---") {
+			continue
+		}
+		if description == "" {
+			description = trimmed
+		}
+		if name != "" && description != "" {
+			break
+		}
+	}
+
+	if len([]rune(description)) > 220 {
+		description = strings.TrimSpace(string([]rune(description)[:220])) + " ..."
+	}
+	return strings.TrimSpace(name), strings.TrimSpace(description)
 }
 
 func parseStructuredKnowledgeJSON(raw string) (*ingestStructuredKnowledge, error) {
@@ -494,6 +684,26 @@ func normalizeIngestTerms(values []string, limit int) []string {
 		}
 	}
 	return result
+}
+
+func validateIngestStructuredKnowledge(knowledge *ingestStructuredKnowledge) error {
+	if knowledge == nil {
+		return fmt.Errorf("empty structured extraction result")
+	}
+
+	knowledge.Summary = strings.TrimSpace(knowledge.Summary)
+	knowledge.Entities = normalizeIngestTerms(knowledge.Entities, 8)
+	knowledge.Concepts = normalizeIngestTerms(knowledge.Concepts, 8)
+	knowledge.Claims = normalizeIngestTerms(knowledge.Claims, 8)
+	knowledge.Gaps = normalizeIngestTerms(knowledge.Gaps, 8)
+
+	if knowledge.Summary == "" {
+		return fmt.Errorf("summary is required")
+	}
+	if len(knowledge.Entities) == 0 || len(knowledge.Concepts) == 0 {
+		return fmt.Errorf("must include at least one entity and one concept")
+	}
+	return nil
 }
 
 func (a *App) runIngestLintLite(touched []string, expectedIndexEntry, expectedLogMarker string) ([]string, error) {
@@ -1121,9 +1331,18 @@ func hasExactTrimmedLine(content, expected string) bool {
 func acquireURLIngestSource(sourceURL string) (*ingestSource, error) {
 	if specialURL, title, acceptHeader, ok := mapSpecialMarkdownURL(sourceURL); ok {
 		if content, err := fetchURLContent(specialURL, acceptHeader); err == nil && strings.TrimSpace(content) != "" {
+			normalizedTitle := strings.TrimSpace(title)
+			normalizedContent := strings.TrimSpace(content)
+			if releaseTitle, releaseContent, converted := formatGitHubReleasePayload(specialURL, normalizedContent); converted {
+				normalizedContent = releaseContent
+				if strings.TrimSpace(releaseTitle) != "" {
+					normalizedTitle = releaseTitle
+				}
+			}
+
 			return &ingestSource{
-				Title:      title,
-				Content:    content,
+				Title:      normalizedTitle,
+				Content:    normalizedContent,
 				SourceURL:  sourceURL,
 				SourceType: "url",
 			}, nil
@@ -1146,6 +1365,61 @@ func acquireURLIngestSource(sourceURL string) (*ingestSource, error) {
 		SourceURL:  sourceURL,
 		SourceType: "url",
 	}, nil
+}
+
+func formatGitHubReleasePayload(fetchURL, raw string) (string, string, bool) {
+	if !strings.Contains(fetchURL, "api.github.com/repos/") || !strings.Contains(fetchURL, "/releases/tags/") {
+		return "", "", false
+	}
+
+	var payload struct {
+		Name        string `json:"name"`
+		TagName     string `json:"tag_name"`
+		Body        string `json:"body"`
+		HTMLURL     string `json:"html_url"`
+		PublishedAt string `json:"published_at"`
+		Draft       bool   `json:"draft"`
+		Prerelease  bool   `json:"prerelease"`
+		Author      struct {
+			Login string `json:"login"`
+		} `json:"author"`
+	}
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		return "", "", false
+	}
+
+	title := strings.TrimSpace(payload.Name)
+	if title == "" {
+		title = strings.TrimSpace(payload.TagName)
+	}
+	if title == "" {
+		title = "GitHub Release"
+	}
+
+	lines := []string{
+		fmt.Sprintf("# %s", title),
+		"",
+	}
+	if tag := strings.TrimSpace(payload.TagName); tag != "" {
+		lines = append(lines, fmt.Sprintf("- tag: `%s`", tag))
+	}
+	if author := strings.TrimSpace(payload.Author.Login); author != "" {
+		lines = append(lines, fmt.Sprintf("- author: `%s`", author))
+	}
+	if published := strings.TrimSpace(payload.PublishedAt); published != "" {
+		lines = append(lines, fmt.Sprintf("- published_at: `%s`", published))
+	}
+	lines = append(lines, fmt.Sprintf("- draft: `%t`", payload.Draft))
+	lines = append(lines, fmt.Sprintf("- prerelease: `%t`", payload.Prerelease))
+	if htmlURL := strings.TrimSpace(payload.HTMLURL); htmlURL != "" {
+		lines = append(lines, fmt.Sprintf("- release_url: %s", htmlURL))
+	}
+
+	if body := strings.TrimSpace(payload.Body); body != "" {
+		lines = append(lines, "", "## Release Notes", body)
+	}
+
+	return title, strings.Join(lines, "\n"), true
 }
 
 func fetchURLContent(sourceURL, acceptHeader string) (string, error) {
@@ -1204,6 +1478,13 @@ func mapSpecialMarkdownURL(sourceURL string) (fetchURL string, title string, acc
 				name := filepath.Base(filePath)
 				return fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/%s/%s", owner, repo, branch, filePath), name, "text/plain", true
 			}
+			// https://github.com/{owner}/{repo}/releases/tag/{tag}
+			if len(parts) >= 5 && parts[2] == "releases" && parts[3] == "tag" {
+				tag := strings.TrimSpace(strings.Join(parts[4:], "/"))
+				if tag != "" {
+					return fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/tags/%s", owner, repo, url.PathEscape(tag)), repo + " release " + tag, "application/vnd.github+json", true
+				}
+			}
 		}
 	case "gist.github.com":
 		// https://gist.github.com/{user}/{id}
@@ -1232,7 +1513,9 @@ var (
 	ingestSlugUnsafePattern    = regexp.MustCompile(`[^a-z0-9]+`)
 	ingestSlugDashPattern      = regexp.MustCompile(`-+`)
 	ingestEntityPhrasePattern  = regexp.MustCompile(`\b[A-Z][A-Za-z0-9#+.-]*(?:\s+[A-Z][A-Za-z0-9#+.-]*){0,2}\b`)
-	ingestWordPattern          = regexp.MustCompile(`[A-Za-z][A-Za-z0-9#+.-]*`)
+	ingestKoreanPhrasePattern  = regexp.MustCompile(`[가-힣][가-힣0-9A-Za-z#+.-]*(?:\s+[가-힣A-Za-z0-9#+.-]{2,}){0,2}`)
+	ingestWordPattern          = regexp.MustCompile(`[A-Za-z가-힣][A-Za-z0-9가-힣#+.-]*`)
+	ingestSlashCommandPattern  = regexp.MustCompile(`(?:^|[\s(])(/[a-zA-Z][a-zA-Z0-9-]{1,63})\b`)
 )
 
 func extractReadableHTML(raw string) (string, string) {
@@ -1407,6 +1690,34 @@ func ingestSourceIngestedAt(src *ingestSource) string {
 	return time.Now().UTC().Format(time.RFC3339)
 }
 
+func extractIngestSlashCommands(content string) []string {
+	matches := ingestSlashCommandPattern.FindAllStringSubmatch(content, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+
+	seen := make(map[string]struct{}, len(matches))
+	commands := make([]string, 0, len(matches))
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		command := strings.TrimSpace(match[1])
+		if command == "" {
+			continue
+		}
+		if _, exists := seen[command]; exists {
+			continue
+		}
+		seen[command] = struct{}{}
+		commands = append(commands, command)
+		if len(commands) >= 12 {
+			break
+		}
+	}
+	return commands
+}
+
 func extractIngestEntityConceptCandidates(src *ingestSource) ([]string, []string) {
 	text := strings.TrimSpace(src.Content)
 	if text == "" {
@@ -1439,6 +1750,21 @@ func extractIngestEntityConceptCandidates(src *ingestSource) ([]string, []string
 		pushEntity(match)
 		if len(entities) >= 6 {
 			break
+		}
+	}
+	if len(entities) < 6 {
+		for _, match := range ingestKoreanPhrasePattern.FindAllString(text, -1) {
+			match = strings.TrimSpace(match)
+			if match == "" {
+				continue
+			}
+			if isIngestStopToken(match) {
+				continue
+			}
+			pushEntity(match)
+			if len(entities) >= 6 {
+				break
+			}
 		}
 	}
 	if title := strings.TrimSpace(src.Title); title != "" && !isIngestStopToken(title) {
@@ -1511,6 +1837,9 @@ func isIngestStopToken(token string) bool {
 		"uses": {}, "using": {}, "into": {}, "about": {}, "your": {}, "have": {}, "has": {},
 		"are": {}, "was": {}, "were": {}, "will": {}, "can": {}, "not": {}, "but": {},
 		"source": {}, "wiki": {}, "page": {}, "pages": {}, "note": {}, "notes": {},
+		"그리고": {}, "또한": {}, "대한": {}, "관련": {}, "내용": {}, "문서": {}, "정리": {}, "설명": {},
+		"링크": {}, "추가": {}, "파일": {}, "사용": {}, "합니다": {}, "했다": {}, "에서": {}, "으로": {},
+		"이다": {}, "있다": {}, "없다": {},
 	}
 	_, blocked := stopwords[normalized]
 	return blocked
@@ -1754,6 +2083,110 @@ func (a *App) appendDerivedLinksToSourcePage(
 
 	if err := os.WriteFile(absPath, []byte(strings.TrimRight(builder, "\n")+"\n"), 0o644); err != nil {
 		return fmt.Errorf("failed to write source page derived links: %w", err)
+	}
+	return nil
+}
+
+func (a *App) enrichConceptPagesWithRelations(
+	conceptPages map[string]string,
+	entityPages map[string]string,
+	synthesisPath string,
+) error {
+	if len(conceptPages) == 0 {
+		return nil
+	}
+
+	conceptTerms := make([]string, 0, len(conceptPages))
+	for concept := range conceptPages {
+		conceptTerms = append(conceptTerms, concept)
+	}
+	sort.Strings(conceptTerms)
+
+	entityTerms := make([]string, 0, len(entityPages))
+	for entity := range entityPages {
+		entityTerms = append(entityTerms, entity)
+	}
+	sort.Strings(entityTerms)
+
+	for _, concept := range conceptTerms {
+		conceptPath := normalizeVaultRelativePath(conceptPages[concept])
+		if conceptPath == "" {
+			continue
+		}
+
+		absPath, err := a.resolveVaultDiskPath(conceptPath)
+		if err != nil {
+			return err
+		}
+		content, err := os.ReadFile(absPath)
+		if err != nil {
+			return fmt.Errorf("failed to read concept page for relation enrichment: %w", err)
+		}
+
+		builder := strings.TrimRight(string(content), "\n")
+		changed := false
+
+		ensureHeading := func(heading string) {
+			marker := "\n" + heading + "\n"
+			if strings.Contains(builder, marker) {
+				return
+			}
+			builder += "\n\n" + heading + "\n"
+			changed = true
+		}
+		appendLine := func(line string) {
+			if strings.Contains(builder, line) {
+				return
+			}
+			builder += line + "\n"
+			changed = true
+		}
+
+		if len(entityTerms) > 0 {
+			ensureHeading("## Related Entities")
+			for _, entity := range entityTerms {
+				path := normalizeVaultRelativePath(entityPages[entity])
+				if path == "" {
+					continue
+				}
+				appendLine(fmt.Sprintf("- [%s](/%s)", entity, path))
+			}
+		}
+
+		relatedConceptCount := 0
+		for _, relatedConcept := range conceptTerms {
+			if relatedConcept == concept {
+				continue
+			}
+			if normalizeVaultRelativePath(conceptPages[relatedConcept]) != "" {
+				relatedConceptCount++
+			}
+		}
+		if relatedConceptCount > 0 {
+			ensureHeading("## Related Concepts")
+			for _, relatedConcept := range conceptTerms {
+				if relatedConcept == concept {
+					continue
+				}
+				path := normalizeVaultRelativePath(conceptPages[relatedConcept])
+				if path == "" {
+					continue
+				}
+				appendLine(fmt.Sprintf("- [%s](/%s)", relatedConcept, path))
+			}
+		}
+
+		if normalizedSynthesisPath := normalizeVaultRelativePath(synthesisPath); normalizedSynthesisPath != "" {
+			ensureHeading("## Related Synthesis")
+			appendLine(fmt.Sprintf("- [%s](/%s)", a.ingestIndexEntryTitle(normalizedSynthesisPath), normalizedSynthesisPath))
+		}
+
+		if !changed {
+			continue
+		}
+		if err := os.WriteFile(absPath, []byte(strings.TrimRight(builder, "\n")+"\n"), 0o644); err != nil {
+			return fmt.Errorf("failed to update concept page relations: %w", err)
+		}
 	}
 	return nil
 }

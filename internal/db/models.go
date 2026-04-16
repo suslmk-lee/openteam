@@ -44,12 +44,23 @@ type VaultReference struct {
 }
 
 type IngestResult struct {
-	SourceType  string   `json:"sourceType"`
-	Source      string   `json:"source"`
-	Model       string   `json:"model"`
-	RequestedBy string   `json:"requestedBy"`
-	Status      string   `json:"status"`
-	Warnings    []string `json:"warnings,omitempty"`
+	SourceType       string   `json:"sourceType"`
+	Source           string   `json:"source"`
+	Model            string   `json:"model"`
+	RequestedBy      string   `json:"requestedBy"`
+	Status           string   `json:"status"`
+	Warnings         []string `json:"warnings,omitempty"`
+	RawPath          string   `json:"rawPath,omitempty"`
+	WikiSourcePath   string   `json:"wikiSourcePath,omitempty"`
+	DerivedPaths     []string `json:"derivedPaths,omitempty"`
+	CreatedPaths     []string `json:"createdPaths,omitempty"`
+	IndexPath        string   `json:"indexPath,omitempty"`
+	LogPath          string   `json:"logPath,omitempty"`
+	ElapsedMs        int64    `json:"elapsedMs,omitempty"`
+	ExtractorUsed    bool     `json:"extractorUsed,omitempty"`
+	ExtractorWarning string   `json:"extractorWarning,omitempty"`
+	SkillSourceDir   string   `json:"skillSourceDir,omitempty"`
+	ProcessLogs      []string `json:"processLogs,omitempty"`
 }
 
 type Activity struct {

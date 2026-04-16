@@ -284,6 +284,16 @@ func (a *App) RunKnowledgeBaseLint() (*db.IngestResult, error) {
 }
 
 func (a *App) runIngestPipeline(sourceType, source, model, requestedBy string) (*db.IngestResult, error) {
+	startedAt := time.Now()
+	processLogs := make([]string, 0, 12)
+	appendProcessLog := func(message string) {
+		elapsed := time.Since(startedAt).Milliseconds()
+		if elapsed < 0 {
+			elapsed = 0
+		}
+		processLogs = append(processLogs, fmt.Sprintf("+%dms %s", elapsed, strings.TrimSpace(message)))
+	}
+
 	sourceType = strings.TrimSpace(sourceType)
 	source = strings.TrimSpace(source)
 	model = strings.TrimSpace(model)
@@ -316,31 +326,48 @@ func (a *App) runIngestPipeline(sourceType, source, model, requestedBy string) (
 	src.IngestedAt = time.Now().UTC().Format(time.RFC3339)
 	src.Model = model
 	src.RequestedBy = requestedBy
+	appendProcessLog(fmt.Sprintf("source acquired (%s)", src.SourceType))
 
-	var structuredKnowledge *ingestStructuredKnowledge
-	if src.SourceType == "url" {
-		knowledge, extractErr := ingestKnowledgeExtractor(a, src)
-		if extractErr != nil {
-			log.Printf("[vault] ingest raw normalization skipped: %v", extractErr)
-		} else {
-			structuredKnowledge = knowledge
-		}
+	skillHints, skillSourceDir, skillWarning := a.loadIngestSkillHints(12)
+	if len(skillHints) > 0 {
+		src.SkillHints = skillHints
+		src.SkillSourceDir = skillSourceDir
+		appendProcessLog(fmt.Sprintf("skills loaded (%d) from %s", len(skillHints), skillSourceDir))
+	} else {
+		appendProcessLog("skills not found; continuing without local skill guidance")
 	}
+	if skillWarning != "" {
+		appendProcessLog("skills warning: " + skillWarning)
+	}
+
+	structuredKnowledge, extractionUsed, extractionErr := a.tryExtractStructuredKnowledge(src)
+	if extractionErr != nil {
+		appendProcessLog("structured extraction failed: " + strings.TrimSpace(extractionErr.Error()))
+		return nil, fmt.Errorf("structured knowledge extraction failed: %w", extractionErr)
+	}
+	if validationErr := validateIngestStructuredKnowledge(structuredKnowledge); validationErr != nil {
+		appendProcessLog("structured extraction validation failed: " + strings.TrimSpace(validationErr.Error()))
+		return nil, fmt.Errorf("structured knowledge extraction failed: %w", validationErr)
+	}
+	appendProcessLog("structured extraction completed")
 
 	rawPath, err := a.writeRawSource(src)
 	if err != nil {
 		return nil, fmt.Errorf("failed to write raw source: %w", err)
 	}
+	appendProcessLog("raw source written: " + rawPath)
 
-	wikiPath, err := a.writeWikiSourcePage(src, rawPath)
+	wikiPath, err := a.writeWikiSourcePage(src, rawPath, structuredKnowledge)
 	if err != nil {
 		return nil, fmt.Errorf("failed to write wiki source page: %w", err)
 	}
+	appendProcessLog("wiki source written: " + wikiPath)
 
 	derivedPaths, err := a.generateDerivedWikiArtifacts(src, wikiPath, structuredKnowledge)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate derived wiki artifacts: %w", err)
 	}
+	appendProcessLog(fmt.Sprintf("derived artifacts generated: %d", len(derivedPaths)))
 
 	logEntry := formatWikiLogEntry("ingest", wikiPath, []string{
 		fmt.Sprintf("requested_by=%s", requestedBy),
@@ -351,18 +378,27 @@ func (a *App) runIngestPipeline(sourceType, source, model, requestedBy string) (
 	if err := a.updateWikiIndexEntriesAndLog(wikiPath, derivedPaths, logEntry); err != nil {
 		return nil, fmt.Errorf("failed to update wiki index/log: %w", err)
 	}
+	appendProcessLog("wiki index/log updated")
 
 	expectedIndexEntry := a.ingestIndexEntryLine(wikiPath)
 	touchedPaths := []string{rawPath, wikiPath, wikiIndexPath, wikiLogPath}
 	touchedPaths = append(touchedPaths, derivedPaths...)
-	warnings, err := a.runIngestLintLite(touchedPaths, expectedIndexEntry, logEntry)
+	lintWarnings, err := a.runIngestLintLite(touchedPaths, expectedIndexEntry, logEntry)
 	if err != nil {
 		return nil, fmt.Errorf("failed to run ingest lint-lite: %w", err)
 	}
+	warnings := make([]string, 0, len(lintWarnings)+1)
+	if skillWarning != "" {
+		warnings = append(warnings, skillWarning)
+	}
+	warnings = append(warnings, lintWarnings...)
+	warnings = dedupeAndSortWarnings(warnings)
+	appendProcessLog(fmt.Sprintf("lint completed (warnings=%d)", len(warnings)))
 
 	if _, err := a.RefreshVault(); err != nil {
 		return nil, fmt.Errorf("failed to refresh vault cache: %w", err)
 	}
+	appendProcessLog("vault cache refreshed")
 
 	status := "completed"
 	if len(warnings) > 0 {
@@ -370,16 +406,46 @@ func (a *App) runIngestPipeline(sourceType, source, model, requestedBy string) (
 		log.Printf("[vault] ingest lint-lite warnings: %s", strings.Join(warnings, "; "))
 	}
 
+	createdPaths := uniqueNormalizedPaths(append([]string{rawPath, wikiPath}, derivedPaths...))
+	createdPaths = uniqueNormalizedPaths(append(createdPaths, wikiIndexPath, wikiLogPath))
+	elapsedMs := time.Since(startedAt).Milliseconds()
+	if elapsedMs <= 0 {
+		elapsedMs = 1
+	}
+	appendProcessLog(fmt.Sprintf("ingest completed status=%s", status))
+
 	log.Printf("[vault] ingest completed sourceType=%s raw=%s wiki=%s status=%s", sourceType, rawPath, wikiPath, status)
 
 	return &db.IngestResult{
-		SourceType:  sourceType,
-		Source:      source,
-		Model:       model,
-		RequestedBy: requestedBy,
-		Status:      status,
-		Warnings:    warnings,
+		SourceType:     sourceType,
+		Source:         source,
+		Model:          model,
+		RequestedBy:    requestedBy,
+		Status:         status,
+		Warnings:       warnings,
+		RawPath:        rawPath,
+		WikiSourcePath: wikiPath,
+		DerivedPaths:   uniqueNormalizedPaths(derivedPaths),
+		CreatedPaths:   createdPaths,
+		IndexPath:      wikiIndexPath,
+		LogPath:        wikiLogPath,
+		ElapsedMs:      elapsedMs,
+		ExtractorUsed:  extractionUsed,
+		SkillSourceDir: skillSourceDir,
+		ProcessLogs:    processLogs,
 	}, nil
+}
+
+func (a *App) tryExtractStructuredKnowledge(src *ingestSource) (*ingestStructuredKnowledge, bool, error) {
+	if src == nil {
+		return nil, false, fmt.Errorf("ingest source is nil")
+	}
+
+	knowledge, err := ingestKnowledgeExtractor(a, src)
+	if err != nil {
+		return nil, true, fmt.Errorf("%s", strings.TrimSpace(err.Error()))
+	}
+	return knowledge, true, nil
 }
 
 func (a *App) RetrieveVaultContext(query string, limit int) ([]db.VaultReference, error) {

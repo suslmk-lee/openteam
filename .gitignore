@@ -5,6 +5,10 @@ dist/
 node_modules/
 frontend/node_modules/
 
+# Test folders
+frontend/__tests__/
+__tests__/
+
 *.log
 *.out
 
@@ -29,3 +33,7 @@ openreport.db
 
 *.xlsx
 CLAUDE.md
+.claude/*
+.docs/*
+.gstack/
+docs/*

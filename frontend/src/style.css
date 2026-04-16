@@ -1,5 +1,19 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-primary: var(--color-primary);
+  --color-primary-light: var(--color-primary-light);
+  --color-sidebar: var(--color-sidebar);
+  --color-sidebar-text: var(--color-sidebar-text);
+  --color-border: var(--color-border);
+  --color-bg: var(--color-bg);
+  --color-card: var(--color-card);
+  --color-text: var(--color-text);
+  --color-text-secondary: var(--color-text-secondary);
+}
+
 :root {
   --color-primary: #2563eb;
   --color-primary-light: #3b82f6;
@@ -8,6 +22,26 @@
   --color-border: #e2e8f0;
   --color-bg: #f8fafc;
   --color-card: #ffffff;
+  --color-text: #1e293b;
+  --color-text-secondary: #64748b;
+  --scrollbar-track: #e2e8f0;
+  --scrollbar-thumb: #94a3b8;
+  --scrollbar-thumb-hover: #64748b;
+}
+
+.dark {
+  --color-primary: #3b82f6;
+  --color-primary-light: #60a5fa;
+  --color-sidebar: #0f172a;
+  --color-sidebar-text: #f1f5f9;
+  --color-border: #334155;
+  --color-bg: #0f172a;
+  --color-card: #1e293b;
+  --color-text: #f1f5f9;
+  --color-text-secondary: #94a3b8;
+  --scrollbar-track: #0f172a;
+  --scrollbar-thumb: #475569;
+  --scrollbar-thumb-hover: #64748b;
 }
 
 html, body, #root {
@@ -16,11 +50,32 @@ html, body, #root {
   height: 100%;
   font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background-color: var(--color-bg);
-  color: #1e293b;
+  color: var(--color-text);
 }
 
 * {
   box-sizing: border-box;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  scrollbar-width: thin;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 999px;
+  border: 2px solid var(--scrollbar-track);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
 }
 
 @keyframes slideUp {
@@ -28,3 +83,57 @@ html, body, #root {
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
+/* Scoped dark-mode overrides for ReportEditor's legacy slate utility classes */
+.dark .report-editor .bg-white { background-color: var(--color-card) !important; }
+.dark .report-editor .bg-slate-50 { background-color: #111827 !important; }
+.dark .report-editor .bg-slate-100 { background-color: #1f2937 !important; }
+.dark .report-editor .bg-slate-200 { background-color: #374151 !important; }
+.dark .report-editor .border-slate-100 { border-color: #334155 !important; }
+.dark .report-editor .border-slate-200 { border-color: #334155 !important; }
+.dark .report-editor .border-slate-300 { border-color: #475569 !important; }
+.dark .report-editor .text-slate-900 { color: #f8fafc !important; }
+.dark .report-editor .text-slate-800 { color: #f1f5f9 !important; }
+.dark .report-editor .text-slate-700 { color: #e2e8f0 !important; }
+.dark .report-editor .text-slate-600 { color: #cbd5e1 !important; }
+.dark .report-editor .text-slate-500 { color: #94a3b8 !important; }
+.dark .report-editor .text-slate-400 { color: #64748b !important; }
+.dark .report-editor .text-slate-300 { color: #94a3b8 !important; }
+.dark .report-editor .hover\:bg-slate-50:hover { background-color: #1f2937 !important; }
+.dark .report-editor .hover\:bg-slate-100:hover { background-color: #334155 !important; }
+.dark .report-editor .hover\:bg-slate-200:hover { background-color: #475569 !important; }
+
+/* Global dark-mode compatibility for pages still using light slate utility classes */
+.dark .bg-white { background-color: var(--color-card) !important; }
+.dark .bg-slate-50 { background-color: #111827 !important; }
+.dark .bg-slate-100 { background-color: #1f2937 !important; }
+.dark .bg-slate-200 { background-color: #374151 !important; }
+.dark .border-slate-50 { border-color: #1f2937 !important; }
+.dark .border-slate-100 { border-color: #334155 !important; }
+.dark .border-slate-200 { border-color: #334155 !important; }
+.dark .border-slate-300 { border-color: #475569 !important; }
+.dark .text-slate-900 { color: #f8fafc !important; }
+.dark .text-slate-800 { color: #f1f5f9 !important; }
+.dark .text-slate-700 { color: #e2e8f0 !important; }
+.dark .text-slate-600 { color: #cbd5e1 !important; }
+.dark .text-slate-500 { color: #94a3b8 !important; }
+.dark .text-slate-400 { color: #64748b !important; }
+.dark .text-slate-300 { color: #94a3b8 !important; }
+.dark .hover\:bg-slate-50:hover { background-color: #1f2937 !important; }
+.dark .hover\:bg-slate-100:hover { background-color: #334155 !important; }
+.dark .hover\:bg-slate-200:hover { background-color: #475569 !important; }
+
+/* Native select dropdown theming */
+select option {
+  background-color: #ffffff;
+  color: #0f172a;
+}
+
+.dark select {
+  color-scheme: dark;
+}
+
+.dark select option,
+.dark select optgroup {
+  background-color: #1e293b;
+  color: #e2e8f0;
+}

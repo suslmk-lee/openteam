@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { SetupTeamProfile } from '../../wailsjs/go/main/App'
+import { useAppApi } from '../hooks/useAppApi'
 import { useTeamProfile } from '../contexts/TeamProfileContext'
 import {
   Building2,
   HardHat,
   Users,
+  UserCircle,
   ChevronRight,
   ChevronLeft,
   CheckCircle2,
@@ -39,6 +40,14 @@ const TEAM_TYPES = [
     desc: '소규모 개발팀 또는 연구팀을 운영하는 팀장',
     features: ['Linear 태스크보드', '주간 회고(KPT)', '간단 근태', '주간보고서'],
   },
+  {
+    code: 'personal',
+    label: '개인용',
+    icon: UserCircle,
+    color: 'purple',
+    desc: '개인 업무 관리 및 생산성 추적을 위한 단독 사용자',
+    features: ['개인 태스크보드', '일정/캘린더', '주간 회고', '개인 리포트'],
+  },
 ]
 
 const COLOR_MAP: Record<string, { card: string; badge: string; btn: string; icon: string }> = {
@@ -60,9 +69,18 @@ const COLOR_MAP: Record<string, { card: string; badge: string; btn: string; icon
     btn: 'bg-green-600 hover:bg-green-700',
     icon: 'bg-green-100 text-green-600',
   },
+  purple: {
+    card: 'border-purple-400 bg-purple-50',
+    badge: 'bg-purple-100 text-purple-700',
+    btn: 'bg-purple-600 hover:bg-purple-700',
+    icon: 'bg-purple-100 text-purple-600',
+  },
 }
 
 export default function Onboarding() {
+  const appApi = useAppApi()
+  const { SetupTeamProfile } = appApi
+
   const navigate = useNavigate()
   const { reload } = useTeamProfile()
   const [step, setStep] = useState(0)
@@ -124,7 +142,7 @@ export default function Onboarding() {
                 팀 유형에 맞는 관리 도구를 제공합니다.<br />
                 몇 가지 설정만 하면 바로 시작할 수 있습니다.
               </p>
-              <div className="grid grid-cols-3 gap-4 mb-8 text-sm">
+              <div className="grid grid-cols-4 gap-4 mb-8 text-sm">
                 <div className="bg-slate-50 rounded-xl p-4">
                   <Building2 className="w-6 h-6 text-blue-500 mx-auto mb-2" />
                   <p className="font-medium text-slate-700">SI 사업팀</p>
@@ -139,6 +157,11 @@ export default function Onboarding() {
                   <Users className="w-6 h-6 text-green-500 mx-auto mb-2" />
                   <p className="font-medium text-slate-700">소규모팀</p>
                   <p className="text-slate-400 text-xs mt-1">칸반·회고</p>
+                </div>
+                <div className="bg-slate-50 rounded-xl p-4">
+                  <UserCircle className="w-6 h-6 text-purple-500 mx-auto mb-2" />
+                  <p className="font-medium text-slate-700">개인용</p>
+                  <p className="text-slate-400 text-xs mt-1">태스크·일정 관리</p>
                 </div>
               </div>
               <button

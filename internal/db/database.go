@@ -68,6 +68,7 @@ func (d *Database) migrate() error {
 			summary TEXT,
 			raw_data TEXT,
 			activity_date DATE,
+			calendar_id TEXT,
 			fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE TABLE IF NOT EXISTS weekly_reports (
@@ -88,6 +89,13 @@ func (d *Database) migrate() error {
 			content TEXT NOT NULL,
 			sort_order INTEGER,
 			is_selected INTEGER DEFAULT 1
+		)`,
+		`CREATE TABLE IF NOT EXISTS report_insight_ignores (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			report_id INTEGER NOT NULL,
+			activity_id INTEGER NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(report_id, activity_id)
 		)`,
 		`CREATE TABLE IF NOT EXISTS excel_templates (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -245,6 +253,18 @@ func (d *Database) migrate() error {
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			UNIQUE(user_id, week_start)
 		)`,
+		`CREATE TABLE IF NOT EXISTS vault_items (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			type TEXT NOT NULL,
+			name TEXT NOT NULL,
+			path TEXT NOT NULL UNIQUE,
+			parent_id INTEGER,
+			modified_at TEXT NOT NULL DEFAULT '',
+			size INTEGER NOT NULL DEFAULT 0,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY(parent_id) REFERENCES vault_items(id)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_vault_items_parent_id ON vault_items(parent_id)`,
 	}
 
 	for _, m := range migrations {
@@ -317,6 +337,14 @@ func (d *Database) migrate() error {
 	if err := d.ensureColumnExists("team_type_configs", "linear_team_id", "ALTER TABLE team_type_configs ADD COLUMN linear_team_id TEXT"); err != nil {
 		return err
 	}
+	// Add Linear user ID to team_type_configs (current user's Linear ID)
+	if err := d.ensureColumnExists("team_type_configs", "linear_user_id", "ALTER TABLE team_type_configs ADD COLUMN linear_user_id TEXT DEFAULT ''"); err != nil {
+		return err
+	}
+	// Add Vault root path to team_type_configs (user-specific Knowledge Base root)
+	if err := d.ensureColumnExists("team_type_configs", "vault_root", "ALTER TABLE team_type_configs ADD COLUMN vault_root TEXT DEFAULT ''"); err != nil {
+		return err
+	}
 	// Add Linear user mapping to team_members
 	if err := d.ensureColumnExists("team_members", "linear_user_id", "ALTER TABLE team_members ADD COLUMN linear_user_id TEXT DEFAULT ''"); err != nil {
 		return err
@@ -328,6 +356,83 @@ func (d *Database) migrate() error {
 		log.Printf("[migrate] migrateExistingUsersToSIBusiness: %v", err)
 	}
 
+	// Add calendar_id column to activities table for Google Calendar multi-calendar support
+	if err := d.ensureColumnExists("activities", "calendar_id", "ALTER TABLE activities ADD COLUMN calendar_id TEXT"); err != nil {
+		return err
+	}
+
+	// Add activity_datetime column for storing full datetime (for calendar events with time)
+	if err := d.ensureColumnExists("activities", "activity_datetime", "ALTER TABLE activities ADD COLUMN activity_datetime TEXT"); err != nil {
+		return err
+	}
+
+	// Add end_datetime column for multi-day events
+	if err := d.ensureColumnExists("activities", "end_datetime", "ALTER TABLE activities ADD COLUMN end_datetime TEXT"); err != nil {
+		return err
+	}
+
+	// Verify calendar_id column exists (debugging)
+	if err := d.verifyCalendarColumn(); err != nil {
+		log.Printf("[DB] Calendar column verification: %v", err)
+	}
+
+	// Idempotent column additions (ALTER TABLE IF NOT EXISTS is not supported in SQLite)
+	if err := d.addColumnIfNotExists("excel_templates", "team_type", "TEXT NOT NULL DEFAULT 'default'"); err != nil {
+		return fmt.Errorf("failed to add team_type column: %w", err)
+	}
+
+	return nil
+}
+
+func (d *Database) addColumnIfNotExists(table, column, definition string) error {
+	rows, err := d.conn.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notNull int
+		var dfltValue sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &ctype, &notNull, &dfltValue, &pk); err != nil {
+			return err
+		}
+		if name == column {
+			return nil // 이미 존재
+		}
+	}
+	_, err = d.conn.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, definition))
+	return err
+}
+
+// verifyCalendarColumn checks if calendar_id column exists and logs the result
+func (d *Database) verifyCalendarColumn() error {
+	rows, err := d.conn.Query("PRAGMA table_info(activities)")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	found := false
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notNull, pk int
+		var dfltValue interface{}
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &dfltValue, &pk); err != nil {
+			continue
+		}
+		if name == "calendar_id" {
+			found = true
+			log.Printf("[DB] calendar_id column found in activities table")
+			break
+		}
+	}
+	if !found {
+		log.Printf("[DB] WARNING: calendar_id column NOT found in activities table")
+	}
 	return nil
 }
 

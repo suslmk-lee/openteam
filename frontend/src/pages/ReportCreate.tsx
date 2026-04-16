@@ -16,8 +16,9 @@ import {
   Filter,
   Users,
 } from 'lucide-react'
-import { GetCurrentWeek, GetWeekByOffset, GetOrCreateWeeklyReport, GetWeekActivities, AddActivityToReport, GetReportItems, AddManualActivity, SyncAll, PopulateReportFromTeamData, PopulateReportFromProjects } from '../../wailsjs/go/main/App'
+import { useAppApi } from '../hooks/useAppApi'
 import { Briefcase } from 'lucide-react'
+import { useTeamProfile } from '../contexts/TeamProfileContext'
 
 const SOURCE_ICONS: Record<string, React.ReactNode> = {
   mail: <Mail size={16} />,
@@ -55,7 +56,23 @@ interface ReportItem {
 }
 
 export default function Dashboard() {
+  const appApi = useAppApi()
+  const {
+    GetCurrentWeek,
+    GetWeekByOffset,
+    GetOrCreateWeeklyReport,
+    GetWeekActivities,
+    AddActivityToReport,
+    GetReportItems,
+    AddManualActivity,
+    SyncAll,
+    PopulateReportFromTeamData,
+    PopulateReportFromProjects,
+  } = appApi
+
   const navigate = useNavigate()
+  const { profile } = useTeamProfile()
+  const teamType = profile?.teamType || 'personal'
   const [weekOffset, setWeekOffset] = useState(0)
   const [weekInfo, setWeekInfo] = useState<WeekInfo | null>(null)
   const [activities, setActivities] = useState<Activity[]>([])
@@ -132,7 +149,7 @@ export default function Dashboard() {
 
   const filteredActivities = selectedSource === 'all'
     ? activities
-    : activities.filter(a => a.sourceIcon === selectedSource || a.source === selectedSource)
+    : activities.filter(a => a.sourceLabel === selectedSource)
 
   const sources = Array.from(new Set(activities.map(a => a.sourceLabel)))
 
@@ -208,7 +225,7 @@ export default function Dashboard() {
             <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
             동기화
           </button>
-          {reportId && (
+          {reportId && (teamType === 'si_business' || teamType === 'si_field') && (
             <button
               onClick={async () => {
                 if (!reportId || !weekInfo) return
@@ -231,7 +248,7 @@ export default function Dashboard() {
               프로젝트 데이터 반영
             </button>
           )}
-          {reportId && (
+          {reportId && teamType !== 'personal' && (
             <button
               onClick={async () => {
                 if (!reportId) return

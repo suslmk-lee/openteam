@@ -1,90 +1,121 @@
-# OpenReport — 주간업무일지 자동생성
+# OpenReport
 
-협업툴(NaverWorks, Linear, Gmail, 카카오톡 등) 데이터를 수집하여 기존 Excel 포맷과 동일한 주간업무일지를 자동 생성하는 Windows 데스크톱 앱.
+[![Go](https://img.shields.io/badge/Go-1.21%2B-00ADD8?logo=go&logoColor=white)](https://go.dev/)
+[![Wails](https://img.shields.io/badge/Wails-v2-FF6B6B)](https://wails.io/)
+[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev/)
+![License](https://img.shields.io/badge/License-MIT-blue)
 
-## 기술 스택
+[한국어 도움말 (Korean Guide)](./README.ko.md)
 
-| 구분 | 기술 |
-|------|------|
-| **프레임워크** | Wails v2 (Go + WebView2) |
-| **프론트엔드** | React 18 + TypeScript + TailwindCSS |
-| **로컬 DB** | SQLite (modernc.org/sqlite, CGo-free) |
-| **Excel 처리** | excelize v2 |
-| **아이콘** | Lucide React |
+OpenReport is a Windows desktop app that generates weekly work reports from collaboration data sources (for example Gmail, Google Calendar, Linear, and manual entries) and exports them to existing Excel template formats.
 
-## 주요 기능
+## Tech Stack
 
-- **대시보드** — 주간 협업툴 활동 조회, 필터링, 보고서 항목 선택
-- **보고서 편집** — 섹션별 항목 관리, 인라인 편집, 체크박스 선택/해제
-- **Excel 내보내기** — 업로드한 템플릿 포맷 그대로 주간업무일지 생성
-- **설정** — 사용자 정보, 협업툴 연동, 프로젝트 카테고리 관리
-- **수동 입력** — API 연동 외 직접 업무 항목 추가 가능
+- Wails v2 (Go + WebView2)
+- React + TypeScript + Vite + TailwindCSS
+- SQLite (`modernc.org/sqlite`, CGo-free)
+- Excel export via `excelize`
 
-## 빠른 시작
+## Key Features
 
-### 사전 요구사항
+- Weekly activity collection and report drafting
+- Section-based report editing with period support (`this_week`, `next_week`)
+- Report insight suggestions (unlinked activities, draft candidates, ignore actions)
+- Excel template upload and report export
+- Team operations support (members, attendance, projects, issues, retrospectives)
 
-- Go 1.21+
+## AI Settings
+
+- Configure global AI provider and model in **Settings > Integrations**.
+- Supported global providers: OpenAI, MiniMax (OpenAI-compatible), Claude CLI.
+- Chat supports optional session override (provider/model). Report and Linear AI use global defaults.
+- Legacy `openai` integration is automatically migrated to global `ai` settings on first read.
+
+## Knowledge Base Ingest
+
+Use the Vault chat panel to add content to the knowledge base:
+
+- `/ingest` ingests the latest non-command user message.
+- `/ingest <url>` ingests a web page by URL.
+- `/ingest <path>` ingests a local file path or vault file path.
+- Shortcut aliases such as `이 내용도 ingest해줘`, `이 내용도 ingest해주세요`, `ingest this message`, and `ingest this message please` map to `/ingest` with no arguments.
+- The shortcut uses the previous non-command user message as the source, not the shortcut phrase itself.
+
+For a Korean walkthrough, see [docs/ko/knowledge-base-ingest.md](./docs/ko/knowledge-base-ingest.md).
+
+## Prerequisites
+
+- Go 1.21+ (project currently uses Go 1.25 in `go.mod`)
 - Node.js 18+
-- Wails CLI: `go install github.com/wailsapp/wails/v2/cmd/wails@latest`
-
-### 개발 모드
+- Pinned Wails CLI `v2.12.0`
 
 ```bash
-wails dev
+go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
 ```
 
-브라우저에서 http://localhost:34115 로 접속하여 개발 가능.
+## Development
 
-### 프로덕션 빌드
+Run the app in development mode:
 
 ```bash
-wails build
+./scripts/wails.ps1 dev
 ```
 
-`build/bin/` 디렉토리에 실행 파일 생성.
+Wails starts a local dev server (typically available at `http://localhost:34115`).
 
-## 프로젝트 구조
+## Build
 
+Create a production build:
+
+```bash
+./scripts/wails.ps1 build
 ```
+
+Output binary (Windows): `build/bin/OpenReport.exe`
+
+## Testing
+
+Backend:
+
+```bash
+go test ./...
+```
+
+Frontend:
+
+```bash
+cd frontend
+npm run test:run
+```
+
+## Project Structure
+
+```text
 openreport-wind/
-├── main.go                  # Wails 엔트리포인트
-├── app.go                   # 앱 구조체 (DB 초기화, 생명주기)
-├── handlers.go              # Wails 바인딩 핸들러 (프론트엔드 API)
+├── main.go                  # Wails entrypoint
+├── app.go                   # App lifecycle and service wiring
+├── handlers_*.go            # Wails-exposed API handlers
+├── service_*.go             # Domain service layer
 ├── internal/
-│   ├── db/                  # SQLite DB
-│   │   ├── database.go      # DB 초기화 및 마이그레이션
-│   │   ├── models.go        # 데이터 모델
-│   │   └── repository.go    # CRUD 연산
-│   └── excel/               # Excel 처리
-│       ├── template.go      # 템플릿 파싱
-│       └── exporter.go      # 보고서 생성
+│   ├── db/                  # SQLite schema and repository
+│   ├── excel/               # Template parsing and report export
+│   ├── integrations/        # External sync logic
+│   └── reportinsights/      # Insight classification logic
 ├── frontend/
-│   ├── src/
-│   │   ├── main.tsx         # React 엔트리 + 라우팅
-│   │   ├── components/
-│   │   │   └── Layout.tsx   # 사이드바 레이아웃
-│   │   └── pages/
-│   │       ├── Dashboard.tsx    # 대시보드
-│   │       ├── Settings.tsx     # 설정
-│   │       └── ReportEditor.tsx # 보고서 편집
-│   └── wailsjs/             # Wails 자동 생성 바인딩
-└── wails.json               # Wails 설정
+│   ├── src/                 # React application code
+│   └── wailsjs/             # Auto-generated Wails bindings
+└── wails.json               # Wails config
 ```
 
-## 데이터 저장 경로
+## Local Data Directory
 
-- DB: `~/.openreport/openreport.db`
-- 템플릿: `~/.openreport/templates/`
-- 내보내기: `~/.openreport/exports/` (또는 사용자 지정 경로)
+- Database: `~/.openreport/openreport.db`
+- Templates: `~/.openreport/templates/`
+- Exports: `~/.openreport/exports/`
 
-## 협업툴 연동 로드맵
+## Notes
 
-| Phase | 도구 | 상태 |
-|-------|------|------|
-| 1 | NaverWorks (메일/캘린더/게시판) | 🔲 예정 |
-| 1 | Linear (이슈/태스크) | 🔲 예정 |
-| 2 | Gmail | 🔲 예정 |
-| 2 | Google Calendar | 🔲 예정 |
-| 3 | 카카오톡 (txt 파일 파싱) | 🔲 예정 |
-| 3 | Slack / GitHub / Jira | 🔲 예정 |
+- Do not manually edit `frontend/wailsjs/*`; it is generated by Wails.
+- The repository currently contains an archived legacy handler file (`handlers.go`) behind a build tag and active split handlers (`handlers_*.go`).
+- To auto-sync Wails bindings after branch checkout, set hooks path once:
+  `git config core.hooksPath .githooks`

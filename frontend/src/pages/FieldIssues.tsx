@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ListIssues, SaveIssue, DeleteIssue } from '../../wailsjs/go/main/App'
+import { useAppApi } from '../hooks/useAppApi'
 import { Plus, AlertTriangle, Pencil, Trash2, X, CheckCircle2 } from 'lucide-react'
 
 type Issue = {
@@ -33,6 +33,9 @@ const STATUS_COLORS: Record<string, string> = {
 const EMPTY_ISSUE: Partial<Issue> = { title: '', description: '', severity: 'medium', status: 'open', assignee: '', dueDate: null }
 
 export default function FieldIssues() {
+  const appApi = useAppApi()
+  const { ListIssues, SaveIssue, DeleteIssue } = appApi
+
   const [issues, setIssues] = useState<Issue[]>([])
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState('')

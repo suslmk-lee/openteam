@@ -1,14 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Plus, Link2, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react'
-import {
-  ListTeamMembers,
-  SaveTeamMember,
-  DeleteTeamMember,
-  GetPositionTypes,
-} from '../../wailsjs/go/main/App'
-import * as AppModuleStatic from '../../wailsjs/go/main/App'
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const AutoMapLinearMembers: () => Promise<number> = (AppModuleStatic as any).AutoMapLinearMembers ?? (() => Promise.resolve(0))
+import { useTeamService } from '../hooks/useTeamService'
 
 interface TeamMember {
   id: number
@@ -52,6 +44,18 @@ const POSITION_LABELS: Record<string, string> = {
 }
 
 export default function TeamMembers() {
+  const teamService = useTeamService()
+  const {
+    listTeamMembers,
+    saveTeamMember,
+    deleteTeamMember,
+    getPositionTypes,
+    autoMapLinearMembers,
+    getEmploymentTypes,
+    addPositionType,
+    addEmploymentType,
+  } = teamService
+
   const [members, setMembers] = useState<TeamMember[]>([])
   const [loading, setLoading] = useState(false)
   const [positionTypes, setPositionTypes] = useState<string[]>([])
@@ -80,7 +84,7 @@ export default function TeamMembers() {
   }, [])
 
   async function loadPositionTypes() {
-    const types = await GetPositionTypes()
+    const types = await getPositionTypes()
     setPositionTypes(types || [])
     if ((!memberPosition || !types?.includes(memberPosition)) && types && types.length > 0) {
       setMemberPosition(types[0])
@@ -89,7 +93,7 @@ export default function TeamMembers() {
 
   async function loadEmploymentTypes() {
     try {
-      const types = await (window as any).go?.main?.App?.GetEmploymentTypes()
+      const types = await getEmploymentTypes()
       const list = Array.isArray(types) ? types : []
       setEmploymentTypes(list)
       if ((!memberEmploymentType || !list.includes(memberEmploymentType)) && list.length > 0) {
@@ -107,7 +111,7 @@ export default function TeamMembers() {
   async function handleAddPositionType() {
     const value = prompt('추가할 직급을 입력하세요')
     if (!value?.trim()) return
-    await (window as any).go?.main?.App?.AddPositionType(value.trim())
+    await addPositionType(value.trim())
     await loadPositionTypes()
     setMemberPosition(value.trim())
   }
@@ -115,7 +119,7 @@ export default function TeamMembers() {
   async function handleAddEmploymentType() {
     const value = prompt('추가할 고용형태를 입력하세요')
     if (!value?.trim()) return
-    await (window as any).go?.main?.App?.AddEmploymentType(value.trim())
+    await addEmploymentType(value.trim())
     await loadEmploymentTypes()
     setMemberEmploymentType(value.trim())
   }
@@ -123,7 +127,7 @@ export default function TeamMembers() {
   async function loadMembers() {
     setLoading(true)
     try {
-      const loaded = await ListTeamMembers()
+      const loaded = await listTeamMembers()
       setMembers(loaded || [])
     } catch (err) {
       console.error('Failed to load team members:', err)
@@ -136,7 +140,7 @@ export default function TeamMembers() {
   async function handleAddMember() {
     if (!memberName.trim()) return
     try {
-      await SaveTeamMember({
+      await saveTeamMember({
         id: 0,
         name: memberName.trim(),
         position: memberPosition,
@@ -180,7 +184,7 @@ export default function TeamMembers() {
               setAutoMapping(true)
               setAutoMapResult(null)
               try {
-                const count = await AutoMapLinearMembers()
+                const count = await autoMapLinearMembers()
                 setAutoMapResult(`${count}명 자동 매핑 완료`)
                 await loadMembers()
                 if (autoMapTimerRef.current) clearTimeout(autoMapTimerRef.current)
@@ -277,7 +281,7 @@ export default function TeamMembers() {
                                 if (draft === undefined || draft === (member.linearUserId ?? '')) return
                                 setSavingLinearId(prev => ({ ...prev, [member.id]: true }))
                                 try {
-                                  await SaveTeamMember({ ...member, linearUserId: draft } as any)
+                                  await saveTeamMember({ ...member, linearUserId: draft } as any)
                                   setLinearIdEdits(prev => { const n = { ...prev }; delete n[member.id]; return n })
                                   await loadMembers()
                                 } finally {
@@ -292,7 +296,7 @@ export default function TeamMembers() {
                           <button
                             onClick={async () => {
                               if (!confirm(`${member.name} 팀원을 삭제하시겠습니까?`)) return
-                              await DeleteTeamMember(member.id)
+                              await deleteTeamMember(member.id)
                               await loadMembers()
                             }}
                             className="text-rose-600 hover:text-rose-700 text-xs px-2 py-1 hover:bg-rose-50 rounded"

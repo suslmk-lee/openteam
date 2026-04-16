@@ -1,15 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Users, Clock, Briefcase, FileText, Building2, TrendingUp,
+  Users, User, Clock, Briefcase, FileText, Building2, TrendingUp,
   ArrowRight, Calendar, AlertTriangle, Kanban, RotateCcw, CheckSquare,
 } from 'lucide-react'
-import {
-  ListTeamMembers, GetAttendanceSummary, ListSIProjects,
-  GetSIWeeklySnapshot, ListWeeklyReports, ListClients, GetCurrentWeek,
-  ListIssues, ListRetrospectives, GetLinearDashboard,
-} from '../../wailsjs/go/main/App'
 import { useTeamProfile } from '../contexts/TeamProfileContext'
+import { useAppApi } from '../hooks/useAppApi'
 
 // ── interfaces ──────────────────────────────────────────────────────────────
 
@@ -31,6 +27,16 @@ interface Retrospective {
   wentWell: string; toImprove: string; actionItems: string
 }
 interface LinearIssue { id: string; state: { type: string } }
+interface Activity { 
+  id: number; 
+  title: string; 
+  activityDate: string; 
+  activityDatetime?: string 
+}
+interface MyAttendanceSummary { 
+  vacationDays: number; morningHalfDays: number; afternoonHalfDays: number; 
+  totalDays: number; lateCount: number 
+}
 
 // ── constants ───────────────────────────────────────────────────────────────
 
@@ -39,16 +45,20 @@ const STATUS_LABELS: Record<string, string> = {
   in_development: '개발중', in_operation: '운영중', closed: '종료',
 }
 const STATUS_COLORS: Record<string, string> = {
-  preparing: 'bg-slate-100 text-slate-600', poc_proposal: 'bg-blue-100 text-blue-600',
-  in_development: 'bg-amber-100 text-amber-600', in_operation: 'bg-green-100 text-green-600',
-  closed: 'bg-gray-100 text-gray-600',
+  preparing: 'bg-slate-100 text-slate-700 dark:bg-slate-700/60 dark:text-slate-200',
+  poc_proposal: 'bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-300',
+  in_development: 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300',
+  in_operation: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300',
+  closed: 'bg-slate-100 text-slate-600 dark:bg-slate-700/50 dark:text-slate-300',
 }
 const ISSUE_STATUS_LABELS: Record<string, string> = {
   open: '미처리', in_progress: '처리중', resolved: '해결됨', closed: '종료',
 }
 const ISSUE_STATUS_COLORS: Record<string, string> = {
-  open: 'bg-red-100 text-red-600', in_progress: 'bg-amber-100 text-amber-600',
-  resolved: 'bg-green-100 text-green-600', closed: 'bg-slate-100 text-slate-500',
+  open: 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300',
+  in_progress: 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300',
+  resolved: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300',
+  closed: 'bg-slate-100 text-slate-500 dark:bg-slate-700/50 dark:text-slate-300',
 }
 
 function normalizeDate(d: string) {
@@ -264,19 +274,36 @@ function IssuesCard({ issues }: { issues: Issue[] }) {
 }
 
 function LinearTaskCard({ linearIssues, navigate }: { linearIssues: LinearIssue[]; navigate: (p: string) => void }) {
+  // Debug: log first few issues
+  if (linearIssues.length > 0) {
+    console.log('[LinearTaskCard] Issues:', linearIssues.slice(0, 3).map(i => ({ id: i.id, state: i.state })))
+  }
+  
   const counts: Record<string, number> = { backlog: 0, unstarted: 0, started: 0, completed: 0, cancelled: 0 }
-  linearIssues.forEach(i => { const t = i.state?.type || 'backlog'; if (t in counts) counts[t]++ })
+  linearIssues.forEach(i => { 
+    const t = (i.state?.type || 'backlog').toLowerCase()
+    // Map common Linear state types
+    const mappedType = t === 'in_progress' || t === 'inprogress' ? 'started' : 
+                       t === 'todo' ? 'unstarted' :
+                       t === 'done' ? 'completed' :
+                       t === 'canceled' ? 'cancelled' : t
+    if (mappedType in counts) {
+      counts[mappedType]++
+    } else {
+      console.log('[LinearTaskCard] Unknown state type:', t, 'for issue:', i.id)
+    }
+  })
   const cols = [
-    { type: 'backlog', label: 'Backlog', color: 'text-slate-500', bg: 'bg-slate-50' },
-    { type: 'unstarted', label: 'Todo', color: 'text-blue-600', bg: 'bg-blue-50' },
-    { type: 'started', label: 'In Progress', color: 'text-amber-600', bg: 'bg-amber-50' },
-    { type: 'completed', label: 'Done', color: 'text-green-600', bg: 'bg-green-50' },
+    { type: 'backlog', label: 'Backlog', color: 'text-slate-500 dark:text-slate-300', bg: 'bg-slate-50 dark:bg-slate-700/40' },
+    { type: 'unstarted', label: 'Todo', color: 'text-blue-600 dark:text-blue-300', bg: 'bg-blue-50 dark:bg-blue-500/20' },
+    { type: 'started', label: 'In Progress', color: 'text-amber-600 dark:text-amber-300', bg: 'bg-amber-50 dark:bg-amber-500/20' },
+    { type: 'completed', label: 'Done', color: 'text-green-600 dark:text-emerald-300', bg: 'bg-green-50 dark:bg-emerald-500/20' },
   ]
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-4">
       <div className="flex items-center gap-3 mb-3">
-        <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-          <Kanban className="w-5 h-5 text-green-600" />
+        <div className="w-10 h-10 bg-emerald-100 dark:bg-emerald-500/20 rounded-lg flex items-center justify-center">
+          <Kanban className="w-5 h-5 text-emerald-700 dark:text-emerald-300" />
         </div>
         <div>
           <h3 className="font-semibold text-slate-800">Linear 태스크</h3>
@@ -292,7 +319,7 @@ function LinearTaskCard({ linearIssues, navigate }: { linearIssues: LinearIssue[
         ))}
       </div>
       <button onClick={() => navigate('/team/taskboard')}
-        className="w-full mt-3 flex items-center justify-center gap-1 text-xs text-slate-500 hover:text-slate-700 py-1">
+        className="w-full mt-3 flex items-center justify-center gap-1 text-xs text-slate-500 hover:text-slate-700 dark:text-slate-300 dark:hover:text-slate-100 py-1">
         태스크보드 바로가기 <ArrowRight size={12} />
       </button>
     </div>
@@ -303,8 +330,8 @@ function RetroCard({ retro, navigate }: { retro: Retrospective | null; navigate:
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-4">
       <div className="flex items-center gap-3 mb-3">
-        <div className="w-10 h-10 bg-violet-100 rounded-lg flex items-center justify-center">
-          <RotateCcw className="w-5 h-5 text-violet-600" />
+        <div className="w-10 h-10 bg-violet-100 dark:bg-violet-500/20 rounded-lg flex items-center justify-center">
+          <RotateCcw className="w-5 h-5 text-violet-700 dark:text-violet-300" />
         </div>
         <div>
           <h3 className="font-semibold text-slate-800">주간 회고</h3>
@@ -332,7 +359,7 @@ function RetroCard({ retro, navigate }: { retro: Retrospective | null; navigate:
         <p className="text-sm text-slate-400 text-center py-2">작성된 회고가 없습니다</p>
       )}
       <button onClick={() => navigate('/team/retro')}
-        className="w-full mt-3 flex items-center justify-center gap-1 text-xs text-slate-500 hover:text-slate-700 py-1">
+        className="w-full mt-3 flex items-center justify-center gap-1 text-xs text-slate-500 hover:text-slate-700 dark:text-slate-300 dark:hover:text-slate-100 py-1">
         회고 전체보기 <ArrowRight size={12} />
       </button>
     </div>
@@ -381,6 +408,23 @@ function AttendanceTable({ attendance }: { attendance: AttendanceSummary[] }) {
 export default function Dashboard() {
   const navigate = useNavigate()
   const { profile } = useTeamProfile()
+  const appApi = useAppApi()
+  const {
+    ListTeamMembers,
+    GetAttendanceSummary,
+    ListSIProjects,
+    GetSIWeeklySnapshot,
+    ListWeeklyReports,
+    ListClients,
+    GetCurrentWeek,
+    ListIssues,
+    ListRetrospectives,
+    GetLinearDashboard,
+    GetMyLinearIssues,
+    GetMyAttendanceSummary,
+    ListMyWeeklyReports,
+    ListActivitiesByDateRange,
+  } = appApi
   const teamType = profile?.teamType || 'si_business'
   const [loading, setLoading] = useState(true)
 
@@ -400,9 +444,15 @@ export default function Dashboard() {
   // si_field only
   const [issues, setIssues] = useState<Issue[]>([])
 
-  // small_team only
+  // small_team / personal
   const [linearIssues, setLinearIssues] = useState<LinearIssue[]>([])
   const [latestRetro, setLatestRetro] = useState<Retrospective | null>(null)
+  
+  // personal only
+  const [myAttendance, setMyAttendance] = useState<MyAttendanceSummary | null>(null)
+  const [myWeeklyReport, setMyWeeklyReport] = useState<WeeklyReport | null>(null)
+  const [todayActivities, setTodayActivities] = useState<Activity[]>([])
+  const [weekActivities, setWeekActivities] = useState<Activity[]>([])
 
   useEffect(() => { loadAllData() }, [teamType])
 
@@ -424,15 +474,65 @@ export default function Dashboard() {
         setAttendance((await GetAttendanceSummary(fmt(firstDay), fmt(lastDay))) || [])
       } catch { setAttendance([]) }
 
-      if (teamType === 'small_team') {
-        // Linear tasks + retrospective
-        try { setLinearIssues(((await GetLinearDashboard()) as any)?.issues || []) } catch { setLinearIssues([]) }
+      console.log('[Dashboard] teamType:', teamType, '- checking for small_team or personal')
+      
+      // Linear tasks (for personal and small_team)
+      if (teamType === 'small_team' || teamType === 'personal') {
+        try { 
+          const issues = teamType === 'personal' 
+            ? (await GetMyLinearIssues() as any) || []
+            : ((await GetLinearDashboard()) as any)?.issues || []
+          console.log('[Dashboard] Linear issues loaded:', issues)
+          setLinearIssues(issues) 
+        } catch (e) { 
+          console.log('[Dashboard] Linear fetch error:', e)
+          setLinearIssues([]) 
+        }
         try {
           const retros: Retrospective[] = (await ListRetrospectives()) || []
           setLatestRetro(retros.length > 0 ? retros[0] : null)
         } catch { setLatestRetro(null) }
-
-      } else {
+      }
+      
+      // Personal: my attendance, weekly report, calendar
+      if (teamType === 'personal') {
+        const dayOfWeek = today.getDay()
+        const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek
+        const monday = new Date(today)
+        monday.setDate(today.getDate() + diffToMonday)
+        const sunday = new Date(monday)
+        sunday.setDate(monday.getDate() + 6)
+        
+        const weekStart = fmt(monday)
+        const weekEnd = fmt(sunday)
+        console.log('[Dashboard] Loading personal data for current week:', weekStart, '~', weekEnd)
+        let reportsData: any[] = []
+        try {
+          const [attendanceData, reportsDataInner] = await Promise.all([
+            GetMyAttendanceSummary(weekStart, weekEnd),
+            ListMyWeeklyReports()
+          ])
+          reportsData = reportsDataInner || []
+          console.log('[Dashboard] MyAttendance data:', attendanceData)
+          setMyAttendance(attendanceData)
+          setReports(reportsData)
+        } catch (e) {
+          console.error('[Dashboard] Error loading personal data:', e)
+          setMyAttendance(null)
+          setReports([])
+        }
+        setMyWeeklyReport((reportsData || []).find(r => r.weekStart === weekData?.weekStart) || null)
+        
+        if (weekData) {
+          const todayStr = fmt(today)
+          const [todayActs, weekActs] = await Promise.all([
+            ListActivitiesByDateRange(todayStr, todayStr),
+            ListActivitiesByDateRange(weekData.weekStart, weekData.weekEnd)
+          ])
+          setTodayActivities(todayActs || [])
+          setWeekActivities(weekActs || [])
+        }
+      } else if (teamType === 'si_business' || teamType === 'si_field') {
         // si_business or si_field
         const [projectsData, reportsData] = await Promise.all([ListSIProjects(), ListWeeklyReports()])
         setProjects(projectsData || [])
@@ -474,11 +574,13 @@ export default function Dashboard() {
 
           {/* ── Quick Actions ── */}
           <div className="flex gap-3 mb-6">
-            {teamType === 'small_team' ? (
+            {teamType === 'small_team' || teamType === 'personal' ? (
               <>
                 <button onClick={() => navigate('/team/taskboard')}
-                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
-                  <Kanban size={18} /> 태스크보드
+                  className={`flex items-center gap-2 px-4 py-2 text-white rounded-lg transition-colors ${
+                    teamType === 'personal' ? 'bg-purple-600 hover:bg-purple-700' : 'bg-green-600 hover:bg-green-700'
+                  }`}>
+                  <Kanban size={18} /> {teamType === 'personal' ? '개인 태스크보드' : '태스크보드'}
                 </button>
                 <button onClick={() => navigate('/team/retro')}
                   className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors">
@@ -507,9 +609,13 @@ export default function Dashboard() {
 
           {/* ── Cards Grid ── */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-            {/* shared */}
-            <MembersCard members={members} />
-            <AttendanceCard attendance={attendance} />
+            {/* shared (except personal) */}
+            {teamType !== 'personal' && (
+              <>
+                <MembersCard members={members} />
+                <AttendanceCard attendance={attendance} />
+              </>
+            )}
 
             {/* si_business */}
             {teamType === 'si_business' && (
@@ -531,20 +637,30 @@ export default function Dashboard() {
               </>
             )}
 
-            {/* small_team */}
-            {teamType === 'small_team' && (
+            {/* small_team / personal */}
+            {(teamType === 'small_team' || teamType === 'personal') && (
               <>
                 <LinearTaskCard linearIssues={linearIssues} navigate={navigate} />
                 <RetroCard retro={latestRetro} navigate={navigate} />
               </>
             )}
+
+            {/* personal only */}
+            {teamType === 'personal' && (
+              <>
+                <MyAttendanceCard summary={myAttendance} navigate={navigate} />
+                <TodayScheduleCard activities={todayActivities} />
+                <MyWeeklyReportCard report={myWeeklyReport} weekInfo={currentWeek} navigate={navigate} />
+                <MyStatsCard linearIssues={linearIssues} reports={reports} />
+              </>
+            )}
           </div>
 
-          {/* ── Attendance Detail (all types) ── */}
-          <AttendanceTable attendance={attendance} />
+          {/* ── Attendance Detail (all types except personal) ── */}
+          {teamType !== 'personal' && <AttendanceTable attendance={attendance} />}
 
-          {/* ── small_team: Linear 미설정 안내 ── */}
-          {teamType === 'small_team' && linearIssues.length === 0 && !loading && (
+          {/* ── small_team / personal: Linear 미설정 안내 ── */}
+          {(teamType === 'small_team' || teamType === 'personal') && linearIssues.length === 0 && !loading && !profile?.linearApiKey && (
             <div className="mt-4 flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl p-4">
               <CheckSquare size={18} className="text-amber-500 shrink-0" />
               <p className="text-sm text-amber-700">
@@ -554,6 +670,124 @@ export default function Dashboard() {
             </div>
           )}
 
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Personal Dashboard Cards ────────────────────────────────────────────────
+
+function MyAttendanceCard({ summary, navigate }: { summary: MyAttendanceSummary | null; navigate: (p: string) => void }) {
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="p-2 bg-blue-100 dark:bg-blue-500/20 rounded-lg"><User size={20} className="text-blue-700 dark:text-blue-300" /></div>
+        <h3 className="font-semibold text-slate-800">내 근무 현황</h3>
+      </div>
+      {summary ? (
+        <div className="grid grid-cols-2 gap-3 mb-3">
+          <div className="bg-slate-50 dark:bg-slate-700/40 rounded-lg p-3 text-center">
+            <div className="text-2xl font-bold text-slate-700">{summary.vacationDays}</div>
+            <div className="text-xs text-slate-500">휴가</div>
+          </div>
+          <div className="bg-slate-50 dark:bg-slate-700/40 rounded-lg p-3 text-center">
+            <div className="text-2xl font-bold text-slate-700">{summary.morningHalfDays + summary.afternoonHalfDays}</div>
+            <div className="text-xs text-slate-500">반차</div>
+          </div>
+        </div>
+      ) : (
+        <p className="text-slate-400 text-sm mb-3">근무 기록이 없습니다</p>
+      )}
+      <button 
+        onClick={() => navigate('/settings/attendance')}
+        className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-slate-100 text-sm rounded-lg transition-colors"
+      >
+        + 근태 등록하기
+      </button>
+    </div>
+  )
+}
+
+function TodayScheduleCard({ activities }: { activities: Activity[] }) {
+  const today = new Date().toISOString().split('T')[0]
+  const todayActs = activities.filter(a => a.activityDate === today || a.activityDatetime?.startsWith(today))
+  
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="p-2 bg-emerald-100 dark:bg-emerald-500/20 rounded-lg"><Calendar size={20} className="text-emerald-700 dark:text-emerald-300" /></div>
+        <h3 className="font-semibold text-slate-800">오늘 일정</h3>
+      </div>
+      {todayActs.length > 0 ? (
+        <ul className="space-y-2">
+          {todayActs.slice(0, 3).map(a => (
+            <li key={a.id} className="text-sm text-slate-600 truncate">{a.title}</li>
+          ))}
+          {todayActs.length > 3 && <li className="text-xs text-slate-400">+{todayActs.length - 3}개 더</li>}
+        </ul>
+      ) : (
+        <p className="text-slate-400 text-sm">오늘 일정이 없습니다</p>
+      )}
+    </div>
+  )
+}
+
+function MyWeeklyReportCard({ report, weekInfo, navigate }: { report: WeeklyReport | null, weekInfo: any, navigate: (p: string) => void }) {
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="p-2 bg-purple-100 dark:bg-purple-500/20 rounded-lg"><FileText size={20} className="text-purple-700 dark:text-purple-300" /></div>
+        <h3 className="font-semibold text-slate-800">주간 보고서</h3>
+      </div>
+      {report ? (
+        <div>
+          <p className="text-sm text-slate-600 mb-2">{weekInfo?.label || '이번 주'}</p>
+          <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs ${
+            report.status === 'submitted'
+              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300'
+              : 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300'
+          }`}>
+            {report.status === 'submitted' ? '제출 완료' : '작성 중'}
+          </span>
+        </div>
+      ) : (
+        <div>
+          <p className="text-slate-400 text-sm mb-3">아직 보고서를 작성하지 않았습니다</p>
+          <button 
+            onClick={() => navigate('/report/create')}
+            className="text-sm text-blue-600 hover:underline"
+          >
+            보고서 작성하기 →
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function MyStatsCard({ linearIssues, reports }: { linearIssues: LinearIssue[], reports: WeeklyReport[] }) {
+  const doneCount = linearIssues.filter(i => i.state?.type === 'completed' || i.state?.type === 'done').length
+  const inProgressCount = linearIssues.filter(i => i.state?.type === 'started' || i.state?.type === 'in_progress').length
+  
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="p-2 bg-orange-100 dark:bg-orange-500/20 rounded-lg"><TrendingUp size={20} className="text-orange-700 dark:text-orange-300" /></div>
+        <h3 className="font-semibold text-slate-800">업무 통계</h3>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="bg-slate-50 dark:bg-slate-700/40 rounded-lg p-3 text-center">
+          <div className="text-2xl font-bold text-green-600">{doneCount}</div>
+          <div className="text-xs text-slate-500">완료한 태스크</div>
+        </div>
+        <div className="bg-slate-50 dark:bg-slate-700/40 rounded-lg p-3 text-center">
+          <div className="text-2xl font-bold text-blue-600">{inProgressCount}</div>
+          <div className="text-xs text-slate-500">진행 중</div>
+        </div>
+        <div className="bg-slate-50 dark:bg-slate-700/40 rounded-lg p-3 text-center">
+          <div className="text-2xl font-bold text-purple-600">{reports.length}</div>
+          <div className="text-xs text-slate-500">총 보고서</div>
         </div>
       </div>
     </div>

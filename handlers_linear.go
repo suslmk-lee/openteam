@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"time"
 )
@@ -95,7 +96,9 @@ func fetchLinearWithTeam(apiKey, teamID string) (*LinearDashboardData, error) {
 					EndsAt      string  `json:"endsAt"`
 					CompletedAt *string `json:"completedAt"`
 					Issues      struct {
-						Nodes []struct{ ID string `json:"id"` } `json:"nodes"`
+						Nodes []struct {
+							ID string `json:"id"`
+						} `json:"nodes"`
 					} `json:"issues"`
 				} `json:"nodes"`
 			} `json:"cycles"`
@@ -217,6 +220,12 @@ type LinearTeamMember struct {
 	DisplayName string `json:"displayName"`
 }
 
+type LinearViewer struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Email string `json:"email"`
+}
+
 // GetLinearTeamMembers returns members of the resolved team.
 func GetLinearTeamMembers(apiKey, teamID string) ([]LinearTeamMember, error) {
 	resolvedID, err := resolveLinearTeamID(apiKey, teamID)
@@ -249,12 +258,45 @@ func GetLinearTeamMembers(apiKey, teamID string) ([]LinearTeamMember, error) {
 	return result.Team.Members.Nodes, nil
 }
 
+// GetLinearTeamLabels returns labels of the resolved team.
+func GetLinearTeamLabels(apiKey, teamID string) ([]LinearIssueLabel, error) {
+	resolvedID, err := resolveLinearTeamID(apiKey, teamID)
+	if err != nil {
+		return nil, err
+	}
+	gqlQuery := `
+	query($teamId: String!) {
+		team(id: $teamId) {
+			labels(first: 200) { nodes { id name color } }
+		}
+	}`
+	respData, err := doLinearRequest(apiKey, linearGraphQLRequest{
+		Query:     gqlQuery,
+		Variables: map[string]interface{}{"teamId": resolvedID},
+	})
+	if err != nil {
+		return nil, err
+	}
+	var result struct {
+		Team struct {
+			Labels struct {
+				Nodes []LinearIssueLabel `json:"nodes"`
+			} `json:"labels"`
+		} `json:"team"`
+	}
+	if err := json.Unmarshal(respData, &result); err != nil {
+		return nil, fmt.Errorf("labels parse failed: %w", err)
+	}
+	return result.Team.Labels.Nodes, nil
+}
+
 // LinearIssueUpdateInput holds optional fields for issue mutation
 type LinearIssueUpdateInput struct {
-	StateID    string `json:"stateId,omitempty"`
-	Priority   *int   `json:"priority,omitempty"`
-	DueDate    string `json:"dueDate,omitempty"`
-	AssigneeID string `json:"assigneeId,omitempty"`
+	StateID    string    `json:"stateId,omitempty"`
+	Priority   *int      `json:"priority,omitempty"`
+	DueDate    string    `json:"dueDate,omitempty"`
+	AssigneeID string    `json:"assigneeId,omitempty"`
+	LabelIDs   *[]string `json:"labelIds,omitempty"`
 }
 
 // UpdateLinearIssue updates multiple fields of a Linear issue.
@@ -280,6 +322,9 @@ func UpdateLinearIssue(apiKey, issueID string, input LinearIssueUpdateInput) err
 		} else {
 			inputMap["assigneeId"] = input.AssigneeID
 		}
+	}
+	if input.LabelIDs != nil {
+		inputMap["labelIds"] = *input.LabelIDs
 	}
 
 	gqlQuery := `
@@ -437,4 +482,122 @@ func doLinearRequest(apiKey string, reqBody linearGraphQLRequest) (json.RawMessa
 	}
 
 	return gqlResp.Data, nil
+}
+
+// getLinearViewerID retrieves the current Linear user's ID
+func getLinearViewerID(apiKey string) (string, error) {
+	gqlQuery := `{ viewer { id } }`
+	reqBody := linearGraphQLRequest{
+		Query:     gqlQuery,
+		Variables: map[string]interface{}{},
+	}
+
+	respData, err := doLinearRequest(apiKey, reqBody)
+	if err != nil {
+		return "", err
+	}
+
+	var result struct {
+		Viewer struct {
+			ID string `json:"id"`
+		} `json:"viewer"`
+	}
+
+	if err := json.Unmarshal(respData, &result); err != nil {
+		return "", fmt.Errorf("viewer ID 파싱 실패: %w", err)
+	}
+
+	return result.Viewer.ID, nil
+}
+
+func getLinearViewer(apiKey string) (*LinearViewer, error) {
+	gqlQuery := `{ viewer { id name email } }`
+	reqBody := linearGraphQLRequest{
+		Query:     gqlQuery,
+		Variables: map[string]interface{}{},
+	}
+
+	respData, err := doLinearRequest(apiKey, reqBody)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Viewer LinearViewer `json:"viewer"`
+	}
+
+	if err := json.Unmarshal(respData, &result); err != nil {
+		return nil, fmt.Errorf("viewer parse failed: %w", err)
+	}
+	if result.Viewer.ID == "" {
+		return nil, fmt.Errorf("viewer id is empty")
+	}
+
+	return &result.Viewer, nil
+}
+
+// GetMyLinearIssues retrieves issues assigned to the current user (identified by linearUserID), filtered by active states
+func GetMyLinearIssues(apiKey, teamID, linearUserID string) ([]LinearIssue, error) {
+	if apiKey == "" {
+		return nil, fmt.Errorf("Linear API Key가 설정되지 않았습니다")
+	}
+
+	if linearUserID == "" {
+		// Fallback: fetch viewer ID if not provided
+		var err error
+		linearUserID, err = getLinearViewerID(apiKey)
+		if err != nil {
+			return nil, fmt.Errorf("현재 사용자 조회 실패: %w", err)
+		}
+	}
+
+	var allIssues []LinearIssue
+
+	if teamID != "" {
+		// Fetch team issues and filter by assignee
+		dashboardData, err := fetchLinearWithTeam(apiKey, teamID)
+		if err != nil {
+			return nil, err
+		}
+		if dashboardData != nil {
+			allIssues = dashboardData.Issues
+		}
+	} else {
+		// Fetch viewer's assigned issues (already assignee-filtered)
+		dashboardData, err := fetchLinearWithoutTeam(apiKey)
+		if err != nil {
+			return nil, err
+		}
+		if dashboardData != nil {
+			allIssues = dashboardData.Issues
+		}
+	}
+
+	// Filter: include only if assigned to current user and not cancelled/completed
+	var filtered []LinearIssue
+	log.Printf("[GetMyLinearIssues] Filtering %d issues, teamID=%s, linearUserID=%s", len(allIssues), teamID, linearUserID)
+	for _, issue := range allIssues {
+		assigneeID := ""
+		if issue.Assignee != nil {
+			assigneeID = issue.Assignee.ID
+		}
+
+		// Check if assigned to current user (if teamID, otherwise already assigned)
+		if teamID != "" && (issue.Assignee == nil || issue.Assignee.ID != linearUserID) {
+			log.Printf("[GetMyLinearIssues] Skipping issue %s: assignee=%s, expected=%s", issue.ID, assigneeID, linearUserID)
+			continue
+		}
+
+		// Exclude cancelled states only (include completed for stats)
+		if issue.State.Type == "cancelled" || issue.State.Type == "canceled" {
+			log.Printf("[GetMyLinearIssues] Skipping issue %s: state=%s", issue.ID, issue.State.Type)
+			continue
+		}
+
+		log.Printf("[GetMyLinearIssues] Including issue %s: assignee=%s", issue.ID, assigneeID)
+		filtered = append(filtered, issue)
+	}
+
+	log.Printf("[GetMyLinearIssues] Filtered %d issues from %d total", len(filtered), len(allIssues))
+	return filtered, nil
 }

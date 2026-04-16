@@ -10,14 +10,24 @@ import (
 	"openreport/internal/db"
 )
 
+const defaultVaultRoot = `D:\Vault`
+
 type App struct {
-	ctx      context.Context
-	database *db.Database
-	dataDir  string
+	ctx       context.Context
+	database  *db.Database
+	dataDir   string
+	vaultRoot string
+	report    *ReportService
+	team      *TeamService
+	external  *ExternalService
 }
 
 func NewApp() *App {
-	return &App{}
+	app := &App{vaultRoot: defaultVaultRoot}
+	app.report = NewReportService(app)
+	app.team = NewTeamService(app)
+	app.external = NewExternalService(app)
+	return app
 }
 
 func (a *App) startup(ctx context.Context) {
@@ -37,6 +47,22 @@ func (a *App) startup(ctx context.Context) {
 	if err != nil {
 		log.Fatal("Failed to initialize database:", err)
 	}
+
+	// Load user-specific vault root (if configured) before initial indexing.
+	if user, userErr := a.database.GetOrCreateDefaultUser(); userErr == nil {
+		if profile, profileErr := a.database.GetTeamProfile(user.ID); profileErr == nil && profile != nil {
+			if root := profile.VaultRoot; root != "" {
+				a.vaultRoot = root
+			}
+		}
+	}
+
+	if count, err := a.RefreshVault(); err != nil {
+		log.Printf("Warning: failed to refresh vault cache: %v", err)
+	} else {
+		log.Printf("Vault cache initialized with %d items", count)
+	}
+
 	log.Println("OpenReport started. Data dir:", a.dataDir)
 }
 

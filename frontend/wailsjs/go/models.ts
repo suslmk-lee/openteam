@@ -1,32 +1,51 @@
-export namespace db {
+export namespace ai {
 	
-	export class Activity {
-	    id: number;
-	    integrationId: number;
-	    source: string;
-	    externalId: string;
-	    title: string;
-	    summary: string;
-	    rawData: string;
-	    activityDate: string;
-	    // Go type: time
-	    fetchedAt: any;
+	export class PolicyConfig {
+	    chatAllowOverride: boolean;
 	
 	    static createFrom(source: any = {}) {
-	        return new Activity(source);
+	        return new PolicyConfig(source);
 	    }
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.id = source["id"];
-	        this.integrationId = source["integrationId"];
-	        this.source = source["source"];
-	        this.externalId = source["externalId"];
-	        this.title = source["title"];
-	        this.summary = source["summary"];
-	        this.rawData = source["rawData"];
-	        this.activityDate = source["activityDate"];
-	        this.fetchedAt = this.convertValues(source["fetchedAt"], null);
+	        this.chatAllowOverride = source["chatAllowOverride"];
+	    }
+	}
+	export class ProviderConfig {
+	    enabled: boolean;
+	    apiKey?: string;
+	    model?: string;
+	    baseUrl?: string;
+	    mode?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ProviderConfig(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.enabled = source["enabled"];
+	        this.apiKey = source["apiKey"];
+	        this.model = source["model"];
+	        this.baseUrl = source["baseUrl"];
+	        this.mode = source["mode"];
+	    }
+	}
+	export class Settings {
+	    defaultProvider: string;
+	    policy: PolicyConfig;
+	    providers: Record<string, ProviderConfig>;
+	
+	    static createFrom(source: any = {}) {
+	        return new Settings(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.defaultProvider = source["defaultProvider"];
+	        this.policy = this.convertValues(source["policy"], PolicyConfig);
+	        this.providers = this.convertValues(source["providers"], ProviderConfig, true);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -47,6 +66,47 @@ export namespace db {
 		    return a;
 		}
 	}
+
+}
+
+export namespace db {
+	
+	export class Activity {
+	    id: number;
+	    integrationId: number;
+	    source: string;
+	    externalId: string;
+	    title: string;
+	    summary: string;
+	    rawData: string;
+	    activityDate: string;
+	    date: string;
+	    activityDateTime?: string;
+	    endDateTime?: string;
+	    calendarId?: string;
+	    fetchedAt: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Activity(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.integrationId = source["integrationId"];
+	        this.source = source["source"];
+	        this.externalId = source["externalId"];
+	        this.title = source["title"];
+	        this.summary = source["summary"];
+	        this.rawData = source["rawData"];
+	        this.activityDate = source["activityDate"];
+	        this.date = source["date"];
+	        this.activityDateTime = source["activityDateTime"];
+	        this.endDateTime = source["endDateTime"];
+	        this.calendarId = source["calendarId"];
+	        this.fetchedAt = source["fetchedAt"];
+	    }
+	}
 	export class AttendanceRecord {
 	    id: number;
 	    userId: number;
@@ -59,8 +119,7 @@ export namespace db {
 	    notes: string;
 	    integrationSource: string;
 	    externalId: string;
-	    // Go type: time
-	    createdAt: any;
+	    createdAt: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new AttendanceRecord(source);
@@ -79,26 +138,8 @@ export namespace db {
 	        this.notes = source["notes"];
 	        this.integrationSource = source["integrationSource"];
 	        this.externalId = source["externalId"];
-	        this.createdAt = this.convertValues(source["createdAt"], null);
+	        this.createdAt = source["createdAt"];
 	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
 	}
 	export class AttendanceSummary {
 	    teamMemberId: number;
@@ -131,8 +172,7 @@ export namespace db {
 	    contactEmail: string;
 	    notes: string;
 	    active: boolean;
-	    // Go type: time
-	    createdAt: any;
+	    createdAt: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Client(source);
@@ -148,35 +188,17 @@ export namespace db {
 	        this.contactEmail = source["contactEmail"];
 	        this.notes = source["notes"];
 	        this.active = source["active"];
-	        this.createdAt = this.convertValues(source["createdAt"], null);
+	        this.createdAt = source["createdAt"];
 	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
 	}
 	export class ExcelTemplate {
 	    id: number;
 	    userId: number;
+	    teamType: string;
 	    name: string;
 	    filePath: string;
 	    structureJson: string;
-	    // Go type: time
-	    createdAt: any;
+	    createdAt: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ExcelTemplate(source);
@@ -186,29 +208,56 @@ export namespace db {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
 	        this.userId = source["userId"];
+	        this.teamType = source["teamType"];
 	        this.name = source["name"];
 	        this.filePath = source["filePath"];
 	        this.structureJson = source["structureJson"];
-	        this.createdAt = this.convertValues(source["createdAt"], null);
+	        this.createdAt = source["createdAt"];
+	    }
+	}
+	export class IngestResult {
+	    sourceType: string;
+	    source: string;
+	    model: string;
+	    requestedBy: string;
+	    status: string;
+	    warnings?: string[];
+	    rawPath?: string;
+	    wikiSourcePath?: string;
+	    derivedPaths?: string[];
+	    createdPaths?: string[];
+	    indexPath?: string;
+	    logPath?: string;
+	    elapsedMs?: number;
+	    extractorUsed?: boolean;
+	    extractorWarning?: string;
+	    skillSourceDir?: string;
+	    processLogs?: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new IngestResult(source);
 	    }
 	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.sourceType = source["sourceType"];
+	        this.source = source["source"];
+	        this.model = source["model"];
+	        this.requestedBy = source["requestedBy"];
+	        this.status = source["status"];
+	        this.warnings = source["warnings"];
+	        this.rawPath = source["rawPath"];
+	        this.wikiSourcePath = source["wikiSourcePath"];
+	        this.derivedPaths = source["derivedPaths"];
+	        this.createdPaths = source["createdPaths"];
+	        this.indexPath = source["indexPath"];
+	        this.logPath = source["logPath"];
+	        this.elapsedMs = source["elapsedMs"];
+	        this.extractorUsed = source["extractorUsed"];
+	        this.extractorWarning = source["extractorWarning"];
+	        this.skillSourceDir = source["skillSourceDir"];
+	        this.processLogs = source["processLogs"];
+	    }
 	}
 	export class Integration {
 	    id: number;
@@ -216,8 +265,7 @@ export namespace db {
 	    toolType: string;
 	    configJson: string;
 	    enabled: boolean;
-	    // Go type: time
-	    lastSyncedAt?: any;
+	    lastSyncedAt?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Integration(source);
@@ -230,26 +278,8 @@ export namespace db {
 	        this.toolType = source["toolType"];
 	        this.configJson = source["configJson"];
 	        this.enabled = source["enabled"];
-	        this.lastSyncedAt = this.convertValues(source["lastSyncedAt"], null);
+	        this.lastSyncedAt = source["lastSyncedAt"];
 	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
 	}
 	export class Issue {
 	    id: number;
@@ -261,8 +291,7 @@ export namespace db {
 	    status: string;
 	    assignee: string;
 	    dueDate?: string;
-	    // Go type: time
-	    createdAt: any;
+	    createdAt: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Issue(source);
@@ -279,26 +308,8 @@ export namespace db {
 	        this.status = source["status"];
 	        this.assignee = source["assignee"];
 	        this.dueDate = source["dueDate"];
-	        this.createdAt = this.convertValues(source["createdAt"], null);
+	        this.createdAt = source["createdAt"];
 	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
 	}
 	export class MemberAssignment {
 	    id: number;
@@ -310,8 +321,7 @@ export namespace db {
 	    endDate?: string;
 	    workMode: string;
 	    notes: string;
-	    // Go type: time
-	    createdAt: any;
+	    createdAt: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new MemberAssignment(source);
@@ -328,26 +338,28 @@ export namespace db {
 	        this.endDate = source["endDate"];
 	        this.workMode = source["workMode"];
 	        this.notes = source["notes"];
-	        this.createdAt = this.convertValues(source["createdAt"], null);
+	        this.createdAt = source["createdAt"];
+	    }
+	}
+	export class MyAttendanceSummary {
+	    vacationDays: number;
+	    morningHalfDays: number;
+	    afternoonHalfDays: number;
+	    totalDays: number;
+	    lateCount: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new MyAttendanceSummary(source);
 	    }
 	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.vacationDays = source["vacationDays"];
+	        this.morningHalfDays = source["morningHalfDays"];
+	        this.afternoonHalfDays = source["afternoonHalfDays"];
+	        this.totalDays = source["totalDays"];
+	        this.lateCount = source["lateCount"];
+	    }
 	}
 	export class Project {
 	    id: number;
@@ -360,8 +372,7 @@ export namespace db {
 	    description: string;
 	    startDate: string;
 	    endDate?: string;
-	    // Go type: time
-	    createdAt: any;
+	    createdAt: string;
 	    projectType: string;
 	    pmName: string;
 	    totalMM: number;
@@ -383,30 +394,12 @@ export namespace db {
 	        this.description = source["description"];
 	        this.startDate = source["startDate"];
 	        this.endDate = source["endDate"];
-	        this.createdAt = this.convertValues(source["createdAt"], null);
+	        this.createdAt = source["createdAt"];
 	        this.projectType = source["projectType"];
 	        this.pmName = source["pmName"];
 	        this.totalMM = source["totalMM"];
 	        this.progressRate = source["progressRate"];
 	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
 	}
 	export class ProjectCategory {
 	    id: number;
@@ -451,8 +444,7 @@ export namespace db {
 	    description: string;
 	    startDate: string;
 	    endDate?: string;
-	    // Go type: time
-	    createdAt: any;
+	    createdAt: string;
 	    projectType: string;
 	    pmName: string;
 	    totalMM: number;
@@ -474,11 +466,91 @@ export namespace db {
 	        this.description = source["description"];
 	        this.startDate = source["startDate"];
 	        this.endDate = source["endDate"];
-	        this.createdAt = this.convertValues(source["createdAt"], null);
+	        this.createdAt = source["createdAt"];
 	        this.projectType = source["projectType"];
 	        this.pmName = source["pmName"];
 	        this.totalMM = source["totalMM"];
 	        this.progressRate = source["progressRate"];
+	    }
+	}
+	export class ReportInsightActivity {
+	    activityId: number;
+	    source: string;
+	    title: string;
+	    summary: string;
+	    activityDate: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ReportInsightActivity(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.activityId = source["activityId"];
+	        this.source = source["source"];
+	        this.title = source["title"];
+	        this.summary = source["summary"];
+	        this.activityDate = source["activityDate"];
+	    }
+	}
+	export class ReportInsightDraft {
+	    key: string;
+	    suggestedSection: string;
+	    suggestedCategory: string;
+	    suggestedWorkType: string;
+	    content: string;
+	    activityIds: number[];
+	    reason: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ReportInsightDraft(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.key = source["key"];
+	        this.suggestedSection = source["suggestedSection"];
+	        this.suggestedCategory = source["suggestedCategory"];
+	        this.suggestedWorkType = source["suggestedWorkType"];
+	        this.content = source["content"];
+	        this.activityIds = source["activityIds"];
+	        this.reason = source["reason"];
+	    }
+	}
+	export class ReportInsightSummary {
+	    totalActivities: number;
+	    linkedActivities: number;
+	    unlinkedActivities: number;
+	    needsReview: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new ReportInsightSummary(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.totalActivities = source["totalActivities"];
+	        this.linkedActivities = source["linkedActivities"];
+	        this.unlinkedActivities = source["unlinkedActivities"];
+	        this.needsReview = source["needsReview"];
+	    }
+	}
+	export class ReportInsights {
+	    summary: ReportInsightSummary;
+	    unlinkedActivities: ReportInsightActivity[];
+	    draftCandidates: ReportInsightDraft[];
+	    needsReview: ReportInsightActivity[];
+	
+	    static createFrom(source: any = {}) {
+	        return new ReportInsights(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.summary = this.convertValues(source["summary"], ReportInsightSummary);
+	        this.unlinkedActivities = this.convertValues(source["unlinkedActivities"], ReportInsightActivity);
+	        this.draftCandidates = this.convertValues(source["draftCandidates"], ReportInsightDraft);
+	        this.needsReview = this.convertValues(source["needsReview"], ReportInsightActivity);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -537,8 +609,7 @@ export namespace db {
 	    wentWell: string;
 	    toImprove: string;
 	    actionItems: string;
-	    // Go type: time
-	    createdAt: any;
+	    createdAt: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Retrospective(source);
@@ -553,26 +624,8 @@ export namespace db {
 	        this.wentWell = source["wentWell"];
 	        this.toImprove = source["toImprove"];
 	        this.actionItems = source["actionItems"];
-	        this.createdAt = this.convertValues(source["createdAt"], null);
+	        this.createdAt = source["createdAt"];
 	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
 	}
 	export class SIProjectDetail {
 	    id: number;
@@ -583,8 +636,7 @@ export namespace db {
 	    totalMM: number;
 	    currentPhase: string;
 	    progressRate: number;
-	    // Go type: time
-	    createdAt: any;
+	    createdAt: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new SIProjectDetail(source);
@@ -600,26 +652,8 @@ export namespace db {
 	        this.totalMM = source["totalMM"];
 	        this.currentPhase = source["currentPhase"];
 	        this.progressRate = source["progressRate"];
-	        this.createdAt = this.convertValues(source["createdAt"], null);
+	        this.createdAt = source["createdAt"];
 	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
 	}
 	export class SIProjectMember {
 	    id: number;
@@ -659,8 +693,7 @@ export namespace db {
 	    nextWeekPlan: string;
 	    risks: string;
 	    notes: string;
-	    // Go type: time
-	    createdAt: any;
+	    createdAt: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new SIWeeklyReport(source);
@@ -677,26 +710,8 @@ export namespace db {
 	        this.nextWeekPlan = source["nextWeekPlan"];
 	        this.risks = source["risks"];
 	        this.notes = source["notes"];
-	        this.createdAt = this.convertValues(source["createdAt"], null);
+	        this.createdAt = source["createdAt"];
 	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
 	}
 	export class SIProjectView {
 	    project: Project;
@@ -807,8 +822,7 @@ export namespace db {
 	    resignDate?: string;
 	    active: boolean;
 	    linearUserId: string;
-	    // Go type: time
-	    createdAt: any;
+	    createdAt: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new TeamMember(source);
@@ -827,26 +841,8 @@ export namespace db {
 	        this.resignDate = source["resignDate"];
 	        this.active = source["active"];
 	        this.linearUserId = source["linearUserId"];
-	        this.createdAt = this.convertValues(source["createdAt"], null);
+	        this.createdAt = source["createdAt"];
 	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
 	}
 	export class TeamProfile {
 	    teamType: string;
@@ -856,6 +852,8 @@ export namespace db {
 	    setupDone: boolean;
 	    linearApiKey: string;
 	    linearTeamId: string;
+	    linearUserId: string;
+	    vaultRoot: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new TeamProfile(source);
@@ -870,14 +868,15 @@ export namespace db {
 	        this.setupDone = source["setupDone"];
 	        this.linearApiKey = source["linearApiKey"];
 	        this.linearTeamId = source["linearTeamId"];
+	        this.linearUserId = source["linearUserId"];
+	        this.vaultRoot = source["vaultRoot"];
 	    }
 	}
 	export class User {
 	    id: number;
 	    name: string;
 	    team: string;
-	    // Go type: time
-	    createdAt: any;
+	    createdAt: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new User(source);
@@ -888,36 +887,83 @@ export namespace db {
 	        this.id = source["id"];
 	        this.name = source["name"];
 	        this.team = source["team"];
-	        this.createdAt = this.convertValues(source["createdAt"], null);
+	        this.createdAt = source["createdAt"];
 	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
 	}
 	
+	export class VaultFile {
+	    id: number;
+	    name: string;
+	    path: string;
+	    content: string;
+	    modifiedAt: string;
+	    size: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new VaultFile(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.path = source["path"];
+	        this.content = source["content"];
+	        this.modifiedAt = source["modifiedAt"];
+	        this.size = source["size"];
+	    }
+	}
+	export class VaultItem {
+	    id: number;
+	    type: string;
+	    name: string;
+	    path: string;
+	    parentId?: number;
+	    modifiedAt: string;
+	    size: number;
+	    createdAt: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new VaultItem(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.type = source["type"];
+	        this.name = source["name"];
+	        this.path = source["path"];
+	        this.parentId = source["parentId"];
+	        this.modifiedAt = source["modifiedAt"];
+	        this.size = source["size"];
+	        this.createdAt = source["createdAt"];
+	    }
+	}
+	export class VaultReference {
+	    path: string;
+	    title: string;
+	    snippet: string;
+	    content: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new VaultReference(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.path = source["path"];
+	        this.title = source["title"];
+	        this.snippet = source["snippet"];
+	        this.content = source["content"];
+	    }
+	}
 	export class WeeklyReport {
 	    id: number;
 	    userId: number;
 	    weekStart: string;
 	    weekEnd: string;
 	    status: string;
-	    // Go type: time
-	    createdAt: any;
+	    createdAt: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new WeeklyReport(source);
@@ -930,32 +976,53 @@ export namespace db {
 	        this.weekStart = source["weekStart"];
 	        this.weekEnd = source["weekEnd"];
 	        this.status = source["status"];
-	        this.createdAt = this.convertValues(source["createdAt"], null);
+	        this.createdAt = source["createdAt"];
+	    }
+	}
+
+}
+
+export namespace integrations {
+	
+	export class Calendar {
+	    id: string;
+	    summary: string;
+	    primary?: boolean;
+	    selected?: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new Calendar(source);
 	    }
 	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.summary = source["summary"];
+	        this.primary = source["primary"];
+	        this.selected = source["selected"];
+	    }
 	}
 
 }
 
 export namespace main {
 	
+	export class AIChatResult {
+	    reply: string;
+	    provider: string;
+	    model: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AIChatResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.reply = source["reply"];
+	        this.provider = source["provider"];
+	        this.model = source["model"];
+	    }
+	}
 	export class ActivityWithSource {
 	    id: number;
 	    integrationId: number;
@@ -965,8 +1032,11 @@ export namespace main {
 	    summary: string;
 	    rawData: string;
 	    activityDate: string;
-	    // Go type: time
-	    fetchedAt: any;
+	    date: string;
+	    activityDateTime?: string;
+	    endDateTime?: string;
+	    calendarId?: string;
+	    fetchedAt: string;
 	    sourceLabel: string;
 	    sourceIcon: string;
 	
@@ -984,28 +1054,14 @@ export namespace main {
 	        this.summary = source["summary"];
 	        this.rawData = source["rawData"];
 	        this.activityDate = source["activityDate"];
-	        this.fetchedAt = this.convertValues(source["fetchedAt"], null);
+	        this.date = source["date"];
+	        this.activityDateTime = source["activityDateTime"];
+	        this.endDateTime = source["endDateTime"];
+	        this.calendarId = source["calendarId"];
+	        this.fetchedAt = source["fetchedAt"];
 	        this.sourceLabel = source["sourceLabel"];
 	        this.sourceIcon = source["sourceIcon"];
 	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
 	}
 	export class ClaudeChatResult {
 	    reply: string;
@@ -1276,6 +1332,7 @@ export namespace main {
 	    priority?: number;
 	    dueDate?: string;
 	    assigneeId?: string;
+	    labelIds?: string[];
 	
 	    static createFrom(source: any = {}) {
 	        return new LinearIssueUpdateInput(source);
@@ -1287,6 +1344,7 @@ export namespace main {
 	        this.priority = source["priority"];
 	        this.dueDate = source["dueDate"];
 	        this.assigneeId = source["assigneeId"];
+	        this.labelIds = source["labelIds"];
 	    }
 	}
 	

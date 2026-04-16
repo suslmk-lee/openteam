@@ -1,31 +1,8 @@
 import { useEffect, useState } from 'react'
-import {
-  GetCurrentWeek,
-  GetWeekByOffset,
-  GetClientStatuses,
-  GetSIWeeklySnapshot,
-  ListMemberAssignments,
-  ListTeamMembers,
-  ListClients,
-  ListSIProjects,
-  SaveMemberAssignment,
-  SaveSIProject,
-  SaveClient,
-  DeleteMemberAssignment,
-  DeleteSIProject,
-  UpdateSIProjectStatus,
-  // SI Weekly Reporting APIs
-  GetSIProjectTypes,
-  GetSIPhases,
-  GetSIRoles,
-  GetSIProjectView,
-  SaveSIProjectDetail,
-  SaveSIWeeklyReport,
-  SaveSIProjectMember,
-  DeleteSIProjectMember,
-} from '../../wailsjs/go/main/App'
+import { useTeamService } from '../hooks/useTeamService'
 import { Plus, X, Edit3, Users, FileText, ChevronLeft, ChevronRight } from 'lucide-react'
 import type { db } from '../../wailsjs/go/models'
+import { useTeamProfile } from '../contexts/TeamProfileContext'
 
 interface TeamMember {
   id: number
@@ -112,6 +89,39 @@ function formatDateOnly(value?: string) {
 }
 
 export default function TeamProjects() {
+  const teamService = useTeamService()
+  const {
+    getCurrentWeek: GetCurrentWeek,
+    getWeekByOffset: GetWeekByOffset,
+    getClientStatuses: GetClientStatuses,
+    getSIWeeklySnapshot: GetSIWeeklySnapshot,
+    listMemberAssignments: ListMemberAssignments,
+    listTeamMembers: ListTeamMembers,
+    listClients: ListClients,
+    listSIProjects: ListSIProjects,
+    saveMemberAssignment: SaveMemberAssignment,
+    saveSIProject: SaveSIProject,
+    saveClient: SaveClient,
+    deleteMemberAssignment: DeleteMemberAssignment,
+    deleteSIProject: DeleteSIProject,
+    updateSIProjectStatus: UpdateSIProjectStatus,
+    getSIProjectTypes: GetSIProjectTypes,
+    getSIPhases: GetSIPhases,
+    getSIRoles: GetSIRoles,
+    getSIProjectView: GetSIProjectView,
+    saveSIProjectDetail: SaveSIProjectDetail,
+    saveSIWeeklyReport: SaveSIWeeklyReport,
+    saveSIProjectMember: SaveSIProjectMember,
+    deleteSIProjectMember: DeleteSIProjectMember,
+  } = teamService
+
+  const { profile } = useTeamProfile()
+  const currentTeamType = profile?.teamType || ''
+
+  // Debug log
+  console.log('[TeamProjects] profile:', profile)
+  console.log('[TeamProjects] currentTeamType:', currentTeamType)
+
   const [week, setWeek] = useState<WeekInfo | null>(null)
   const [weekOffset, setWeekOffset] = useState(0)
   const [statuses, setStatuses] = useState<string[]>([])
@@ -517,14 +527,16 @@ export default function TeamProjects() {
                   <Plus size={16} />
                 </button>
               </div>
-              <select
-                className="px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                value={projectTeamType}
-                onChange={e => setProjectTeamType(e.target.value as 'si' | 'sm')}
-              >
-                <option value="si">SI</option>
-                <option value="sm">SM</option>
-              </select>
+              {currentTeamType === 'si_business' && (
+                <select
+                  className="px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  value={projectTeamType}
+                  onChange={e => setProjectTeamType(e.target.value as 'si' | 'sm')}
+                >
+                  <option value="si">SI</option>
+                  <option value="sm">SM</option>
+                </select>
+              )}
               <select
                 className="px-3 py-2 border border-slate-200 rounded-lg text-sm"
                 value={projectStatus}
@@ -926,6 +938,7 @@ export default function TeamProjects() {
           project={selectedProject}
           clients={clients}
           phases={phases}
+          currentTeamType={currentTeamType}
           onSave={handleSaveProjectEdit}
           onClose={() => setShowEditModal(false)}
         />
@@ -940,11 +953,12 @@ interface ProjectEditModalProps {
   project: Project
   clients: Client[]
   phases: string[]
+  currentTeamType: string
   onSave: (name: string, clientId: number, status: string, startDate: string, endDate: string, teamType: string) => void
   onClose: () => void
 }
 
-function ProjectEditModal({ project, clients, phases, onSave, onClose }: ProjectEditModalProps) {
+function ProjectEditModal({ project, clients, phases, currentTeamType, onSave, onClose }: ProjectEditModalProps) {
   // Helper to normalize date format for input type="date"
   const normalizeDate = (dateStr: string): string => {
     if (!dateStr) return ''
@@ -992,17 +1006,19 @@ function ProjectEditModal({ project, clients, phases, onSave, onClose }: Project
               ))}
             </select>
           </div>
-          <div>
-            <label className="block text-sm text-slate-600 mb-1">프로젝트 타입</label>
-            <select 
-              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" 
-              value={teamType} 
-              onChange={e => setTeamType(e.target.value)}
-            >
-              <option value="si">SI</option>
-              <option value="sm">SM</option>
-            </select>
-          </div>
+          {currentTeamType === 'si_business' && (
+            <div>
+              <label className="block text-sm text-slate-600 mb-1">프로젝트 타입</label>
+              <select
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                value={teamType}
+                onChange={e => setTeamType(e.target.value)}
+              >
+                <option value="si">SI</option>
+                <option value="sm">SM</option>
+              </select>
+            </div>
+          )}
           <div>
             <label className="block text-sm text-slate-600 mb-1">프로젝트 단계</label>
             <select 
@@ -1058,6 +1074,11 @@ interface WeeklyReportModalProps {
 }
 
 function WeeklyReportModal({ project, week, existingReport, onSave, onClose }: WeeklyReportModalProps) {
+  const teamService = useTeamService()
+  const {
+    getWeekByOffset: GetWeekByOffset,
+    getSIProjectView: GetSIProjectView,
+  } = teamService
   const [progress, setProgress] = useState(existingReport?.thisWeekProgress || '')
   const [plan, setPlan] = useState(existingReport?.nextWeekPlan || '')
   const [risks, setRisks] = useState(existingReport?.risks || '')

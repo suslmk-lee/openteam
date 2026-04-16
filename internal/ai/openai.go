@@ -11,8 +11,9 @@ import (
 )
 
 type Client struct {
-	APIKey string
-	Model  string
+	APIKey  string
+	Model   string
+	BaseURL string
 }
 
 type chatRequest struct {
@@ -32,11 +33,31 @@ type chatResponse struct {
 	} `json:"choices"`
 }
 
-func NewClient(apiKey, model string) *Client {
+func NewClient(apiKey, model string, baseURL ...string) *Client {
 	if model == "" {
 		model = "gpt-4o-mini"
 	}
-	return &Client{APIKey: apiKey, Model: model}
+
+	resolvedBaseURL := DefaultOpenAIBaseURL
+	if len(baseURL) > 0 {
+		if trimmed := strings.TrimSpace(baseURL[0]); trimmed != "" {
+			resolvedBaseURL = strings.TrimRight(trimmed, "/")
+		}
+	}
+
+	return &Client{
+		APIKey:  apiKey,
+		Model:   model,
+		BaseURL: resolvedBaseURL,
+	}
+}
+
+func (c *Client) chatCompletionsURL() string {
+	base := strings.TrimRight(strings.TrimSpace(c.BaseURL), "/")
+	if base == "" {
+		base = DefaultOpenAIBaseURL
+	}
+	return base + "/chat/completions"
 }
 
 func (c *Client) GenerateReportSentence(source, section, category, title, summary, activityDate string) (string, error) {
@@ -44,9 +65,9 @@ func (c *Client) GenerateReportSentence(source, section, category, title, summar
 		return "", fmt.Errorf("openai api key is empty")
 	}
 
-	systemPrompt := "너는 SI사업팀 주간업무 보고서를 작성하는 보조자다. 사용자가 선택한 활동(메일/캘린더/이슈/메신저 등)은 업무 관련으로 간주한다. 엑셀 보고서 톤에 맞춰 서술형으로 작성하되, 원문 복붙 형태를 금지한다."
+	systemPrompt := "?덈뒗 SI?ъ뾽? 二쇨컙?낅Т 蹂닿퀬?쒕? ?묒꽦?섎뒗 蹂댁“?먮떎. ?ъ슜?먭? ?좏깮???쒕룞(硫붿씪/罹섎┛???댁뒋/硫붿떊? ??? ?낅Т 愿?⑥쑝濡?媛꾩＜?쒕떎. ?묒? 蹂닿퀬???ㅼ뿉 留욎떠 ?쒖닠?뺤쑝濡??묒꽦?섎릺, ?먮Ц 蹂듬텤 ?뺥깭瑜?湲덉??쒕떎."
 	userPrompt := fmt.Sprintf(
-		"[입력]\n활동 유형: %s\n보고서 섹션: %s\n카테고리: %s\n활동 제목: %s\n활동 요약: %s\n일자: %s\n\n[작성 규칙]\n- 아래 고정 템플릿으로 정확히 2줄 작성\n- 형식:\n  1) 진행업무: ...\n  2) 후속조치: ...\n- 시스템 메타데이터(raw 로그, 주소, ID 등)를 그대로 쓰지 말 것\n- 과장/추측 금지, 업무 맥락 중심\n- 각 줄은 80자 이내\n",
+		"[?낅젰]\n?쒕룞 ?좏삎: %s\n蹂닿퀬???뱀뀡: %s\n移댄뀒怨좊━: %s\n?쒕룞 ?쒕ぉ: %s\n?쒕룞 ?붿빟: %s\n?쇱옄: %s\n\n[?묒꽦 洹쒖튃]\n- ?꾨옒 怨좎젙 ?쒗뵆由우쑝濡??뺥솗??2以??묒꽦\n- ?뺤떇:\n  1) 吏꾪뻾?낅Т: ...\n  2) ?꾩냽議곗튂: ...\n- ?쒖뒪??硫뷀??곗씠??raw 濡쒓렇, 二쇱냼, ID ??瑜?洹몃?濡??곗? 留?寃?n- 怨쇱옣/異붿륫 湲덉?, ?낅Т 留λ씫 以묒떖\n- 媛?以꾩? 80???대궡\n",
 		source, section, category, title, summary, activityDate,
 	)
 
@@ -65,7 +86,7 @@ func (c *Client) GenerateReportSentence(source, section, category, title, summar
 	}
 
 	httpClient := &http.Client{Timeout: 20 * time.Second}
-	req, err := http.NewRequest(http.MethodPost, "https://api.openai.com/v1/chat/completions", bytes.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, c.chatCompletionsURL(), bytes.NewReader(body))
 	if err != nil {
 		return "", err
 	}
@@ -106,9 +127,9 @@ func (c *Client) GenerateGroupedReportSentence(section, category, topic string, 
 		return "", fmt.Errorf("activity digests are empty")
 	}
 
-	systemPrompt := "너는 SI사업팀 주간업무 보고서를 작성하는 보조자다. 같은 주제의 활동 여러 건(메일/캘린더/이슈/메신저 등)을 하나의 보고 항목으로 취합해 작성한다. 원문 복붙이나 메타정보 나열을 금지한다."
+	systemPrompt := "?덈뒗 SI?ъ뾽? 二쇨컙?낅Т 蹂닿퀬?쒕? ?묒꽦?섎뒗 蹂댁“?먮떎. 媛숈? 二쇱젣???쒕룞 ?щ윭 嫄?硫붿씪/罹섎┛???댁뒋/硫붿떊? ?????섎굹??蹂닿퀬 ??ぉ?쇰줈 痍⑦빀???묒꽦?쒕떎. ?먮Ц 蹂듬텤?대굹 硫뷀??뺣낫 ?섏뿴??湲덉??쒕떎."
 	userPrompt := fmt.Sprintf(
-		"[입력]\n보고서 섹션: %s\n카테고리: %s\n주제: %s\n활동 건수: %d\n\n[활동 목록]\n- %s\n\n[작성 규칙]\n- 동일 주제 활동들을 하나의 보고 항목으로 통합해 작성\n- 아래 고정 템플릿으로 정확히 2줄 작성\n- 형식:\n  1) 진행업무: ...\n  2) 후속조치: ...\n- 제목/요약/로그를 그대로 복사하지 말고 주간 진행 흐름으로 요약\n- raw 메타정보, 내부 ID, 주소 나열 금지\n- 과장/추측 금지, 업무 맥락 중심\n- 각 줄은 100자 이내\n",
+		"[?낅젰]\n蹂닿퀬???뱀뀡: %s\n移댄뀒怨좊━: %s\n二쇱젣: %s\n?쒕룞 嫄댁닔: %d\n\n[?쒕룞 紐⑸줉]\n- %s\n\n[?묒꽦 洹쒖튃]\n- ?숈씪 二쇱젣 ?쒕룞?ㅼ쓣 ?섎굹??蹂닿퀬 ??ぉ?쇰줈 ?듯빀???묒꽦\n- ?꾨옒 怨좎젙 ?쒗뵆由우쑝濡??뺥솗??2以??묒꽦\n- ?뺤떇:\n  1) 吏꾪뻾?낅Т: ...\n  2) ?꾩냽議곗튂: ...\n- ?쒕ぉ/?붿빟/濡쒓렇瑜?洹몃?濡?蹂듭궗?섏? 留먭퀬 二쇨컙 吏꾪뻾 ?먮쫫?쇰줈 ?붿빟\n- raw 硫뷀??뺣낫, ?대? ID, 二쇱냼 ?섏뿴 湲덉?\n- 怨쇱옣/異붿륫 湲덉?, ?낅Т 留λ씫 以묒떖\n- 媛?以꾩? 100???대궡\n",
 		section, category, topic, len(activityDigests), strings.Join(activityDigests, "\n- "),
 	)
 
@@ -127,7 +148,7 @@ func (c *Client) GenerateGroupedReportSentence(section, category, topic string, 
 	}
 
 	httpClient := &http.Client{Timeout: 30 * time.Second}
-	req, err := http.NewRequest(http.MethodPost, "https://api.openai.com/v1/chat/completions", bytes.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, c.chatCompletionsURL(), bytes.NewReader(body))
 	if err != nil {
 		return "", err
 	}
@@ -171,11 +192,13 @@ func normalizeReportText(raw string) string {
 
 	// Model sometimes returns both items in one line: "1) ... 2) ..."
 	if !strings.Contains(text, "\n") {
-		text = strings.ReplaceAll(text, " 2) 후속조치:", "\n2) 후속조치:")
-		text = strings.ReplaceAll(text, "2) 후속조치:", "\n2) 후속조치:")
+		text = strings.ReplaceAll(text, " 2) ", "\n2) ")
+		text = strings.ReplaceAll(text, " 2)", "\n2)")
+		text = strings.ReplaceAll(text, " 2) ?꾩냽議곗튂:", "\n2) ?꾩냽議곗튂:")
+		text = strings.ReplaceAll(text, "2) ?꾩냽議곗튂:", "\n2) ?꾩냽議곗튂:")
 
-		if !strings.Contains(text, "\n") && strings.Contains(text, "진행업무:") && strings.Contains(text, "후속조치:") {
-			idx := strings.Index(text, "후속조치:")
+		if !strings.Contains(text, "\n") && strings.Contains(text, "吏꾪뻾?낅Т:") && strings.Contains(text, "?꾩냽議곗튂:") {
+			idx := strings.Index(text, "?꾩냽議곗튂:")
 			if idx > 0 {
 				prefix := strings.TrimSpace(text[:idx])
 				suffix := strings.TrimSpace(text[idx:])
@@ -198,29 +221,79 @@ func normalizeReportText(raw string) string {
 
 	if len(lines) == 1 {
 		line := lines[0]
-		if strings.HasPrefix(line, "진행업무:") {
-			return "1) " + line + "\n2) 후속조치: 관련 내용 검토 후 필요한 후속 대응을 진행함."
+		if strings.HasPrefix(line, "吏꾪뻾?낅Т:") {
+			return "1) " + line + "\n2) ?꾩냽議곗튂: 愿???댁슜 寃?????꾩슂???꾩냽 ??묒쓣 吏꾪뻾??"
 		}
-		if strings.HasPrefix(line, "1) 진행업무:") {
-			return line + "\n2) 후속조치: 관련 내용 검토 후 필요한 후속 대응을 진행함."
+		if strings.HasPrefix(line, "1) 吏꾪뻾?낅Т:") {
+			return line + "\n2) ?꾩냽議곗튂: 愿???댁슜 寃?????꾩슂???꾩냽 ??묒쓣 吏꾪뻾??"
 		}
-		return "1) 진행업무: " + line + "\n2) 후속조치: 관련 내용 검토 후 필요한 후속 대응을 진행함."
+		return "1) 吏꾪뻾?낅Т: " + line + "\n2) ?꾩냽議곗튂: 愿???댁슜 寃?????꾩슂???꾩냽 ??묒쓣 吏꾪뻾??"
 	}
 
 	first := lines[0]
 	second := lines[1]
 
-	if strings.HasPrefix(first, "진행업무:") {
+	if strings.HasPrefix(first, "吏꾪뻾?낅Т:") {
 		first = "1) " + first
-	} else if !strings.HasPrefix(first, "1) 진행업무:") {
-		first = "1) 진행업무: " + first
+	} else if !strings.HasPrefix(first, "1) 吏꾪뻾?낅Т:") {
+		first = "1) 吏꾪뻾?낅Т: " + first
 	}
 
-	if strings.HasPrefix(second, "후속조치:") {
+	if strings.HasPrefix(second, "?꾩냽議곗튂:") {
 		second = "2) " + second
-	} else if !strings.HasPrefix(second, "2) 후속조치:") {
-		second = "2) 후속조치: " + second
+	} else if !strings.HasPrefix(second, "2) ?꾩냽議곗튂:") {
+		second = "2) ?꾩냽議곗튂: " + second
 	}
 
 	return first + "\n" + second
+}
+
+// ChatCompletion sends a system prompt + user message to the OpenAI chat API.
+func (c *Client) ChatCompletion(systemPrompt, userMessage string) (string, error) {
+	reqBody := map[string]interface{}{
+		"model": c.Model,
+		"messages": []map[string]string{
+			{"role": "system", "content": systemPrompt},
+			{"role": "user", "content": userMessage},
+		},
+	}
+	bodyBytes, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", err
+	}
+
+	req, err := http.NewRequest("POST", c.chatCompletionsURL(), bytes.NewReader(bodyBytes))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.APIKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	httpClient := &http.Client{Timeout: 30 * time.Second}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+		Error *struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", err
+	}
+	if result.Error != nil {
+		return "", fmt.Errorf("openai error: %s", result.Error.Message)
+	}
+	if len(result.Choices) == 0 {
+		return "", fmt.Errorf("openai returned empty response")
+	}
+	return result.Choices[0].Message.Content, nil
 }

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"time"
+
+	"openreport/internal/constants"
 )
 
 // --- Users ---
@@ -130,9 +132,9 @@ func (d *Database) ListIntegrations(userID int64) ([]Integration, error) {
 
 func (d *Database) SaveActivity(a *Activity) (int64, error) {
 	res, err := d.conn.Exec(
-		`INSERT OR REPLACE INTO activities (integration_id, source, external_id, title, summary, raw_data, activity_date)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		a.IntegrationID, a.Source, a.ExternalID, a.Title, a.Summary, a.RawData, a.ActivityDate,
+		`INSERT OR REPLACE INTO activities (integration_id, source, external_id, title, summary, raw_data, activity_date, activity_datetime, end_datetime, calendar_id)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		a.IntegrationID, a.Source, a.ExternalID, a.Title, a.Summary, a.RawData, a.ActivityDate, a.ActivityDateTime, a.EndDateTime, a.CalendarID,
 	)
 	if err != nil {
 		return 0, err
@@ -149,9 +151,9 @@ func (d *Database) UpsertActivity(a *Activity) (int64, error) {
 		).Scan(&existingID)
 		if err == nil {
 			_, err := d.conn.Exec(
-				`UPDATE activities SET title = ?, summary = ?, raw_data = ?, activity_date = ?, fetched_at = CURRENT_TIMESTAMP
+				`UPDATE activities SET title = ?, summary = ?, raw_data = ?, activity_date = ?, activity_datetime = ?, end_datetime = ?, calendar_id = ?, fetched_at = CURRENT_TIMESTAMP
 				 WHERE id = ?`,
-				a.Title, a.Summary, a.RawData, a.ActivityDate, existingID,
+				a.Title, a.Summary, a.RawData, a.ActivityDate, a.ActivityDateTime, a.EndDateTime, a.CalendarID, existingID,
 			)
 			return existingID, err
 		}
@@ -160,8 +162,9 @@ func (d *Database) UpsertActivity(a *Activity) (int64, error) {
 }
 
 func (d *Database) ListActivities(weekStart, weekEnd string) ([]Activity, error) {
+	log.Printf("[DB ListActivities] Query range: %s ~ %s", weekStart, weekEnd)
 	rows, err := d.conn.Query(
-		`SELECT id, integration_id, source, external_id, title, summary, raw_data, activity_date, fetched_at
+		`SELECT id, integration_id, source, external_id, title, summary, raw_data, activity_date, activity_datetime, end_datetime, calendar_id, fetched_at
 		 FROM activities WHERE activity_date BETWEEN ? AND ? ORDER BY activity_date DESC`,
 		weekStart, weekEnd,
 	)
@@ -171,13 +174,27 @@ func (d *Database) ListActivities(weekStart, weekEnd string) ([]Activity, error)
 	defer rows.Close()
 
 	var activities []Activity
+	calendarCount := 0
 	for rows.Next() {
 		var a Activity
-		if err := rows.Scan(&a.ID, &a.IntegrationID, &a.Source, &a.ExternalID, &a.Title, &a.Summary, &a.RawData, &a.ActivityDate, &a.FetchedAt); err != nil {
+		var activityDateTime sql.NullString
+		var endDateTime sql.NullString
+		if err := rows.Scan(&a.ID, &a.IntegrationID, &a.Source, &a.ExternalID, &a.Title, &a.Summary, &a.RawData, &a.ActivityDate, &activityDateTime, &endDateTime, &a.CalendarID, &a.FetchedAt); err != nil {
 			return nil, err
 		}
+		if activityDateTime.Valid {
+			a.ActivityDateTime = activityDateTime.String
+		}
+		if endDateTime.Valid {
+			a.EndDateTime = endDateTime.String
+		}
 		activities = append(activities, a)
+		if a.Source == "google_calendar" {
+			calendarCount++
+			log.Printf("[DB ListActivities] Found calendar: ID=%d, Date=%s, Title=%s", a.ID, a.ActivityDate, a.Title)
+		}
 	}
+	log.Printf("[DB ListActivities] Total: %d, Calendar: %d", len(activities), calendarCount)
 	return activities, nil
 }
 
@@ -250,7 +267,7 @@ func (d *Database) UpdateReportStatus(id int64, status string) error {
 
 func (d *Database) SaveReportItem(item *ReportItem) (int64, error) {
 	if item.Period == "" {
-		item.Period = "this_week"
+		item.Period = constants.PeriodThisWeek
 	}
 	if item.ID > 0 {
 		log.Printf("[DB SaveReportItem] Updating item %d: content=%.50s...", item.ID, item.Content)
@@ -337,19 +354,51 @@ func (d *Database) DeleteReportItem(id int64) error {
 	return err
 }
 
+func (d *Database) IgnoreReportInsightActivity(reportID, activityID int64) error {
+	_, err := d.conn.Exec(
+		"INSERT OR IGNORE INTO report_insight_ignores (report_id, activity_id) VALUES (?, ?)",
+		reportID, activityID,
+	)
+	return err
+}
+
+func (d *Database) ListIgnoredReportInsightActivities(reportID int64) (map[int64]bool, error) {
+	rows, err := d.conn.Query(
+		"SELECT activity_id FROM report_insight_ignores WHERE report_id = ?",
+		reportID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	ignored := make(map[int64]bool)
+	for rows.Next() {
+		var activityID int64
+		if err := rows.Scan(&activityID); err != nil {
+			return nil, err
+		}
+		ignored[activityID] = true
+	}
+	return ignored, nil
+}
+
 // --- Excel Templates ---
 
 func (d *Database) SaveExcelTemplate(t *ExcelTemplate) (int64, error) {
+	if t.TeamType == "" {
+		t.TeamType = "default"
+	}
 	if t.ID > 0 {
 		_, err := d.conn.Exec(
-			"UPDATE excel_templates SET name=?, file_path=?, structure_json=? WHERE id=?",
-			t.Name, t.FilePath, t.StructureJSON, t.ID,
+			"UPDATE excel_templates SET name=?, file_path=?, structure_json=?, team_type=? WHERE id=?",
+			t.Name, t.FilePath, t.StructureJSON, t.TeamType, t.ID,
 		)
 		return t.ID, err
 	}
 	res, err := d.conn.Exec(
-		"INSERT INTO excel_templates (user_id, name, file_path, structure_json) VALUES (?, ?, ?, ?)",
-		t.UserID, t.Name, t.FilePath, t.StructureJSON,
+		"INSERT INTO excel_templates (user_id, name, file_path, structure_json, team_type) VALUES (?, ?, ?, ?, ?)",
+		t.UserID, t.Name, t.FilePath, t.StructureJSON, t.TeamType,
 	)
 	if err != nil {
 		return 0, err
@@ -360,11 +409,35 @@ func (d *Database) SaveExcelTemplate(t *ExcelTemplate) (int64, error) {
 func (d *Database) GetExcelTemplate(userID int64) (*ExcelTemplate, error) {
 	t := &ExcelTemplate{}
 	err := d.conn.QueryRow(
-		"SELECT id, user_id, name, file_path, structure_json, created_at FROM excel_templates WHERE user_id = ? ORDER BY id DESC LIMIT 1",
+		"SELECT id, user_id, COALESCE(team_type, 'default'), name, file_path, structure_json, created_at FROM excel_templates WHERE user_id = ? ORDER BY id DESC LIMIT 1",
 		userID,
-	).Scan(&t.ID, &t.UserID, &t.Name, &t.FilePath, &t.StructureJSON, &t.CreatedAt)
+	).Scan(&t.ID, &t.UserID, &t.TeamType, &t.Name, &t.FilePath, &t.StructureJSON, &t.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return t, nil
+}
+
+// GetExcelTemplateByType returns the template for the given teamType.
+// Falls back to 'default' if no teamType-specific template exists.
+func (d *Database) GetExcelTemplateByType(userID int64, teamType string) (*ExcelTemplate, error) {
+	if teamType == "" {
+		teamType = "default"
+	}
+	t := &ExcelTemplate{}
+	err := d.conn.QueryRow(
+		"SELECT id, user_id, COALESCE(team_type, 'default'), name, file_path, structure_json, created_at FROM excel_templates WHERE user_id = ? AND team_type = ? ORDER BY id DESC LIMIT 1",
+		userID, teamType,
+	).Scan(&t.ID, &t.UserID, &t.TeamType, &t.Name, &t.FilePath, &t.StructureJSON, &t.CreatedAt)
+	if err == sql.ErrNoRows {
+		if teamType == "default" {
+			return nil, nil
+		}
+		// fallback to default
+		return d.GetExcelTemplateByType(userID, "default")
 	}
 	if err != nil {
 		return nil, err
@@ -468,6 +541,29 @@ func (d *Database) DeleteTeamMember(userID, memberID int64) error {
 	return err
 }
 
+// GetOrCreateSelfTeamMember finds or creates a team member representing the user themselves (for personal attendance)
+func (d *Database) GetOrCreateSelfTeamMember(userID int64, userName string) (int64, error) {
+	// Try to find existing self team member
+	var memberID int64
+	err := d.conn.QueryRow(
+		"SELECT id FROM team_members WHERE user_id = ? AND name = ? LIMIT 1",
+		userID, userName,
+	).Scan(&memberID)
+	if err == nil {
+		return memberID, nil
+	}
+
+	// Create self team member
+	res, err := d.conn.Exec(
+		"INSERT INTO team_members (user_id, name, position, email, role, employment_type, active) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		userID, userName, "본인", "", "member", "", 1,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
 // --- Clients ---
 
 func (d *Database) SaveClient(c *Client) (int64, error) {
@@ -558,7 +654,7 @@ func (d *Database) SaveProject(p *Project) (int64, error) {
 func (d *Database) ListProjectsWithClient(userID int64, teamType string) ([]ProjectWithClient, error) {
 	var query string
 	var args []interface{}
-	
+
 	if teamType == "" {
 		// Fetch all projects (both SI and SM)
 		query = `
@@ -580,7 +676,7 @@ func (d *Database) ListProjectsWithClient(userID int64, teamType string) ([]Proj
 			ORDER BY p.created_at DESC`
 		args = []interface{}{userID, teamType}
 	}
-	
+
 	rows, err := d.conn.Query(query, args...)
 	if err != nil {
 		return nil, err
@@ -859,7 +955,7 @@ func (d *Database) ListAttendanceRecords(userID int64, memberID int64, startDate
 		 FROM attendance_records
 		 WHERE user_id = ?`
 	args := []interface{}{userID}
-	
+
 	if memberID > 0 {
 		query += " AND team_member_id = ?"
 		args = append(args, memberID)
@@ -899,7 +995,7 @@ func (d *Database) DeleteAttendanceRecord(userID, recordID int64) error {
 // GetAttendanceRecords retrieves individual attendance records for the week with dates
 func (d *Database) GetAttendanceRecords(userID int64, startDate, endDate string) ([]AttendanceRecord, error) {
 	log.Printf("[DB GetAttendanceRecords] userID=%d, startDate=%s, endDate=%s", userID, startDate, endDate)
-	
+
 	query := `
 		SELECT 
 			ar.id,
@@ -920,14 +1016,14 @@ func (d *Database) GetAttendanceRecords(userID int64, startDate, endDate string)
 		  AND ar.record_date >= ? AND ar.record_date <= ?
 		ORDER BY ar.record_date, tm.name
 	`
-	
+
 	rows, err := d.conn.Query(query, userID, startDate, endDate)
 	if err != nil {
 		log.Printf("[DB GetAttendanceRecords] Query error: %v", err)
 		return nil, err
 	}
 	defer rows.Close()
-	
+
 	var records []AttendanceRecord
 	for rows.Next() {
 		var r AttendanceRecord
@@ -945,7 +1041,7 @@ func (d *Database) GetAttendanceRecords(userID int64, startDate, endDate string)
 
 func (d *Database) GetAttendanceSummary(userID int64, startDate, endDate string) ([]AttendanceSummary, error) {
 	log.Printf("[DB GetAttendanceSummary] userID=%d, startDate=%s, endDate=%s", userID, startDate, endDate)
-	
+
 	// 먼저 해당 기간에 근태 기록이 있는지 확인
 	countQuery := `SELECT COUNT(*) FROM attendance_records WHERE user_id = ? AND record_date >= ? AND record_date <= ?`
 	var totalCount int
@@ -955,7 +1051,7 @@ func (d *Database) GetAttendanceSummary(userID int64, startDate, endDate string)
 	} else {
 		log.Printf("[DB GetAttendanceSummary] Total records in period: %d", totalCount)
 	}
-	
+
 	query := `
 		SELECT 
 			tm.id as team_member_id,
@@ -1032,7 +1128,7 @@ func (d *Database) GetSIProjectDetail(userID, projectID int64) (*SIProjectDetail
 	)
 	var detail SIProjectDetail
 	detail.ProjectID = projectID
-	if err := row.Scan(&detail.ID, &detail.UserID, &detail.ProjectType, 
+	if err := row.Scan(&detail.ID, &detail.UserID, &detail.ProjectType,
 		&detail.PMName, &detail.TotalMM, &detail.CurrentPhase, &detail.ProgressRate, &detail.CreatedAt); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -1124,7 +1220,7 @@ func (d *Database) ListSIProjectMembers(userID, projectID int64) ([]SIProjectMem
 	for rows.Next() {
 		var m SIProjectMember
 		var allocationPercent float64
-		if err := rows.Scan(&m.ID, &m.UserID, &m.ProjectID, &m.TeamMemberID, &m.MemberName, 
+		if err := rows.Scan(&m.ID, &m.UserID, &m.ProjectID, &m.TeamMemberID, &m.MemberName,
 			&m.Role, &allocationPercent, &m.StartDate, &m.EndDate); err != nil {
 			return nil, err
 		}
@@ -1161,7 +1257,7 @@ func (d *Database) GetSIProjectView(userID, projectID int64, weekStart, weekEnd 
 		log.Printf("[GetSIProjectView] Failed to scan project %d: %v", projectID, err)
 		return nil, err
 	}
-	
+
 	// Build detail from projects table data
 	detail.ID = view.Project.ID
 	detail.UserID = view.Project.UserID
@@ -1295,10 +1391,10 @@ func (d *Database) GetTeamProfile(userID int64) (*TeamProfile, error) {
 	profile.MemberCount = memberCount
 
 	// Load team_type from team_type_configs
-	var teamType, linearAPIKey, linearTeamID string
+	var teamType, linearAPIKey, linearTeamID, linearUserID, vaultRoot string
 	err = d.conn.QueryRow(
-		"SELECT team_type, COALESCE(linear_api_key,''), COALESCE(linear_team_id,'') FROM team_type_configs WHERE user_id = ? ORDER BY id DESC LIMIT 1", userID,
-	).Scan(&teamType, &linearAPIKey, &linearTeamID)
+		"SELECT team_type, COALESCE(linear_api_key,''), COALESCE(linear_team_id,''), COALESCE(linear_user_id,''), COALESCE(vault_root,'') FROM team_type_configs WHERE user_id = ? ORDER BY id DESC LIMIT 1", userID,
+	).Scan(&teamType, &linearAPIKey, &linearTeamID, &linearUserID, &vaultRoot)
 	if err == sql.ErrNoRows {
 		profile.TeamType = ""
 	} else if err != nil {
@@ -1307,6 +1403,8 @@ func (d *Database) GetTeamProfile(userID int64) (*TeamProfile, error) {
 		profile.TeamType = teamType
 		profile.LinearAPIKey = linearAPIKey
 		profile.LinearTeamID = linearTeamID
+		profile.LinearUserID = linearUserID
+		profile.VaultRoot = vaultRoot
 	}
 	return profile, nil
 }
@@ -1330,8 +1428,8 @@ func (d *Database) SaveTeamProfile(userID int64, p *TeamProfile) error {
 		return err
 	}
 	_, err = d.conn.Exec(
-		"INSERT INTO team_type_configs (user_id, team_type, linear_api_key, linear_team_id) VALUES (?, ?, ?, ?)",
-		userID, p.TeamType, p.LinearAPIKey, p.LinearTeamID,
+		"INSERT INTO team_type_configs (user_id, team_type, linear_api_key, linear_team_id, linear_user_id, vault_root) VALUES (?, ?, ?, ?, ?, ?)",
+		userID, p.TeamType, p.LinearAPIKey, p.LinearTeamID, p.LinearUserID, p.VaultRoot,
 	)
 	return err
 }
@@ -1430,4 +1528,210 @@ func (d *Database) SaveRetrospective(r *Retrospective) (int64, error) {
 		r.WentWell, r.ToImprove, r.ActionItems, r.ID, r.UserID,
 	)
 	return r.ID, err
+}
+
+// --- Vault Knowledge Base ---
+
+func scanVaultItem(scanner interface{ Scan(...any) error }) (*VaultItem, error) {
+	var item VaultItem
+	var parentID sql.NullInt64
+	if err := scanner.Scan(&item.ID, &item.Type, &item.Name, &item.Path, &parentID, &item.ModifiedAt, &item.Size, &item.CreatedAt); err != nil {
+		return nil, err
+	}
+	if parentID.Valid {
+		item.ParentID = &parentID.Int64
+	}
+	return &item, nil
+}
+
+func (d *Database) SaveVaultItem(item *VaultItem) (int64, error) {
+	if item == nil {
+		return 0, fmt.Errorf("vault item is nil")
+	}
+
+	var parentID any
+	if item.ParentID != nil {
+		parentID = *item.ParentID
+	}
+
+	if item.ID > 0 {
+		_, err := d.conn.Exec(
+			`UPDATE vault_items
+			 SET type = ?, name = ?, path = ?, parent_id = ?, modified_at = ?, size = ?
+			 WHERE id = ?`,
+			item.Type, item.Name, item.Path, parentID, item.ModifiedAt, item.Size, item.ID,
+		)
+		return item.ID, err
+	}
+
+	var existingID int64
+	err := d.conn.QueryRow(`SELECT id FROM vault_items WHERE path = ?`, item.Path).Scan(&existingID)
+	if err == nil {
+		item.ID = existingID
+		_, err = d.conn.Exec(
+			`UPDATE vault_items
+			 SET type = ?, name = ?, path = ?, parent_id = ?, modified_at = ?, size = ?
+			 WHERE id = ?`,
+			item.Type, item.Name, item.Path, parentID, item.ModifiedAt, item.Size, item.ID,
+		)
+		return item.ID, err
+	}
+	if err != sql.ErrNoRows {
+		return 0, err
+	}
+
+	res, err := d.conn.Exec(
+		`INSERT INTO vault_items (type, name, path, parent_id, modified_at, size)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		item.Type, item.Name, item.Path, parentID, item.ModifiedAt, item.Size,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+func (d *Database) GetVaultItemsByParent(parentID *int64) ([]VaultItem, error) {
+	query := `SELECT id, type, name, path, parent_id, COALESCE(modified_at, ''), size, COALESCE(created_at, '')
+		FROM vault_items`
+	var args []any
+	if parentID == nil {
+		query += ` WHERE parent_id IS NULL`
+	} else {
+		query += ` WHERE parent_id = ?`
+		args = append(args, *parentID)
+	}
+	query += ` ORDER BY type DESC, name ASC, path ASC`
+
+	rows, err := d.conn.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []VaultItem
+	for rows.Next() {
+		item, err := scanVaultItem(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, *item)
+	}
+	return items, rows.Err()
+}
+
+func (d *Database) GetVaultItemByPath(path string) (*VaultItem, error) {
+	row := d.conn.QueryRow(
+		`SELECT id, type, name, path, parent_id, COALESCE(modified_at, ''), size, COALESCE(created_at, '')
+		 FROM vault_items WHERE path = ?`,
+		path,
+	)
+	item, err := scanVaultItem(row)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return item, nil
+}
+
+func (d *Database) DeleteVaultItemByPath(path string) error {
+	_, err := d.conn.Exec(`DELETE FROM vault_items WHERE path = ? OR path LIKE ?`, path, path+"/%")
+	return err
+}
+
+func (d *Database) SearchVaultItems(keyword string) ([]VaultItem, error) {
+	if keyword == "" {
+		return []VaultItem{}, nil
+	}
+
+	pattern := "%" + keyword + "%"
+	rows, err := d.conn.Query(
+		`SELECT id, type, name, path, parent_id, COALESCE(modified_at, ''), size, COALESCE(created_at, '')
+		 FROM vault_items
+		 WHERE name LIKE ? OR path LIKE ?
+		 ORDER BY type DESC, name ASC, path ASC`,
+		pattern, pattern,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []VaultItem
+	for rows.Next() {
+		item, err := scanVaultItem(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, *item)
+	}
+	return items, rows.Err()
+}
+
+func (d *Database) SearchVaultFileItems(keyword string, limit int) ([]VaultItem, error) {
+	if keyword == "" {
+		return []VaultItem{}, nil
+	}
+
+	pattern := "%" + keyword + "%"
+	query := `SELECT id, type, name, path, parent_id, COALESCE(modified_at, ''), size, COALESCE(created_at, '')
+		FROM vault_items
+		WHERE type = 'file' AND (name LIKE ? OR path LIKE ?)
+		ORDER BY name ASC, path ASC`
+	args := []any{pattern, pattern}
+	if limit > 0 {
+		query += ` LIMIT ?`
+		args = append(args, limit)
+	}
+
+	rows, err := d.conn.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []VaultItem
+	for rows.Next() {
+		item, err := scanVaultItem(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, *item)
+	}
+	return items, rows.Err()
+}
+
+func (d *Database) ListVaultFileItems(limit int) ([]VaultItem, error) {
+	query := `SELECT id, type, name, path, parent_id, COALESCE(modified_at, ''), size, COALESCE(created_at, '')
+		FROM vault_items
+		WHERE type = 'file'
+		ORDER BY COALESCE(modified_at, '') DESC, path ASC`
+	args := []any{}
+	if limit > 0 {
+		query += ` LIMIT ?`
+		args = append(args, limit)
+	}
+
+	rows, err := d.conn.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []VaultItem
+	for rows.Next() {
+		item, err := scanVaultItem(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, *item)
+	}
+	return items, rows.Err()
+}
+
+func (d *Database) ClearVaultItems() error {
+	_, err := d.conn.Exec(`DELETE FROM vault_items`)
+	return err
 }

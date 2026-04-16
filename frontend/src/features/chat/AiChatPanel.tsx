@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Bot, ChevronDown, Loader2, Maximize2, MessageSquare, Minimize2, Send, X } from 'lucide-react'
+import { ArrowUp, ChevronDown, Loader2, Maximize2, MessageSquare, Mic, Minimize2, Plus, Sparkles, X } from 'lucide-react'
 import type { AiChatSession, ChatCommand, ChatMessage, ChatReference } from './types'
 
 function escapeHtml(text: string): string {
@@ -187,6 +187,11 @@ export function AiChatPanel({
     ? commands.filter(command => command.cmd.startsWith(commandQuery))
     : []
   const panelInset = 12
+  const [reasoningLevel, setReasoningLevel] = useState('high')
+  const openAiModelLabel = 'GPT-4o mini'
+  const modelDisplay = session.chatModel === 'claude'
+    ? session.claudeMeta?.model || 'Claude Code'
+    : openAiModelLabel
 
   function findMatchingCommand(rawInput: string) {
     const normalized = rawInput.toLowerCase()
@@ -309,11 +314,11 @@ export function AiChatPanel({
       }}
     >
       <div className="flex h-full flex-col">
-        <div className="shrink-0 border-b border-slate-100 px-4 pt-3 pb-0 dark:border-slate-700">
-          <div className="mb-2 flex items-center justify-between">
+        <div className="shrink-0 border-b border-slate-100 px-4 py-3 dark:border-slate-700">
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-100 dark:bg-violet-500/20">
-                <Bot size={14} className="text-violet-600 dark:text-violet-300" />
+                <Sparkles size={14} className="text-violet-600 dark:text-violet-300" />
               </div>
               <div>
                 <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{title}</p>
@@ -321,22 +326,9 @@ export function AiChatPanel({
               </div>
             </div>
             <div className="flex items-center gap-1.5">
-              {session.chatModel === 'openai' && session.keyLoaded && (
-                session.apiKey
-                  ? <span className="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-600 dark:bg-emerald-500/20 dark:text-emerald-300">API Connected</span>
-                  : (
-                    <button
-                      type="button"
-                      onClick={() => session.setShowKeyInput(prev => !prev)}
-                      className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-600 transition-colors hover:bg-amber-200 dark:bg-amber-500/20 dark:text-amber-300 dark:hover:bg-amber-500/30"
-                    >
-                      Set API Key
-                    </button>
-                  )
-              )}
-              {session.chatModel === 'claude' && (
-                <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-medium text-violet-600 dark:bg-violet-500/20 dark:text-violet-300">Claude</span>
-              )}
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-300">
+                {modelDisplay}
+              </span>
               <button
                 type="button"
                 onClick={session.toggleMaximized}
@@ -353,53 +345,7 @@ export function AiChatPanel({
               </button>
             </div>
           </div>
-          <div className="flex gap-1 -mb-px">
-            {session.claudeAvailable && (
-              <button
-                type="button"
-                onClick={() => session.setChatModel('claude')}
-                className={`rounded-t-lg border-b-2 px-3 py-1.5 text-xs font-medium transition-colors ${
-                  session.chatModel === 'claude'
-                    ? 'border-violet-500 bg-violet-50 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300'
-                    : 'border-transparent text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300'
-                }`}
-              >
-                Claude
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => session.setChatModel('openai')}
-              className={`rounded-t-lg border-b-2 px-3 py-1.5 text-xs font-medium transition-colors ${
-                session.chatModel === 'openai'
-                  ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300'
-                  : 'border-transparent text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300'
-              }`}
-            >
-              OpenAI
-            </button>
-          </div>
         </div>
-
-        {session.chatModel === 'claude' && session.claudeMeta && (
-          <div className="shrink-0 flex flex-wrap items-center gap-2 border-b border-violet-100 bg-violet-50 px-3 py-1.5 dark:border-violet-500/20 dark:bg-violet-500/10">
-            <span
-              style={{ fontFamily: "'Fira Code', monospace" }}
-              className="max-w-[140px] truncate rounded bg-violet-100 px-1.5 py-0.5 text-[9px] font-semibold text-violet-600 dark:bg-violet-500/20 dark:text-violet-300"
-              title={session.claudeMeta.model}
-            >
-              {session.claudeMeta.model || '-'}
-            </span>
-            <span className="text-[9px] text-slate-400 dark:text-slate-500">turn {Math.ceil(session.messages.length / 2)}</span>
-            <span style={{ fontFamily: "'Fira Code', monospace" }} className="rounded bg-amber-50 px-1.5 py-0.5 text-[9px] font-medium text-amber-600 dark:bg-amber-500/20 dark:text-amber-300">
-              in {session.cumInputTokens.toLocaleString()}
-            </span>
-            <span style={{ fontFamily: "'Fira Code', monospace" }} className="rounded bg-blue-50 px-1.5 py-0.5 text-[9px] font-medium text-blue-600 dark:bg-blue-500/20 dark:text-blue-300">
-              out {session.cumOutputTokens.toLocaleString()}
-            </span>
-            <span className="ml-auto text-[9px] text-slate-400 dark:text-slate-500">${session.cumCostUsd.toFixed(4)}</span>
-          </div>
-        )}
 
         {session.showKeyInput && (
           <div className="shrink-0 border-b border-amber-100 bg-amber-50 px-4 py-2 dark:border-amber-500/20 dark:bg-amber-500/10">
@@ -427,7 +373,7 @@ export function AiChatPanel({
           {session.messages.length === 0 && (
             <div className="flex h-full flex-col items-center justify-center gap-4 py-6">
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-100 dark:bg-violet-500/20">
-                <Bot size={22} className="text-violet-500 dark:text-violet-300" />
+                <Sparkles size={22} className="text-violet-500 dark:text-violet-300" />
               </div>
               <div className="text-center">
                 <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">{title}</p>
@@ -455,7 +401,7 @@ export function AiChatPanel({
               <div className={`flex gap-2 ${message.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
                 {message.role === 'assistant' && (
                   <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-violet-100 dark:bg-violet-500/20">
-                    <Bot size={11} className="text-violet-600 dark:text-violet-300" />
+                    <Sparkles size={11} className="text-violet-600 dark:text-violet-300" />
                   </div>
                 )}
                 <div
@@ -482,7 +428,7 @@ export function AiChatPanel({
           {session.sending && (
             <div className="flex gap-2">
               <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-violet-100 dark:bg-violet-500/20">
-                <Bot size={11} className="text-violet-600 dark:text-violet-300" />
+                <Sparkles size={11} className="text-violet-600 dark:text-violet-300" />
               </div>
               <div className="rounded-2xl rounded-tl-sm bg-slate-100 px-3 py-2 dark:bg-slate-800">
                 <Loader2 size={14} className="animate-spin text-slate-400 dark:text-slate-500" />
@@ -525,7 +471,7 @@ export function AiChatPanel({
             </div>
           )}
 
-          <div className="flex items-end gap-2">
+          <div className="rounded-2xl border border-slate-200 bg-gradient-to-b from-slate-50 to-white p-2 shadow-sm dark:border-slate-600 dark:from-slate-900 dark:to-slate-800">
             <textarea
               ref={textareaRef}
               value={session.input}
@@ -563,21 +509,90 @@ export function AiChatPanel({
                 }
               }}
               placeholder={placeholder}
-              rows={1}
-              className="max-h-24 flex-1 resize-none rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-violet-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+              rows={2}
+              className="max-h-28 min-h-[44px] w-full resize-none rounded-xl border border-transparent bg-transparent px-2 py-1.5 text-sm text-slate-900 outline-none focus:border-violet-300 focus:bg-white/70 dark:text-slate-100 dark:focus:border-violet-500/40 dark:focus:bg-slate-900/60"
             />
-            <button
-              type="button"
-              onClick={() => { void handleSend() }}
-              disabled={session.sending || !session.input.trim()}
-              className="shrink-0 rounded-xl bg-violet-600 p-2 text-white transition-colors hover:bg-violet-700 disabled:opacity-40"
-            >
-              <Send size={14} />
-            </button>
+
+            <div className="mt-1.5 flex items-center justify-between gap-2">
+              <div className="flex min-w-0 items-center gap-1.5">
+                <button
+                  type="button"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 transition-colors hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                  title="추가 기능(준비 중)"
+                  aria-label="추가 기능"
+                >
+                  <Plus size={14} />
+                </button>
+
+                <div className="relative">
+                  <select
+                    value={session.chatModel}
+                    onChange={event => session.setChatModel(event.target.value as 'openai' | 'claude')}
+                    className="h-7 appearance-none rounded-lg border border-slate-300 bg-white pl-2 pr-6 text-[11px] font-medium text-slate-700 outline-none transition-colors hover:bg-slate-100 focus:ring-2 focus:ring-violet-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                  >
+                    {session.claudeAvailable && <option value="claude">Claude</option>}
+                    <option value="openai">OpenAI</option>
+                  </select>
+                  <ChevronDown size={12} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-400" />
+                </div>
+
+                <div className="relative">
+                  <select
+                    value={reasoningLevel}
+                    onChange={event => setReasoningLevel(event.target.value)}
+                    className="h-7 appearance-none rounded-lg border border-slate-300 bg-white pl-2 pr-6 text-[11px] font-medium text-slate-700 outline-none transition-colors hover:bg-slate-100 focus:ring-2 focus:ring-violet-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                    title="응답 깊이(현재 UI 전용)"
+                  >
+                    <option value="normal">보통</option>
+                    <option value="high">높음</option>
+                    <option value="very-high">매우 높음</option>
+                  </select>
+                  <ChevronDown size={12} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-400" />
+                </div>
+
+                {session.chatModel === 'openai' && session.keyLoaded && !session.apiKey && (
+                  <button
+                    type="button"
+                    onClick={() => session.setShowKeyInput(prev => !prev)}
+                    className="h-7 rounded-lg border border-amber-300 bg-amber-50 px-2 text-[11px] font-medium text-amber-700 transition-colors hover:bg-amber-100 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300 dark:hover:bg-amber-500/20"
+                  >
+                    API Key
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-600 dark:text-slate-500 dark:hover:bg-slate-700 dark:hover:text-slate-300"
+                  aria-label="음성 입력(준비 중)"
+                  title="음성 입력(준비 중)"
+                >
+                  <Mic size={14} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { void handleSend() }}
+                  disabled={session.sending || !session.input.trim()}
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-slate-900 text-white transition-colors hover:bg-slate-700 disabled:opacity-40 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
+                  aria-label="보내기"
+                >
+                  <ArrowUp size={14} />
+                </button>
+              </div>
+            </div>
           </div>
-          <p className="mt-1.5 text-center text-[10px] text-slate-300 dark:text-slate-500">
-            {commands.length > 0 ? 'Type / to browse commands' : 'Read-only chat'}
-          </p>
+
+          <div className="mt-1.5 flex items-center justify-between text-[10px] text-slate-400 dark:text-slate-500">
+            <span>{commands.length > 0 ? 'Type / to browse commands' : 'Read-only chat'}</span>
+            {session.chatModel === 'claude' && session.claudeMeta ? (
+              <span style={{ fontFamily: "'Fira Code', monospace" }}>
+                in {session.cumInputTokens.toLocaleString()} / out {session.cumOutputTokens.toLocaleString()} / ${session.cumCostUsd.toFixed(4)}
+              </span>
+            ) : (
+              <span>{modelDisplay}</span>
+            )}
+          </div>
         </div>
       </div>
     </div>

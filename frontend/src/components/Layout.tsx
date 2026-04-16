@@ -4,8 +4,6 @@ import {
   Users,
   User,
   Settings,
-  ChevronLeft,
-  ChevronRight,
   ChevronDown,
   ChevronUp,
   UserCog,
@@ -26,9 +24,10 @@ import {
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTeamProfile } from '../contexts/TeamProfileContext'
+import { useShellLayout } from '../contexts/ShellLayoutContext'
 
 export default function Layout() {
-  const [collapsed, setCollapsed] = useState(false)
+  const { sidebarCollapsed: collapsed } = useShellLayout()
   const [teamMenuOpen, setTeamMenuOpen] = useState(false)
   const [vaultMenuOpen, setVaultMenuOpen] = useState(false)
   const [reportMenuOpen, setReportMenuOpen] = useState(false)
@@ -102,7 +101,7 @@ export default function Layout() {
     : ''
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-full overflow-hidden">
       {/* Sidebar */}
       <aside
         className={`${
@@ -273,14 +272,6 @@ export default function Layout() {
             )}
           </div>
         </nav>
-
-        {/* Collapse toggle */}
-        <button
-          onClick={() => setCollapsed(!collapsed)}
-          className="h-10 flex items-center justify-center border-t border-slate-700 dark:border-slate-600 hover:bg-slate-700 dark:hover:bg-slate-600 transition-colors text-slate-300 dark:text-slate-400"
-        >
-          {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
-        </button>
       </aside>
 
       {/* Main content */}

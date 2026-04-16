@@ -1,5 +1,5 @@
 import * as AppModule from '../../wailsjs/go/main/App'
-import type { db } from '../../wailsjs/go/models'
+import type { ai, db } from '../../wailsjs/go/models'
 
 export interface VaultItem {
   id: number
@@ -28,7 +28,34 @@ export interface VaultReference {
   content: string
 }
 
-export type AppApi = typeof AppModule & {
+export type AIProviderID = 'openai' | 'minimax' | 'claude_cli'
+
+export interface AIProviderConfig {
+  enabled: boolean
+  apiKey?: string
+  model?: string
+  baseUrl?: string
+  mode?: string
+}
+
+export interface AISettings {
+  defaultProvider: AIProviderID
+  policy: {
+    chatAllowOverride: boolean
+  }
+  providers: Record<string, AIProviderConfig>
+}
+
+export interface AIChatResult {
+  reply: string
+  provider: string
+  model: string
+}
+
+type BaseAppApi = typeof AppModule
+type OverriddenAppApiKeys = 'GetAISettings' | 'SaveAISettings' | 'ChatWithAI'
+
+export type AppApi = Omit<BaseAppApi, OverriddenAppApiKeys> & {
   LookupLinearViewer: (apiKey: string) => Promise<Record<string, string>>
   GetLinearTeamLabels: () => Promise<Array<{ id: string; name: string; color: string }>>
   AutoMapLinearMembers: () => Promise<number>
@@ -93,6 +120,14 @@ export type AppApi = typeof AppModule & {
   SearchVault: (keyword: string) => Promise<VaultItem[]>
   RefreshVault: () => Promise<number>
   RetrieveVaultContext: (query: string, limit: number) => Promise<VaultReference[]>
+  GetAISettings: () => Promise<AISettings>
+  SaveAISettings: (settings: AISettings) => Promise<void>
+  ChatWithAI: (
+    prompt: string,
+    systemContext: string,
+    overrideProvider: string,
+    overrideModel: string,
+  ) => Promise<AIChatResult>
 }
 
 const fallbackModule = AppModule as unknown as AppApi
@@ -115,6 +150,54 @@ const unavailableError = <T, Args extends unknown[] = []>(message: string): ((..
     throw new Error(message)
   }
 
+const fallbackAISettings: AISettings = {
+  defaultProvider: 'openai',
+  policy: {
+    chatAllowOverride: true,
+  },
+  providers: {
+    openai: {
+      enabled: false,
+      model: 'gpt-4o-mini',
+      baseUrl: 'https://api.openai.com/v1',
+      mode: 'openai_compatible',
+    },
+    minimax: {
+      enabled: false,
+      model: '',
+      baseUrl: 'https://api.minimax.io/v1',
+      mode: 'openai_compatible',
+    },
+    claude_cli: {
+      enabled: false,
+      model: '',
+      baseUrl: '',
+      mode: 'local_cli',
+    },
+  },
+}
+
+function normalizeProviderID(raw: unknown): AIProviderID {
+  if (raw === 'openai' || raw === 'minimax' || raw === 'claude_cli') {
+    return raw
+  }
+  return 'openai'
+}
+
+function normalizeAISettings(input: ai.Settings | AISettings | null | undefined): AISettings {
+  const rawProviders = input?.providers ?? {}
+  return {
+    defaultProvider: normalizeProviderID(input?.defaultProvider),
+    policy: {
+      chatAllowOverride: input?.policy?.chatAllowOverride ?? fallbackAISettings.policy.chatAllowOverride,
+    },
+    providers: {
+      ...fallbackAISettings.providers,
+      ...rawProviders,
+    },
+  }
+}
+
 function makeVaultSnippet(content: string, query: string): string {
   const normalized = content.replace(/\s+/g, ' ').trim()
   if (!normalized) return ''
@@ -128,8 +211,8 @@ function makeVaultSnippet(content: string, query: string): string {
 
   const start = Math.max(0, index - 80)
   const end = Math.min(normalized.length, index + needle.length + 160)
-  const prefix = start > 0 ? '…' : ''
-  const suffix = end < normalized.length ? '…' : ''
+  const prefix = start > 0 ? '... ' : ''
+  const suffix = end < normalized.length ? ' ...' : ''
   return `${prefix}${normalized.slice(start, end)}${suffix}`
 }
 
@@ -154,94 +237,105 @@ async function fallbackRetrieveVaultContext(query: string, limit: number): Promi
 export const appApi: AppApi = {
   ...fallbackModule,
   LookupLinearViewer:
-    (fallbackModule as AppApi).LookupLinearViewer ??
+    fallbackModule.LookupLinearViewer ??
     unavailableError<Record<string, string>>('LookupLinearViewer not available'),
   GetLinearTeamLabels:
-    (fallbackModule as AppApi).GetLinearTeamLabels ??
+    fallbackModule.GetLinearTeamLabels ??
     ((async () => []) as AppApi['GetLinearTeamLabels']),
   AutoMapLinearMembers: (fallbackModule.AutoMapLinearMembers ?? (() => Promise.resolve(0))) as AppApi['AutoMapLinearMembers'],
   UpdateLinearIssue: (fallbackModule.UpdateLinearIssue ?? (() => Promise.resolve())) as AppApi['UpdateLinearIssue'],
   CheckClaudeCLI:
-    fallbackModule.CheckClaudeCLI ??
-    (() => Promise.resolve({ ok: false, version: '' })) as AppApi['CheckClaudeCLI'],
+    (fallbackModule.CheckClaudeCLI as AppApi['CheckClaudeCLI'] | undefined) ??
+    ((async () => ({ ok: false, version: '' })) as AppApi['CheckClaudeCLI']),
   ClaudeChat: (fallbackModule.ClaudeChat ?? unavailableClaudeChat) as AppApi['ClaudeChat'],
   ClaudeChatWithSession: (fallbackModule.ClaudeChatWithSession ?? unavailableClaudeChatWithSession) as AppApi['ClaudeChatWithSession'],
   ScanClaudeSkills:
-    (fallbackModule as AppApi).ScanClaudeSkills ??
+    fallbackModule.ScanClaudeSkills ??
     unavailableError<{ skill: string; cmd: string; desc: string }[]>('ScanClaudeSkills not available'),
   GetPositionTypes:
-    (fallbackModule as AppApi).GetPositionTypes ??
+    fallbackModule.GetPositionTypes ??
     ((async () => []) as AppApi['GetPositionTypes']),
   AddPositionType:
-    (fallbackModule as AppApi).AddPositionType ??
+    fallbackModule.AddPositionType ??
     ((_: string) => Promise.resolve()) as AppApi['AddPositionType'],
   DeletePositionType:
-    (fallbackModule as AppApi).DeletePositionType ??
+    fallbackModule.DeletePositionType ??
     ((_: string) => Promise.resolve()) as AppApi['DeletePositionType'],
   GetEmploymentTypes:
-    (fallbackModule as AppApi).GetEmploymentTypes ??
+    fallbackModule.GetEmploymentTypes ??
     (async () => []) as AppApi['GetEmploymentTypes'],
   AddEmploymentType:
-    (fallbackModule as AppApi).AddEmploymentType ??
+    fallbackModule.AddEmploymentType ??
     ((_: string) => Promise.resolve()) as AppApi['AddEmploymentType'],
   DeleteEmploymentType:
-    (fallbackModule as AppApi).DeleteEmploymentType ??
+    fallbackModule.DeleteEmploymentType ??
     ((_: string) => Promise.resolve()) as AppApi['DeleteEmploymentType'],
   GetSIProjectTypes:
-    (fallbackModule as AppApi).GetSIProjectTypes ??
+    fallbackModule.GetSIProjectTypes ??
     (async () => []) as AppApi['GetSIProjectTypes'],
   AddSIProjectType:
-    (fallbackModule as AppApi).AddSIProjectType ??
+    fallbackModule.AddSIProjectType ??
     ((_: string) => Promise.resolve()) as AppApi['AddSIProjectType'],
   DeleteSIProjectType:
-    (fallbackModule as AppApi).DeleteSIProjectType ??
+    fallbackModule.DeleteSIProjectType ??
     ((_: string) => Promise.resolve()) as AppApi['DeleteSIProjectType'],
   GetSIPhases:
-    (fallbackModule as AppApi).GetSIPhases ??
+    fallbackModule.GetSIPhases ??
     (async () => []) as AppApi['GetSIPhases'],
   AddSIPhase:
-    (fallbackModule as AppApi).AddSIPhase ??
+    fallbackModule.AddSIPhase ??
     ((_: string) => Promise.resolve()) as AppApi['AddSIPhase'],
   DeleteSIPhase:
-    (fallbackModule as AppApi).DeleteSIPhase ??
+    fallbackModule.DeleteSIPhase ??
     ((_: string) => Promise.resolve()) as AppApi['DeleteSIPhase'],
   GetReportInsights:
-    (fallbackModule as AppApi).GetReportInsights ??
+    fallbackModule.GetReportInsights ??
     unavailableError<db.ReportInsights>('GetReportInsights not available'),
   AcceptInsightActivity:
-    (fallbackModule as AppApi).AcceptInsightActivity ??
+    fallbackModule.AcceptInsightActivity ??
     unavailableError<db.ReportItem>('AcceptInsightActivity not available'),
   AcceptInsightDraft:
-    (fallbackModule as AppApi).AcceptInsightDraft ??
+    fallbackModule.AcceptInsightDraft ??
     unavailableError<db.ReportItem[]>('AcceptInsightDraft not available'),
   IgnoreInsightActivity:
-    (fallbackModule as AppApi).IgnoreInsightActivity ??
+    fallbackModule.IgnoreInsightActivity ??
     unavailableError<void>('IgnoreInsightActivity not available'),
   IngestKnowledgeSource:
-    (fallbackModule as AppApi).IngestKnowledgeSource ??
+    fallbackModule.IngestKnowledgeSource ??
     unavailableError<db.IngestResult, [string, string, string, string]>('IngestKnowledgeSource not available'),
   IngestKnowledgeBatch:
-    (fallbackModule as AppApi).IngestKnowledgeBatch ??
+    fallbackModule.IngestKnowledgeBatch ??
     unavailableError<db.IngestResult[], [string, string[], string, string]>('IngestKnowledgeBatch not available'),
   SaveKnowledgeQuery:
-    (fallbackModule as AppApi).SaveKnowledgeQuery ??
+    fallbackModule.SaveKnowledgeQuery ??
     unavailableError<db.IngestResult, [string, string, string, string, string[]]>('SaveKnowledgeQuery not available'),
   RunKnowledgeBaseLint:
-    (fallbackModule as AppApi).RunKnowledgeBaseLint ??
+    fallbackModule.RunKnowledgeBaseLint ??
     unavailableError<db.IngestResult>('RunKnowledgeBaseLint not available'),
   GetVaultStructure:
-    (fallbackModule as AppApi).GetVaultStructure ??
+    fallbackModule.GetVaultStructure ??
     unavailableError<VaultItem[], [number | null]>('GetVaultStructure not available'),
   GetVaultFile:
-    (fallbackModule as AppApi).GetVaultFile ??
+    fallbackModule.GetVaultFile ??
     unavailableError<VaultFile, [string]>('GetVaultFile not available'),
   SearchVault:
-    (fallbackModule as AppApi).SearchVault ??
+    fallbackModule.SearchVault ??
     unavailableError<VaultItem[], [string]>('SearchVault not available'),
   RefreshVault:
-    (fallbackModule as AppApi).RefreshVault ??
+    fallbackModule.RefreshVault ??
     unavailableError<number>('RefreshVault not available'),
   RetrieveVaultContext:
-    (fallbackModule as AppApi).RetrieveVaultContext ??
+    fallbackModule.RetrieveVaultContext ??
     fallbackRetrieveVaultContext,
+  GetAISettings:
+    fallbackModule.GetAISettings
+      ? (async () => normalizeAISettings(await fallbackModule.GetAISettings()))
+      : (async () => fallbackAISettings),
+  SaveAISettings:
+    fallbackModule.SaveAISettings
+      ? ((settings: AISettings) => fallbackModule.SaveAISettings(settings))
+      : unavailableError<void, [AISettings]>('SaveAISettings not available'),
+  ChatWithAI:
+    (fallbackModule.ChatWithAI as AppApi['ChatWithAI']) ??
+    unavailableError<AIChatResult, [string, string, string, string]>('ChatWithAI not available'),
 }

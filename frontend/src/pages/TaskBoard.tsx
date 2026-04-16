@@ -798,7 +798,7 @@ export default function TaskBoard() {
   const taskBoardCommands: ChatCommand[] = [
     {
       cmd: '/clear',
-      desc: 'Reset the chat session',
+      desc: '채팅 세션 초기화',
       run: () => {
         chatSession.clearSession()
         return true
@@ -806,42 +806,42 @@ export default function TaskBoard() {
     },
     {
       cmd: '/summary',
-      desc: 'Summarize current issues',
+      desc: '현재 이슈 요약',
       run: async () => {
-        if (chatSession.sending || (chatSession.chatModel === 'openai' && !chatSession.apiKey)) {
+        if (chatSession.sending) {
           return false
         }
-        return chatSession.handleSendText('Summarize the current issues by status and priority.')
+        return chatSession.handleSendText('현재 이슈를 상태와 우선순위 기준으로 요약해줘.')
       },
     },
     {
       cmd: '/urgent',
-      desc: 'List urgent issues',
+      desc: '긴급 이슈 목록',
       run: async () => {
-        if (chatSession.sending || (chatSession.chatModel === 'openai' && !chatSession.apiKey)) {
+        if (chatSession.sending) {
           return false
         }
-        return chatSession.handleSendText('Show urgent issues and blockers.')
+        return chatSession.handleSendText('긴급 이슈와 블로커를 보여줘.')
       },
     },
     {
       cmd: '/unassigned',
-      desc: 'List unassigned issues',
+      desc: '미할당 이슈 목록',
       run: async () => {
-        if (chatSession.sending || (chatSession.chatModel === 'openai' && !chatSession.apiKey)) {
+        if (chatSession.sending) {
           return false
         }
-        return chatSession.handleSendText('List all unassigned issues.')
+        return chatSession.handleSendText('담당자가 지정되지 않은 이슈를 모두 보여줘.')
       },
     },
     {
       cmd: '/overdue',
-      desc: 'List overdue issues',
+      desc: '기한 초과 이슈 목록',
       run: async () => {
-        if (chatSession.sending || (chatSession.chatModel === 'openai' && !chatSession.apiKey)) {
+        if (chatSession.sending) {
           return false
         }
-        return chatSession.handleSendText(`Today is ${new Date().toISOString().slice(0, 10)}. Show overdue issues.`)
+        return chatSession.handleSendText(`오늘 날짜는 ${new Date().toISOString().slice(0, 10)}야. 기한이 지난 이슈를 보여줘.`)
       },
     },
   ]
@@ -1047,14 +1047,14 @@ export default function TaskBoard() {
 
       <SharedAiChatPanel
         session={chatSession}
-        title="Linear AI Assistant"
-        subtitle="Read the current issues and answer from issue context."
-        buttonLabel="AI Chat"
+        title="Linear AI 어시스턴트"
+        subtitle="현재 이슈 컨텍스트를 바탕으로 답변합니다."
+        buttonLabel="AI 채팅"
         badgeCount={issues.length}
         suggestions={[
-          'Summarize the current issues',
-          'Show urgent items with blockers',
-          'List unassigned issues',
+          '현재 이슈를 요약해줘',
+          '블로커가 있는 긴급 이슈를 보여줘',
+          '담당자 없는 이슈를 보여줘',
         ]}
         commands={taskBoardCommands}
         allowUnknownSlashPassthrough

@@ -129,6 +129,7 @@ export default function VaultPage({ mode = 'explore' }: VaultPageProps) {
   } = appApi
   const { profile } = useTeamProfile()
   const chatSession = useAiChatSession(query => buildVaultChatContext(query, appApi.RetrieveVaultContext))
+  const ingestModel = chatSession.effectiveProvider === 'claude_cli' ? 'claude' : 'openai'
 
   const [breadcrumbs, setBreadcrumbs] = useState<VaultItem[]>([])
   const [folders, setFolders] = useState<VaultItem[]>([])
@@ -413,7 +414,7 @@ export default function VaultPage({ mode = 'explore' }: VaultPageProps) {
       setError(null)
 
       try {
-        const result = await IngestKnowledgeSource(sourceType, trimmedSource, chatSession.chatModel, requestedBy)
+        const result = await IngestKnowledgeSource(sourceType, trimmedSource, ingestModel, requestedBy)
         const metadataBits: string[] = []
         if ((result.elapsedMs ?? 0) > 0) metadataBits.push(`elapsed ${result.elapsedMs}ms`)
         if ((result.createdPaths?.length ?? 0) > 0) metadataBits.push(`files ${result.createdPaths?.length}`)
@@ -451,7 +452,7 @@ export default function VaultPage({ mode = 'explore' }: VaultPageProps) {
         setIngestingSource(null)
       }
     },
-    [IngestKnowledgeSource, chatSession.chatModel, reloadVisibleItems, requestedBy],
+    [IngestKnowledgeSource, ingestModel, reloadVisibleItems, requestedBy],
   )
 
   const handleOpenFilePicker = useCallback(() => {
@@ -563,7 +564,7 @@ export default function VaultPage({ mode = 'explore' }: VaultPageProps) {
       setError(null)
 
       try {
-        const results = await IngestKnowledgeBatch(sourceType, sources, chatSession.chatModel, requestedBy)
+        const results = await IngestKnowledgeBatch(sourceType, sources, ingestModel, requestedBy)
         const successCount = results.filter(result => result.status !== 'failed').length
         const failedCount = results.length - successCount
         const warnings = results.flatMap(result => result.warnings ?? [])
@@ -588,7 +589,7 @@ export default function VaultPage({ mode = 'explore' }: VaultPageProps) {
         setIngestingSource(null)
       }
     },
-    [IngestKnowledgeBatch, batchDraft, chatSession.chatModel, pageBusy, refreshVisibleItems, requestedBy],
+    [IngestKnowledgeBatch, batchDraft, ingestModel, pageBusy, refreshVisibleItems, requestedBy],
   )
 
   const handleIngestCommand = useCallback(
@@ -676,7 +677,7 @@ export default function VaultPage({ mode = 'explore' }: VaultPageProps) {
 
       const sourceType: IngestSourceType = sources.every(isIngestURL) ? 'url' : 'file'
       try {
-        const results = await IngestKnowledgeBatch(sourceType, sources, chatSession.chatModel, requestedBy)
+        const results = await IngestKnowledgeBatch(sourceType, sources, ingestModel, requestedBy)
         const successCount = results.filter(result => result.status !== 'failed').length
         const failedCount = results.length - successCount
         const warningLines = results
@@ -759,7 +760,7 @@ export default function VaultPage({ mode = 'explore' }: VaultPageProps) {
       const result = await SaveKnowledgeQuery(
         userMessage.content.trim(),
         assistantEntry.message.content.trim(),
-        chatSession.chatModel,
+        ingestModel,
         requestedBy,
         referencePaths,
       )
@@ -777,7 +778,7 @@ export default function VaultPage({ mode = 'explore' }: VaultPageProps) {
       ])
       return false
     }
-  }, [SaveKnowledgeQuery, chatSession.messages, chatSession.setMessages, chatSession.chatModel, pageBusy, reloadVisibleItems, requestedBy])
+  }, [SaveKnowledgeQuery, chatSession.messages, chatSession.setMessages, ingestModel, pageBusy, reloadVisibleItems, requestedBy])
 
   const vaultChatSession = {
     ...chatSession,
@@ -807,10 +808,6 @@ export default function VaultPage({ mode = 'explore' }: VaultPageProps) {
           return false
         }
 
-        if (chatSession.chatModel === 'openai' && !chatSession.apiKey) {
-          chatSession.setShowKeyInput(true)
-          return false
-        }
 
         return chatSession.handleSendText('지식 베이스 관련 문서를 바탕으로 현재 주제를 요약해줘.')
       },

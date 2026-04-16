@@ -317,13 +317,8 @@ func isMailSource(source string) bool {
 	return strings.Contains(s, "mail") || strings.HasPrefix(s, "gmail_")
 }
 
-type openAIIntegrationConfig struct {
-	APIKey string `json:"apiKey"`
-	Model  string `json:"model"`
-}
-
 func (a *App) generateAIReportContent(activity *db.Activity, section, category string) (string, error) {
-	cfg, err := a.getOpenAIConfig()
+	cfg, err := a.getOpenAIConfigForFeature(ai.FeatureReportPreprocess)
 	if err != nil {
 		return "", err
 	}
@@ -335,7 +330,7 @@ func (a *App) generateAIReportContent(activity *db.Activity, section, category s
 }
 
 func (a *App) generateAIReportContentWithConfig(cfg *openAIIntegrationConfig, activity *db.Activity, section, category string) (string, error) {
-	client := ai.NewClient(cfg.APIKey, cfg.Model)
+	client := ai.NewClient(cfg.APIKey, cfg.Model, cfg.BaseURL)
 	return client.GenerateReportSentence(activity.Source, section, category, activity.Title, activity.Summary, activity.ActivityDate)
 }
 
@@ -472,7 +467,7 @@ func (a *App) consolidateSelectedActivityItemsWithAI(reportID int64, cfg *openAI
 		grp.activities = append(grp.activities, act)
 	}
 
-	client := ai.NewClient(cfg.APIKey, cfg.Model)
+	client := ai.NewClient(cfg.APIKey, cfg.Model, cfg.BaseURL)
 	updated := 0
 	merged := 0
 
@@ -544,7 +539,7 @@ func (a *App) consolidateSelectedActivityItemsWithAI(reportID int64, cfg *openAI
 }
 
 func (a *App) regenerateSelectedMailItemsForExport(items []db.ReportItem) ([]db.ReportItem, int) {
-	cfg, err := a.getOpenAIConfig()
+	cfg, err := a.getOpenAIConfigForFeature(ai.FeatureReportPreprocess)
 	if err != nil {
 		log.Printf("[openai] config read failed: %v", err)
 		return items, 0
@@ -658,7 +653,7 @@ func normalizeNarrativeContent(content string) string {
 }
 
 func (a *App) PreprocessReportItemsWithAI(reportID int64) SyncResult {
-	cfg, err := a.getOpenAIConfig()
+	cfg, err := a.getOpenAIConfigForFeature(ai.FeatureReportPreprocess)
 	if err != nil {
 		return SyncResult{Success: false, Count: 0, Message: fmt.Sprintf("OpenAI ?ㅼ젙 議고쉶 ?ㅽ뙣: %v", err)}
 	}
@@ -679,37 +674,10 @@ func (a *App) PreprocessReportItemsWithAI(reportID int64) SyncResult {
 	return SyncResult{Success: true, Count: updated, Message: msg}
 }
 
-func (a *App) getOpenAIConfig() (*openAIIntegrationConfig, error) {
-	user, err := a.database.GetOrCreateDefaultUser()
-	if err != nil {
-		return nil, err
-	}
-
-	intg, err := a.database.GetIntegrationByType(user.ID, "openai")
-	if err != nil {
-		return nil, err
-	}
-	if intg == nil || !intg.Enabled {
-		return nil, nil
-	}
-
-	var cfg openAIIntegrationConfig
-	if err := json.Unmarshal([]byte(intg.ConfigJSON), &cfg); err != nil {
-		return nil, fmt.Errorf("invalid openai config json: %w", err)
-	}
-	if strings.TrimSpace(cfg.APIKey) == "" {
-		return nil, nil
-	}
-	if strings.TrimSpace(cfg.Model) == "" {
-		cfg.Model = "gpt-4o-mini"
-	}
-	return &cfg, nil
-}
-
 // RefineMarkdownWithAI sends the markdown report to OpenAI for polishing.
 // It returns the refined markdown. Original ReportItems are not modified.
 func (a *App) RefineMarkdownWithAI(markdownText string) (string, error) {
-	cfg, err := a.getOpenAIConfig()
+	cfg, err := a.getOpenAIConfigForFeature(ai.FeatureReportRefine)
 	if err != nil {
 		return "", fmt.Errorf("OpenAI ?ㅼ젙 議고쉶 ?ㅽ뙣: %w", err)
 	}
@@ -719,7 +687,7 @@ func (a *App) RefineMarkdownWithAI(markdownText string) (string, error) {
 
 	systemPrompt := "?뱀떊? ?쒓뎅???낅Т 蹂닿퀬???묒꽦 ?꾨Ц媛?낅땲?? 二쇱뼱吏?二쇨컙?낅Т蹂닿퀬??留덊겕?ㅼ슫???먯뿰?ㅻ읇怨?媛꾧껐???쒓뎅??蹂닿퀬?쒖껜濡??ㅻ벉?댁＜?몄슂. 留덊겕?ㅼ슫 援ъ“(##, - ????洹몃?濡??좎??섍퀬 ?댁슜留?援먯젙?⑸땲?? ?먮낯???녿뒗 ?댁슜??異붽??섏? 留덉꽭??"
 
-	client := ai.NewClient(cfg.APIKey, cfg.Model)
+	client := ai.NewClient(cfg.APIKey, cfg.Model, cfg.BaseURL)
 	refined, err := client.ChatCompletion(systemPrompt, markdownText)
 	if err != nil {
 		return "", fmt.Errorf("AI ?ㅻ벉湲??ㅽ뙣: %w", err)

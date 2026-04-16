@@ -1,3 +1,74 @@
+export namespace ai {
+	
+	export class PolicyConfig {
+	    chatAllowOverride: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new PolicyConfig(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.chatAllowOverride = source["chatAllowOverride"];
+	    }
+	}
+	export class ProviderConfig {
+	    enabled: boolean;
+	    apiKey?: string;
+	    model?: string;
+	    baseUrl?: string;
+	    mode?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ProviderConfig(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.enabled = source["enabled"];
+	        this.apiKey = source["apiKey"];
+	        this.model = source["model"];
+	        this.baseUrl = source["baseUrl"];
+	        this.mode = source["mode"];
+	    }
+	}
+	export class Settings {
+	    defaultProvider: string;
+	    policy: PolicyConfig;
+	    providers: Record<string, ProviderConfig>;
+	
+	    static createFrom(source: any = {}) {
+	        return new Settings(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.defaultProvider = source["defaultProvider"];
+	        this.policy = this.convertValues(source["policy"], PolicyConfig);
+	        this.providers = this.convertValues(source["providers"], ProviderConfig, true);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
+}
+
 export namespace db {
 	
 	export class Activity {
@@ -936,6 +1007,22 @@ export namespace integrations {
 
 export namespace main {
 	
+	export class AIChatResult {
+	    reply: string;
+	    provider: string;
+	    model: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AIChatResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.reply = source["reply"];
+	        this.provider = source["provider"];
+	        this.model = source["model"];
+	    }
+	}
 	export class ActivityWithSource {
 	    id: number;
 	    integrationId: number;
@@ -1361,3 +1448,4 @@ export namespace main {
 	}
 
 }
+

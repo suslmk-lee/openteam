@@ -24,6 +24,13 @@ OpenReport is a Windows desktop app that generates weekly work reports from coll
 - Excel template upload and report export
 - Team operations support (members, attendance, projects, issues, retrospectives)
 
+## AI Settings
+
+- Configure global AI provider and model in **Settings > Integrations**.
+- Supported global providers: OpenAI, MiniMax (OpenAI-compatible), Claude CLI.
+- Chat supports optional session override (provider/model). Report and Linear AI use global defaults.
+- Legacy `openai` integration is automatically migrated to global `ai` settings on first read.
+
 ## Knowledge Base Ingest
 
 Use the Vault chat panel to add content to the knowledge base:

@@ -13,6 +13,7 @@ import {
   Monitor,
 } from 'lucide-react'
 import { useAppApi } from '../hooks/useAppApi'
+import AISettingsSection from '../components/settings/AISettingsSection'
 import { useTeamProfile } from '../contexts/TeamProfileContext'
 import { useTheme } from '../contexts/ThemeContext'
 
@@ -464,68 +465,7 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
 
           {section === 'integrations' && (
           <>
-          <section className="bg-white dark:bg-[var(--color-card)] border border-slate-200 dark:border-slate-700 rounded-xl p-6">
-            <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100 mb-2">OpenAI 보고서 작성</h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
-              메일 활동을 보고서 문장으로 자동 작성합니다. API Key는 로컬 DB에 저장됩니다.
-            </p>
-
-            <div className="space-y-3">
-              <div>
-                <label className="block text-sm text-slate-600 dark:text-slate-300 mb-1">OpenAI API Key</label>
-                <input
-                  type="password"
-                  placeholder="sk-..."
-                  value={openAIApiKey}
-                  onChange={e => setOpenAIApiKey(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm text-slate-600 dark:text-slate-300 mb-1">Model</label>
-                <input
-                  type="text"
-                  placeholder="gpt-4o-mini"
-                  value={openAIModel}
-                  onChange={e => setOpenAIModel(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <label className="inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
-                <input
-                  type="checkbox"
-                  checked={openAIEnabled}
-                  onChange={e => setOpenAIEnabled(e.target.checked)}
-                  className="rounded border-slate-300"
-                />
-                메일 보고서 작성에 OpenAI 사용
-              </label>
-
-              <div className="pt-1">
-                <button
-                  onClick={async () => {
-                    try {
-                      const configJson = JSON.stringify({
-                        apiKey: openAIApiKey.trim(),
-                        model: (openAIModel || 'gpt-4o-mini').trim(),
-                      })
-                      await SaveIntegration('openai', configJson, openAIEnabled)
-                      showStatus('OpenAI 설정이 저장되었습니다')
-                      const ints = await GetIntegrations()
-                      setIntegrations(ints || [])
-                    } catch (err) {
-                      console.error('Failed to save OpenAI config:', err)
-                    }
-                  }}
-                  className="px-4 py-2 text-sm bg-blue-600 text-white hover:bg-blue-700 rounded-lg transition-colors"
-                >
-                  OpenAI 설정 저장
-                </button>
-              </div>
-            </div>
-          </section>
+          <AISettingsSection onSaved={() => showStatus('AI 설정이 저장되었습니다')} />
 
           <section className="bg-white dark:bg-[var(--color-card)] border border-slate-200 dark:border-slate-700 rounded-xl p-6">
             <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100 mb-4">Google 연동 (gws)</h3>

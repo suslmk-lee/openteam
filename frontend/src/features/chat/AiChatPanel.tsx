@@ -133,12 +133,110 @@ function renderMarkdown(text: string): string {
   return blocks.join('')
 }
 
+type AssistantSegmentType = 'markdown' | 'think'
+
+interface AssistantSegment {
+  type: AssistantSegmentType
+  content: string
+}
+
+function splitAssistantSegments(text: string): AssistantSegment[] {
+  const input = text || ''
+  const segments: AssistantSegment[] = []
+  const thinkPattern = /<think>([\s\S]*?)<\/think>/gi
+
+  let lastIndex = 0
+  let match: RegExpExecArray | null
+  while ((match = thinkPattern.exec(input)) !== null) {
+    if (match.index > lastIndex) {
+      const markdown = input.slice(lastIndex, match.index)
+      if (markdown.trim()) {
+        segments.push({ type: 'markdown', content: markdown })
+      }
+    }
+
+    const thinkContent = (match[1] ?? '').trim()
+    if (thinkContent) {
+      segments.push({ type: 'think', content: thinkContent })
+    }
+
+    lastIndex = thinkPattern.lastIndex
+  }
+
+  if (lastIndex < input.length) {
+    const rest = input.slice(lastIndex)
+    if (rest.trim()) {
+      segments.push({ type: 'markdown', content: rest })
+    }
+  }
+
+  if (segments.length === 0) {
+    return [{ type: 'markdown', content: input }]
+  }
+
+  return segments
+}
+
+function ThinkFold({ content }: { content: string }) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <div className="my-1 rounded-xl border border-violet-200/60 bg-violet-50/70 dark:border-violet-500/30 dark:bg-violet-500/10">
+      <button
+        type="button"
+        aria-label={open ? '생각 과정 접기' : '생각 과정 펼치기'}
+        onClick={() => setOpen(prev => !prev)}
+        className="group flex w-full items-center justify-between rounded-xl px-3 py-2 text-left transition-colors duration-200 hover:bg-violet-100/70 dark:hover:bg-violet-500/20"
+      >
+        <div className="flex flex-col">
+          <span className="text-[11px] font-semibold text-violet-700 dark:text-violet-200">Think</span>
+          <span className="text-[10px] text-violet-500 dark:text-violet-300/80">
+            {open ? '클릭해서 접기' : '클릭해서 펼치기'}
+          </span>
+        </div>
+        <ChevronDown
+          size={14}
+          className={`text-violet-500 transition-transform duration-300 ease-out dark:text-violet-300 ${open ? 'rotate-180' : 'rotate-0'}`}
+        />
+      </button>
+
+      <div className={`grid transition-all duration-300 ease-in-out ${open ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
+        <div className="overflow-hidden">
+          <div className="mx-2 mb-2 rounded-lg border border-violet-100 bg-white/70 px-3 py-2 text-xs leading-relaxed text-slate-600 dark:border-violet-500/20 dark:bg-slate-900/60 dark:text-slate-300">
+            <div dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }} />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AssistantMessageContent({ content }: { content: string }) {
+  const segments = splitAssistantSegments(content)
+
+  return (
+    <div className="space-y-1">
+      {segments.map((segment, index) => {
+        if (segment.type === 'think') {
+          return <ThinkFold key={`think-${index}`} content={segment.content} />
+        }
+        return (
+          <div
+            key={`markdown-${index}`}
+            dangerouslySetInnerHTML={{ __html: renderMarkdown(segment.content) }}
+          />
+        )
+      })}
+    </div>
+  )
+}
+
 function renderReferences(references: ChatReference[]) {
   if (!references.length) return null
 
   return (
     <div className="mt-2 rounded-xl border border-slate-200 bg-white/70 p-2 text-[11px] leading-relaxed dark:border-slate-700 dark:bg-slate-900/60">
-      <p className="mb-1 font-semibold text-slate-600 dark:text-slate-300">References</p>
+      <p className="mb-1 font-semibold text-slate-600 dark:text-slate-300">참고 문서</p>
       <div className="space-y-1">
         {references.map(reference => (
           <div key={reference.id} className="rounded-lg bg-slate-50 px-2 py-1 dark:bg-slate-800/80">
@@ -149,6 +247,13 @@ function renderReferences(references: ChatReference[]) {
       </div>
     </div>
   )
+}
+
+function providerLabel(provider: string): string {
+  if (provider === 'openai') return 'OpenAI'
+  if (provider === 'minimax') return 'MiniMax'
+  if (provider === 'claude_cli') return 'Claude CLI'
+  return provider
 }
 
 export interface AiChatPanelProps {
@@ -261,14 +366,14 @@ export function AiChatPanel({
 
     setCmdPopup(false)
     if (trimmed.startsWith('/') && commands.length > 0) {
-      if (allowUnknownSlashPassthrough && session.chatModel === 'claude' && session.claudeAvailable) {
+      if (allowUnknownSlashPassthrough && session.effectiveProvider === 'claude_cli' && session.claudeAvailable) {
         await session.handleClaudeSkill(trimmed)
         session.setInput('')
         textareaRef.current?.focus()
         return
       }
 
-      appendAssistantMessage(`Unknown command: \`${trimmed}\`\n\nType \`/\` to browse available commands.`)
+      appendAssistantMessage(`알 수 없는 명령어: \`${trimmed}\`\n\n\`/\` 를 입력하면 사용 가능한 명령어를 볼 수 있어요.`)
       textareaRef.current?.focus()
       return
     }
@@ -292,7 +397,7 @@ export function AiChatPanel({
     )
   }
 
-  const placeholder = commands.length > 0 ? 'Ask a question or type / for commands' : 'Ask a question about the vault'
+  const placeholder = commands.length > 0 ? '질문을 입력하거나 / 로 명령어를 선택하세요' : '지식 베이스에 대해 질문해보세요'
 
   return (
     <div
@@ -321,22 +426,16 @@ export function AiChatPanel({
               </div>
             </div>
             <div className="flex items-center gap-1.5">
-              {session.chatModel === 'openai' && session.keyLoaded && (
-                session.apiKey
-                  ? <span className="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-600 dark:bg-emerald-500/20 dark:text-emerald-300">API Connected</span>
-                  : (
-                    <button
-                      type="button"
-                      onClick={() => session.setShowKeyInput(prev => !prev)}
-                      className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-600 transition-colors hover:bg-amber-200 dark:bg-amber-500/20 dark:text-amber-300 dark:hover:bg-amber-500/30"
-                    >
-                      Set API Key
-                    </button>
-                  )
-              )}
-              {session.chatModel === 'claude' && (
-                <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-medium text-violet-600 dark:bg-violet-500/20 dark:text-violet-300">Claude</span>
-              )}
+              <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-medium text-violet-700 dark:bg-violet-500/20 dark:text-violet-300">
+                {providerLabel(session.effectiveProvider)}
+              </span>
+              <span
+                style={{ fontFamily: "'Fira Code', monospace" }}
+                className="max-w-[140px] truncate rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-600 dark:bg-slate-700 dark:text-slate-200"
+                title={session.effectiveModel}
+              >
+                {session.effectiveModel || '-'}
+              </span>
               <button
                 type="button"
                 onClick={session.toggleMaximized}
@@ -353,35 +452,56 @@ export function AiChatPanel({
               </button>
             </div>
           </div>
-          <div className="flex gap-1 -mb-px">
-            {session.claudeAvailable && (
-              <button
-                type="button"
-                onClick={() => session.setChatModel('claude')}
-                className={`rounded-t-lg border-b-2 px-3 py-1.5 text-xs font-medium transition-colors ${
-                  session.chatModel === 'claude'
-                    ? 'border-violet-500 bg-violet-50 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300'
-                    : 'border-transparent text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300'
-                }`}
-              >
-                Claude
-              </button>
+
+          <div className="mb-2 flex flex-wrap items-center gap-3 pb-2 text-[11px] text-slate-500 dark:text-slate-400">
+            <span>
+              기본 설정: {providerLabel(session.globalProvider)} / {session.globalModel || '-'}
+            </span>
+            {session.canOverride && (
+              <label className="inline-flex items-center gap-1.5">
+                <input
+                  aria-label="채팅 오버라이드 사용"
+                  type="checkbox"
+                  checked={session.overrideEnabled}
+                  onChange={event => session.setOverrideEnabled(event.target.checked)}
+                />
+                채팅 오버라이드 사용
+              </label>
             )}
-            <button
-              type="button"
-              onClick={() => session.setChatModel('openai')}
-              className={`rounded-t-lg border-b-2 px-3 py-1.5 text-xs font-medium transition-colors ${
-                session.chatModel === 'openai'
-                  ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300'
-                  : 'border-transparent text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300'
-              }`}
-            >
-              OpenAI
-            </button>
           </div>
+
+          {session.canOverride && session.overrideEnabled && (
+            <div className="mb-2 grid grid-cols-1 gap-2 pb-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+              <label className="flex flex-col gap-1 text-[11px] text-slate-500 dark:text-slate-400">
+                채팅 제공자
+                <select
+                  aria-label="채팅 제공자"
+                  value={session.chatProvider}
+                  onChange={event => session.setChatProvider(event.target.value as any)}
+                  className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                >
+                  {session.availableProviders.map(provider => (
+                    <option key={provider} value={provider}>
+                      {providerLabel(provider)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-[11px] text-slate-500 dark:text-slate-400">
+                채팅 모델
+                <input
+                  aria-label="채팅 모델"
+                  value={session.chatModel}
+                  onChange={event => session.setChatModel(event.target.value)}
+                  placeholder="모델 이름"
+                  className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                />
+              </label>
+            </div>
+          )}
         </div>
 
-        {session.chatModel === 'claude' && session.claudeMeta && (
+        {session.effectiveProvider === 'claude_cli' && session.claudeMeta && (
           <div className="shrink-0 flex flex-wrap items-center gap-2 border-b border-violet-100 bg-violet-50 px-3 py-1.5 dark:border-violet-500/20 dark:bg-violet-500/10">
             <span
               style={{ fontFamily: "'Fira Code', monospace" }}
@@ -398,28 +518,6 @@ export function AiChatPanel({
               out {session.cumOutputTokens.toLocaleString()}
             </span>
             <span className="ml-auto text-[9px] text-slate-400 dark:text-slate-500">${session.cumCostUsd.toFixed(4)}</span>
-          </div>
-        )}
-
-        {session.showKeyInput && (
-          <div className="shrink-0 border-b border-amber-100 bg-amber-50 px-4 py-2 dark:border-amber-500/20 dark:bg-amber-500/10">
-            <p className="mb-1.5 text-xs text-amber-700 dark:text-amber-300">OpenAI API Key</p>
-            <div className="flex gap-2">
-              <input
-                type="password"
-                value={session.localKeyInput}
-                onChange={event => session.setLocalKeyInput(event.target.value)}
-                placeholder="sk-..."
-                className="flex-1 rounded-lg border border-amber-200 bg-white px-2 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-400 dark:border-amber-500/30 dark:bg-slate-800 dark:text-slate-100"
-              />
-              <button
-                type="button"
-                onClick={session.saveKey}
-                className="rounded-lg bg-amber-500 px-3 py-1.5 text-xs text-white hover:bg-amber-600"
-              >
-                Save
-              </button>
-            </div>
           </div>
         )}
 
@@ -464,12 +562,17 @@ export function AiChatPanel({
                       ? 'rounded-tr-sm bg-violet-600 text-white'
                       : 'rounded-tl-sm bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200'
                   }`}
-                  dangerouslySetInnerHTML={{
-                    __html: message.role === 'assistant'
-                      ? renderMarkdown(message.content)
-                      : renderInline(message.content).replace(/\n/g, '<br/>'),
-                  }}
-                />
+                >
+                  {message.role === 'assistant' ? (
+                    <AssistantMessageContent content={message.content} />
+                  ) : (
+                    <div
+                      dangerouslySetInnerHTML={{
+                        __html: renderInline(message.content).replace(/\n/g, '<br/>'),
+                      }}
+                    />
+                  )}
+                </div>
               </div>
               {message.role === 'assistant' && message.references?.length ? (
                 <div className="ml-8 max-w-[80%]">
@@ -496,7 +599,7 @@ export function AiChatPanel({
           {commands.length > 0 && cmdPopup && filteredCommands.length > 0 && (
             <div ref={cmdListRef} className="mb-2 max-h-52 overflow-y-auto overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-[var(--color-card)]">
               <div className="sticky top-0 border-b border-slate-100 bg-slate-50 px-3 py-1 dark:border-slate-700 dark:bg-slate-800">
-                <p className="text-[9px] tracking-wide text-slate-400 dark:text-slate-500">Slash commands</p>
+                <p className="text-[9px] tracking-wide text-slate-400 dark:text-slate-500">슬래시 명령어</p>
               </div>
               {filteredCommands.map((command, idx) => (
                 <button
@@ -576,7 +679,7 @@ export function AiChatPanel({
             </button>
           </div>
           <p className="mt-1.5 text-center text-[10px] text-slate-300 dark:text-slate-500">
-            {commands.length > 0 ? 'Type / to browse commands' : 'Read-only chat'}
+            {commands.length > 0 ? '/ 를 입력하면 명령어를 볼 수 있어요' : '읽기 전용 채팅'}
           </p>
         </div>
       </div>

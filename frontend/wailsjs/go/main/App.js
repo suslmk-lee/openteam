@@ -46,6 +46,10 @@ export function AutoMapLinearMembers() {
   return window['go']['main']['App']['AutoMapLinearMembers']();
 }
 
+export function ChatWithAI(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['ChatWithAI'](arg1, arg2, arg3, arg4);
+}
+
 export function CheckClaudeCLI() {
   return window['go']['main']['App']['CheckClaudeCLI']();
 }
@@ -120,6 +124,10 @@ export function DeleteTeamMember(arg1) {
 
 export function ExportWeeklyReport(arg1) {
   return window['go']['main']['App']['ExportWeeklyReport'](arg1);
+}
+
+export function GetAISettings() {
+  return window['go']['main']['App']['GetAISettings']();
 }
 
 export function GetAttendanceSummary(arg1, arg2) {
@@ -352,6 +360,10 @@ export function RetrieveVaultContext(arg1, arg2) {
 
 export function RunKnowledgeBaseLint() {
   return window['go']['main']['App']['RunKnowledgeBaseLint']();
+}
+
+export function SaveAISettings(arg1) {
+  return window['go']['main']['App']['SaveAISettings'](arg1);
 }
 
 export function SaveAttendanceRecord(arg1) {

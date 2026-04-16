@@ -137,3 +137,124 @@ select option {
   background-color: #1e293b;
   color: #e2e8f0;
 }
+
+.app-drag-region {
+  --wails-draggable: drag;
+}
+
+.app-no-drag {
+  --wails-draggable: no-drag;
+}
+
+.window-chrome {
+  position: relative;
+  z-index: 30;
+  height: 40px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 8px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+  background:
+    radial-gradient(120% 220% at 10% -120%, rgba(56, 189, 248, 0.24), transparent 62%),
+    linear-gradient(90deg, #0b1220 0%, #101a2d 35%, #0f172a 100%);
+  color: #dbeafe;
+}
+
+.window-chrome-left {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.window-icon-button {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: #dbeafe;
+  transition: background-color 160ms ease, color 160ms ease;
+  cursor: pointer;
+}
+
+.window-icon-button:hover {
+  background: rgba(148, 163, 184, 0.22);
+  color: #ffffff;
+}
+
+.window-chrome-menu {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.window-menu-button {
+  border: 0;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 13px;
+  line-height: 1;
+  background: transparent;
+  color: #cbd5e1;
+  transition: background-color 160ms ease, color 160ms ease;
+  cursor: pointer;
+}
+
+.window-menu-button:hover {
+  background: rgba(148, 163, 184, 0.2);
+  color: #f8fafc;
+}
+
+.window-title {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  color: rgba(226, 232, 240, 0.88);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+.window-controls {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+}
+
+.window-control-button {
+  width: 40px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: #dbeafe;
+  transition: background-color 160ms ease, color 160ms ease;
+  cursor: pointer;
+}
+
+.window-control-button:hover {
+  background: rgba(148, 163, 184, 0.22);
+  color: #ffffff;
+}
+
+.window-control-close:hover {
+  background: #ef4444;
+  color: #ffffff;
+}
+
+.dark .window-chrome {
+  border-bottom-color: rgba(148, 163, 184, 0.2);
+}

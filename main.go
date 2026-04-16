@@ -16,10 +16,11 @@ func main() {
 	app := NewApp()
 
 	err := wails.Run(&options.App{
-		Title:    "OpenReport - 주간업무일지 자동생성",
-		Width:    1400,
-		Height:   900,
-		MinWidth: 1024,
+		Title:     "OpenReport - 주간업무일지 자동생성",
+		Width:     1400,
+		Height:    900,
+		Frameless: true,
+		MinWidth:  1024,
 		MinHeight: 700,
 		AssetServer: &assetserver.Options{
 			Assets: assets,

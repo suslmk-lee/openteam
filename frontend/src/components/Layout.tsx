@@ -21,6 +21,7 @@ import {
   Calendar,
   Database,
   BookOpen,
+  Bot,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTeamProfile } from '../contexts/TeamProfileContext'
@@ -264,6 +265,10 @@ export default function Layout() {
                 <SidebarLink to="/settings/attendance" icon={<User size={18} />} label="내 근태 관리" collapsed={false} />
                 <SidebarLink to="/settings/template" icon={<FilePlus size={18} />} label="템플릿" collapsed={false} />
                 <SidebarLink to="/settings/integrations" icon={<Users size={18} />} label="연동 설정" collapsed={false} />
+                <SidebarLink to="/settings/ai-usage" icon={<Bot size={18} />} label="AI 사용량" collapsed={false} />
+                {profile?.teamType === 'personal' && (
+                  <SidebarLink to="/settings/personal-ai-usage" icon={<Bot size={18} />} label="개인 AI 통합 사용량" collapsed={false} />
+                )}
                 <SidebarLink to="/settings/categories" icon={<Briefcase size={18} />} label="카테고리" collapsed={false} />
                 {profile?.teamType !== 'personal' && (
                   <SidebarLink to="/settings/common-codes" icon={<ListTree size={18} />} label="공통코드관리" collapsed={false} />

@@ -10,7 +10,7 @@ function combineContext(systemPrompt: string, contextText: string) {
 
 export function useAiChatSession(contextProvider: ChatContextProvider): AiChatSession {
   const appApi = useAppApi()
-  const { CheckClaudeCLI, ClaudeChatWithSession, GetIntegrations } = appApi
+  const { CheckClaudeCLI, ClaudeChatWithSession, GetIntegrations, OpenAIChatWithMessages } = appApi
 
   const [open, setOpen] = useState(false)
   const [maximized, setMaximized] = useState(false)
@@ -162,29 +162,14 @@ export function useAiChatSession(contextProvider: ChatContextProvider): AiChatSe
         setCumCostUsd(prev => prev + res.costUsd)
         reply = res.reply
       } else {
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify({
-            model: OPENAI_MODEL,
-            messages: [
-              { role: 'system', content: combinedContext },
-              ...nextMessages.map(message => ({ role: message.role, content: message.content })),
-            ],
-            max_tokens: 1024,
-          }),
-        })
-
-        if (!response.ok) {
-          const err = await response.json().catch(() => ({}))
-          throw new Error(err?.error?.message || `HTTP ${response.status}`)
-        }
-
-        const data = await response.json()
-        reply = data.choices?.[0]?.message?.content || '(no response)'
+        const result = await OpenAIChatWithMessages(
+          combinedContext,
+          nextMessages.map(message => ({ role: message.role, content: message.content })),
+        )
+        setCumInputTokens(prev => prev + (result.inputTokens || 0))
+        setCumOutputTokens(prev => prev + (result.outputTokens || 0))
+        setCumCostUsd(prev => prev + (result.costUsd || 0))
+        reply = result.reply || '(no response)'
       }
 
       setMessages(prev => [...prev, { role: 'assistant', content: reply, references: context.references }])

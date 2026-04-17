@@ -423,6 +423,7 @@ func defaultIngestKnowledgeExtractor(app *App, src *ingestSource) (*ingestStruct
 		if err != nil {
 			return nil, err
 		}
+		app.trackOpenAIUsageFromClient(client, "vault_ingest")
 	}
 
 	parsed, parseErr := parseStructuredKnowledgeJSON(raw)

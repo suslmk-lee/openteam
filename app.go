@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"openreport/internal/db"
 )
@@ -20,6 +21,9 @@ type App struct {
 	report    *ReportService
 	team      *TeamService
 	external  *ExternalService
+
+	personalCollectMu     sync.RWMutex
+	personalCollectStatus db.PersonalAICollectStatus
 }
 
 func NewApp() *App {

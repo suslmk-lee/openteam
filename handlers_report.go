@@ -336,7 +336,12 @@ func (a *App) generateAIReportContent(activity *db.Activity, section, category s
 
 func (a *App) generateAIReportContentWithConfig(cfg *openAIIntegrationConfig, activity *db.Activity, section, category string) (string, error) {
 	client := ai.NewClient(cfg.APIKey, cfg.Model)
-	return client.GenerateReportSentence(activity.Source, section, category, activity.Title, activity.Summary, activity.ActivityDate)
+	result, err := client.GenerateReportSentence(activity.Source, section, category, activity.Title, activity.Summary, activity.ActivityDate)
+	if err != nil {
+		return "", err
+	}
+	a.trackOpenAIUsageFromClient(client, "report_generation")
+	return result, nil
 }
 
 type activityTopicGroup struct {
@@ -505,6 +510,7 @@ func (a *App) consolidateSelectedActivityItemsWithAI(reportID int64, cfg *openAI
 				log.Printf("[openai] grouped preprocessing failed (topic=%s, items=%d): %v", grp.topic, len(grp.activities), err)
 				content = grp.base.Content
 			} else {
+				a.trackOpenAIUsageFromClient(client, "report_consolidation")
 				content = generated
 			}
 		}
@@ -724,6 +730,7 @@ func (a *App) RefineMarkdownWithAI(markdownText string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("AI ?ㅻ벉湲??ㅽ뙣: %w", err)
 	}
+	a.trackOpenAIUsageFromClient(client, "report_refine")
 	return refined, nil
 }
 

@@ -28,12 +28,161 @@ export interface VaultReference {
   content: string
 }
 
+export interface AIProvider {
+  id: number
+  userId: number
+  code: string
+  displayName: string
+  enabled: boolean
+  createdAt: string
+}
+
+export interface AIModel {
+  id: number
+  userId: number
+  providerId: number
+  modelCode: string
+  displayName: string
+  enabled: boolean
+  createdAt: string
+}
+
+export interface AIBillingPlan {
+  id: number
+  userId: number
+  providerId: number
+  modelId?: number | null
+  monthlyFixedUsd: number
+  includedInputTokens: number
+  includedOutputTokens: number
+  overageInputPer1kUsd: number
+  overageOutputPer1kUsd: number
+  effectiveFrom: string
+  effectiveTo?: string | null
+  createdAt: string
+}
+
+export interface AIUsageSummaryRow {
+  providerCode: string
+  providerName: string
+  modelCode: string
+  modelName: string
+  requestCount: number
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheCreateTokens: number
+  paygCostUsd: number
+  fixedCostUsd: number
+  overageCostUsd: number
+  totalCostUsd: number
+  totalCostKrw: number
+  isUnregistered: boolean
+}
+
+export interface AIUsageDailyPoint {
+  day: string
+  totalCostUsd: number
+  totalCostKrw: number
+  inputTokens: number
+  outputTokens: number
+}
+
+export interface AIUsageDashboard {
+  overview: {
+    month: string
+    requestCount: number
+    inputTokens: number
+    outputTokens: number
+    totalCostUsd: number
+    totalCostKrw: number
+    fixedCostUsd: number
+    overageCostUsd: number
+    paygCostUsd: number
+  }
+  byProvider: AIUsageSummaryRow[]
+  byModel: AIUsageSummaryRow[]
+  unregistered: AIUsageSummaryRow[]
+  daily: AIUsageDailyPoint[]
+  fxRateUsed: number
+  fxRateDate: string
+  fxSource: string
+  fxFallbackUsed: boolean
+}
+
+export interface PersonalAISourceSummaryRow {
+  sourceCode: string
+  sourceName: string
+  requestCount: number
+  inputTokens: number
+  outputTokens: number
+  totalCostUsd: number
+  totalCostKrw: number
+}
+
+export interface PersonalAIUsageDashboard {
+  overview: {
+    month: string
+    requestCount: number
+    internalInputTokens: number
+    internalOutputTokens: number
+    externalInputTokens: number
+    externalOutputTokens: number
+    internalCostUsd: number
+    externalCostUsd: number
+    totalCostUsd: number
+    totalCostKrw: number
+  }
+  bySource: PersonalAISourceSummaryRow[]
+  byProvider: AIUsageSummaryRow[]
+  byModel: AIUsageSummaryRow[]
+  daily: AIUsageDailyPoint[]
+  fxRateUsed: number
+  fxRateDate: string
+  fxSource: string
+  fxFallbackUsed: boolean
+}
+
+export interface PersonalAICollectorResult {
+  sourceCode: string
+  sourceName: string
+  scannedFiles: number
+  parsedEntries: number
+  importedRows: number
+  warnings: string[]
+}
+
+export interface PersonalAICollectorResponse {
+  month: string
+  results: PersonalAICollectorResult[]
+}
+
+export interface PersonalAICollectStatus {
+  running: boolean
+  month: string
+  startedAt: string
+  finishedAt: string
+  lastError: string
+  lastResult?: PersonalAICollectorResponse | null
+}
+
 export type AppApi = typeof AppModule & {
   LookupLinearViewer: (apiKey: string) => Promise<Record<string, string>>
   GetLinearTeamLabels: () => Promise<Array<{ id: string; name: string; color: string }>>
   AutoMapLinearMembers: () => Promise<number>
   UpdateLinearIssue: (id: string, input: any) => Promise<void>
   CheckClaudeCLI: () => Promise<{ ok: boolean; version: string }>
+  OpenAIChatWithMessages: (
+    systemContext: string,
+    messages: Array<{ role: string; content: string }>,
+  ) => Promise<{
+    reply: string
+    model: string
+    inputTokens: number
+    outputTokens: number
+    totalTokens: number
+    costUsd: number
+  }>
   ClaudeChat: (prompt: string, ctx: string) => Promise<string>
   ClaudeChatWithSession: (
     prompt: string,
@@ -51,6 +200,40 @@ export type AppApi = typeof AppModule & {
     costUsd: number
   }>
   ScanClaudeSkills: () => Promise<{ skill: string; cmd: string; desc: string }[]>
+  ListAIProviders: () => Promise<AIProvider[]>
+  SaveAIProvider: (id: number, code: string, displayName: string, enabled: boolean) => Promise<AIProvider>
+  DeleteAIProvider: (id: number) => Promise<void>
+  ListAIModels: () => Promise<AIModel[]>
+  SaveAIModel: (id: number, providerId: number, modelCode: string, displayName: string, enabled: boolean) => Promise<AIModel>
+  DeleteAIModel: (id: number) => Promise<void>
+  ListAIBillingPlans: () => Promise<AIBillingPlan[]>
+  SaveAIBillingPlan: (
+    id: number,
+    providerId: number,
+    modelId: number,
+    monthlyFixedUsd: number,
+    includedInputTokens: number,
+    includedOutputTokens: number,
+    overageInputPer1kUsd: number,
+    overageOutputPer1kUsd: number,
+    effectiveFrom: string,
+    effectiveTo: string,
+  ) => Promise<AIBillingPlan>
+  DeleteAIBillingPlan: (id: number) => Promise<void>
+  GetAIUsageDashboard: (month: string) => Promise<AIUsageDashboard>
+  GetPersonalAIUsageDashboard: (month: string) => Promise<PersonalAIUsageDashboard>
+  StartPersonalAIUsageCollection: (month: string) => Promise<PersonalAICollectStatus>
+  GetPersonalAIUsageCollectionStatus: () => Promise<PersonalAICollectStatus>
+  CollectPersonalAIUsage: (month: string) => Promise<PersonalAICollectorResponse>
+  AddPersonalAIManualUsage: (
+    day: string,
+    providerCode: string,
+    modelCode: string,
+    inputTokens: number,
+    outputTokens: number,
+    costUsd: number,
+  ) => Promise<void>
+  RefreshUSDKRWRate: (day: string) => Promise<{ day: string; base: string; quote: string; rate: number; source: string; fetchedAt: string }>
   GetPositionTypes: () => Promise<string[]>
   AddPositionType: (name: string) => Promise<void>
   DeletePositionType: (name: string) => Promise<void>
@@ -107,6 +290,73 @@ const unavailableClaudeChatWithSession: AppApi['ClaudeChatWithSession'] = async 
   cacheCreateTokens: 0,
   costUsd: 0,
 })
+const unavailableOpenAIChatWithMessages: AppApi['OpenAIChatWithMessages'] = async () => ({
+  reply: '',
+  model: '',
+  inputTokens: 0,
+  outputTokens: 0,
+  totalTokens: 0,
+  costUsd: 0,
+})
+const unavailableAIUsageDashboard = async (_month: string): Promise<AIUsageDashboard> =>
+  ({
+    overview: {
+      month: '',
+      requestCount: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      totalCostUsd: 0,
+      totalCostKrw: 0,
+      fixedCostUsd: 0,
+      overageCostUsd: 0,
+      paygCostUsd: 0,
+    },
+    byProvider: [],
+    byModel: [],
+    unregistered: [],
+    daily: [],
+    fxRateUsed: 0,
+    fxRateDate: '',
+    fxSource: '',
+    fxFallbackUsed: false,
+  })
+const unavailablePersonalAIUsageDashboard = async (_month: string): Promise<PersonalAIUsageDashboard> =>
+  ({
+    overview: {
+      month: '',
+      requestCount: 0,
+      internalInputTokens: 0,
+      internalOutputTokens: 0,
+      externalInputTokens: 0,
+      externalOutputTokens: 0,
+      internalCostUsd: 0,
+      externalCostUsd: 0,
+      totalCostUsd: 0,
+      totalCostKrw: 0,
+    },
+    bySource: [],
+    byProvider: [],
+    byModel: [],
+    daily: [],
+    fxRateUsed: 0,
+    fxRateDate: '',
+    fxSource: '',
+    fxFallbackUsed: false,
+  })
+const unavailablePersonalAICollectorResponse = async (_month: string): Promise<PersonalAICollectorResponse> =>
+  ({
+    month: '',
+    results: [],
+  })
+const unavailablePersonalAICollectStatus = async (): Promise<PersonalAICollectStatus> =>
+  ({
+    running: false,
+    month: '',
+    startedAt: '',
+    finishedAt: '',
+    lastError: '',
+    lastResult: null,
+  })
 const unavailableClaudeChat: AppApi['ClaudeChat'] = async () => {
   throw new Error('ClaudeChat not available')
 }
@@ -164,11 +414,62 @@ export const appApi: AppApi = {
   CheckClaudeCLI:
     fallbackModule.CheckClaudeCLI ??
     (() => Promise.resolve({ ok: false, version: '' })) as AppApi['CheckClaudeCLI'],
+  OpenAIChatWithMessages:
+    (fallbackModule as AppApi).OpenAIChatWithMessages ??
+    unavailableOpenAIChatWithMessages,
   ClaudeChat: (fallbackModule.ClaudeChat ?? unavailableClaudeChat) as AppApi['ClaudeChat'],
   ClaudeChatWithSession: (fallbackModule.ClaudeChatWithSession ?? unavailableClaudeChatWithSession) as AppApi['ClaudeChatWithSession'],
   ScanClaudeSkills:
     (fallbackModule as AppApi).ScanClaudeSkills ??
     unavailableError<{ skill: string; cmd: string; desc: string }[]>('ScanClaudeSkills not available'),
+  ListAIProviders:
+    (fallbackModule as AppApi).ListAIProviders ??
+    ((async () => []) as AppApi['ListAIProviders']),
+  SaveAIProvider:
+    (fallbackModule as AppApi).SaveAIProvider ??
+    unavailableError<AIProvider, [number, string, string, boolean]>('SaveAIProvider not available'),
+  DeleteAIProvider:
+    (fallbackModule as AppApi).DeleteAIProvider ??
+    unavailableError<void, [number]>('DeleteAIProvider not available'),
+  ListAIModels:
+    (fallbackModule as AppApi).ListAIModels ??
+    ((async () => []) as AppApi['ListAIModels']),
+  SaveAIModel:
+    (fallbackModule as AppApi).SaveAIModel ??
+    unavailableError<AIModel, [number, number, string, string, boolean]>('SaveAIModel not available'),
+  DeleteAIModel:
+    (fallbackModule as AppApi).DeleteAIModel ??
+    unavailableError<void, [number]>('DeleteAIModel not available'),
+  ListAIBillingPlans:
+    (fallbackModule as AppApi).ListAIBillingPlans ??
+    ((async () => []) as AppApi['ListAIBillingPlans']),
+  SaveAIBillingPlan:
+    (fallbackModule as AppApi).SaveAIBillingPlan ??
+    unavailableError<AIBillingPlan, [number, number, number, number, number, number, number, number, string, string]>('SaveAIBillingPlan not available'),
+  DeleteAIBillingPlan:
+    (fallbackModule as AppApi).DeleteAIBillingPlan ??
+    unavailableError<void, [number]>('DeleteAIBillingPlan not available'),
+  GetAIUsageDashboard:
+    (fallbackModule as AppApi).GetAIUsageDashboard ??
+    (unavailableAIUsageDashboard as unknown as AppApi['GetAIUsageDashboard']),
+  GetPersonalAIUsageDashboard:
+    (fallbackModule as AppApi).GetPersonalAIUsageDashboard ??
+    (unavailablePersonalAIUsageDashboard as unknown as AppApi['GetPersonalAIUsageDashboard']),
+  StartPersonalAIUsageCollection:
+    (fallbackModule as AppApi).StartPersonalAIUsageCollection ??
+    (unavailablePersonalAICollectStatus as unknown as AppApi['StartPersonalAIUsageCollection']),
+  GetPersonalAIUsageCollectionStatus:
+    (fallbackModule as AppApi).GetPersonalAIUsageCollectionStatus ??
+    (unavailablePersonalAICollectStatus as unknown as AppApi['GetPersonalAIUsageCollectionStatus']),
+  CollectPersonalAIUsage:
+    (fallbackModule as AppApi).CollectPersonalAIUsage ??
+    (unavailablePersonalAICollectorResponse as unknown as AppApi['CollectPersonalAIUsage']),
+  AddPersonalAIManualUsage:
+    (fallbackModule as AppApi).AddPersonalAIManualUsage ??
+    unavailableError<void, [string, string, string, number, number, number]>('AddPersonalAIManualUsage not available'),
+  RefreshUSDKRWRate:
+    (fallbackModule as AppApi).RefreshUSDKRWRate ??
+    unavailableError<{ day: string; base: string; quote: string; rate: number; source: string; fetchedAt: string }, [string]>('RefreshUSDKRWRate not available'),
   GetPositionTypes:
     (fallbackModule as AppApi).GetPositionTypes ??
     ((async () => []) as AppApi['GetPositionTypes']),

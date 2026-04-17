@@ -13,6 +13,14 @@ import (
 type Client struct {
 	APIKey string
 	Model  string
+	lastUsage OpenAIUsage
+}
+
+type OpenAIUsage struct {
+	Model            string
+	PromptTokens     int
+	CompletionTokens int
+	TotalTokens      int
 }
 
 type chatRequest struct {
@@ -27,9 +35,15 @@ type chatMessage struct {
 }
 
 type chatResponse struct {
+	Model string `json:"model"`
 	Choices []struct {
 		Message chatMessage `json:"message"`
 	} `json:"choices"`
+	Usage struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
 }
 
 func NewClient(apiKey, model string) *Client {
@@ -37,6 +51,25 @@ func NewClient(apiKey, model string) *Client {
 		model = "gpt-4o-mini"
 	}
 	return &Client{APIKey: apiKey, Model: model}
+}
+
+func (c *Client) LastUsage() OpenAIUsage {
+	return c.lastUsage
+}
+
+func (c *Client) rememberUsage(model string, promptTokens, completionTokens, totalTokens int) {
+	if strings.TrimSpace(model) == "" {
+		model = c.Model
+	}
+	if totalTokens == 0 {
+		totalTokens = promptTokens + completionTokens
+	}
+	c.lastUsage = OpenAIUsage{
+		Model:            strings.TrimSpace(model),
+		PromptTokens:     promptTokens,
+		CompletionTokens: completionTokens,
+		TotalTokens:      totalTokens,
+	}
 }
 
 func (c *Client) GenerateReportSentence(source, section, category, title, summary, activityDate string) (string, error) {
@@ -87,6 +120,7 @@ func (c *Client) GenerateReportSentence(source, section, category, title, summar
 	if err := json.Unmarshal(respBody, &parsed); err != nil {
 		return "", err
 	}
+	c.rememberUsage(parsed.Model, parsed.Usage.PromptTokens, parsed.Usage.CompletionTokens, parsed.Usage.TotalTokens)
 	if len(parsed.Choices) == 0 {
 		return "", fmt.Errorf("openai response has no choices")
 	}
@@ -149,6 +183,7 @@ func (c *Client) GenerateGroupedReportSentence(section, category, topic string, 
 	if err := json.Unmarshal(respBody, &parsed); err != nil {
 		return "", err
 	}
+	c.rememberUsage(parsed.Model, parsed.Usage.PromptTokens, parsed.Usage.CompletionTokens, parsed.Usage.TotalTokens)
 	if len(parsed.Choices) == 0 {
 		return "", fmt.Errorf("openai response has no choices")
 	}
@@ -256,11 +291,17 @@ func (c *Client) ChatCompletion(systemPrompt, userMessage string) (string, error
 	defer resp.Body.Close()
 
 	var result struct {
+		Model string `json:"model"`
 		Choices []struct {
 			Message struct {
 				Content string `json:"content"`
 			} `json:"message"`
 		} `json:"choices"`
+		Usage struct {
+			PromptTokens     int `json:"prompt_tokens"`
+			CompletionTokens int `json:"completion_tokens"`
+			TotalTokens      int `json:"total_tokens"`
+		} `json:"usage"`
 		Error *struct {
 			Message string `json:"message"`
 		} `json:"error"`
@@ -274,5 +315,6 @@ func (c *Client) ChatCompletion(systemPrompt, userMessage string) (string, error
 	if len(result.Choices) == 0 {
 		return "", fmt.Errorf("openai returned empty response")
 	}
+	c.rememberUsage(result.Model, result.Usage.PromptTokens, result.Usage.CompletionTokens, result.Usage.TotalTokens)
 	return result.Choices[0].Message.Content, nil
 }

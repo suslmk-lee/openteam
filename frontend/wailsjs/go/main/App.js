@@ -22,6 +22,10 @@ export function AddManualActivity(arg1, arg2, arg3) {
   return window['go']['main']['App']['AddManualActivity'](arg1, arg2, arg3);
 }
 
+export function AddPersonalAIManualUsage(arg1, arg2, arg3, arg4, arg5, arg6) {
+  return window['go']['main']['App']['AddPersonalAIManualUsage'](arg1, arg2, arg3, arg4, arg5, arg6);
+}
+
 export function AddPositionType(arg1) {
   return window['go']['main']['App']['AddPositionType'](arg1);
 }
@@ -64,6 +68,22 @@ export function ClaudeChat(arg1, arg2) {
 
 export function ClaudeChatWithSession(arg1, arg2, arg3) {
   return window['go']['main']['App']['ClaudeChatWithSession'](arg1, arg2, arg3);
+}
+
+export function CollectPersonalAIUsage(arg1) {
+  return window['go']['main']['App']['CollectPersonalAIUsage'](arg1);
+}
+
+export function DeleteAIBillingPlan(arg1) {
+  return window['go']['main']['App']['DeleteAIBillingPlan'](arg1);
+}
+
+export function DeleteAIModel(arg1) {
+  return window['go']['main']['App']['DeleteAIModel'](arg1);
+}
+
+export function DeleteAIProvider(arg1) {
+  return window['go']['main']['App']['DeleteAIProvider'](arg1);
 }
 
 export function DeleteAttendanceRecord(arg1) {
@@ -120,6 +140,10 @@ export function DeleteTeamMember(arg1) {
 
 export function ExportWeeklyReport(arg1) {
   return window['go']['main']['App']['ExportWeeklyReport'](arg1);
+}
+
+export function GetAIUsageDashboard(arg1) {
+  return window['go']['main']['App']['GetAIUsageDashboard'](arg1);
 }
 
 export function GetAttendanceSummary(arg1, arg2) {
@@ -192,6 +216,14 @@ export function GetMyLinearIssues() {
 
 export function GetOrCreateWeeklyReport(arg1, arg2) {
   return window['go']['main']['App']['GetOrCreateWeeklyReport'](arg1, arg2);
+}
+
+export function GetPersonalAIUsageCollectionStatus() {
+  return window['go']['main']['App']['GetPersonalAIUsageCollectionStatus']();
+}
+
+export function GetPersonalAIUsageDashboard(arg1) {
+  return window['go']['main']['App']['GetPersonalAIUsageDashboard'](arg1);
 }
 
 export function GetPositionTypes() {
@@ -274,6 +306,18 @@ export function IngestKnowledgeSource(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['IngestKnowledgeSource'](arg1, arg2, arg3, arg4);
 }
 
+export function ListAIBillingPlans() {
+  return window['go']['main']['App']['ListAIBillingPlans']();
+}
+
+export function ListAIModels() {
+  return window['go']['main']['App']['ListAIModels']();
+}
+
+export function ListAIProviders() {
+  return window['go']['main']['App']['ListAIProviders']();
+}
+
 export function ListActivitiesByDateRange(arg1, arg2) {
   return window['go']['main']['App']['ListActivitiesByDateRange'](arg1, arg2);
 }
@@ -318,6 +362,10 @@ export function LookupLinearViewer(arg1) {
   return window['go']['main']['App']['LookupLinearViewer'](arg1);
 }
 
+export function OpenAIChatWithMessages(arg1, arg2) {
+  return window['go']['main']['App']['OpenAIChatWithMessages'](arg1, arg2);
+}
+
 export function OpenFile(arg1) {
   return window['go']['main']['App']['OpenFile'](arg1);
 }
@@ -342,6 +390,10 @@ export function RefineMarkdownWithAI(arg1) {
   return window['go']['main']['App']['RefineMarkdownWithAI'](arg1);
 }
 
+export function RefreshUSDKRWRate(arg1) {
+  return window['go']['main']['App']['RefreshUSDKRWRate'](arg1);
+}
+
 export function RefreshVault() {
   return window['go']['main']['App']['RefreshVault']();
 }
@@ -352,6 +404,18 @@ export function RetrieveVaultContext(arg1, arg2) {
 
 export function RunKnowledgeBaseLint() {
   return window['go']['main']['App']['RunKnowledgeBaseLint']();
+}
+
+export function SaveAIBillingPlan(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10) {
+  return window['go']['main']['App']['SaveAIBillingPlan'](arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10);
+}
+
+export function SaveAIModel(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['main']['App']['SaveAIModel'](arg1, arg2, arg3, arg4, arg5);
+}
+
+export function SaveAIProvider(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['SaveAIProvider'](arg1, arg2, arg3, arg4);
 }
 
 export function SaveAttendanceRecord(arg1) {
@@ -416,6 +480,10 @@ export function SetupGWSAuth() {
 
 export function SetupTeamProfile(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['SetupTeamProfile'](arg1, arg2, arg3, arg4);
+}
+
+export function StartPersonalAIUsageCollection(arg1) {
+  return window['go']['main']['App']['StartPersonalAIUsageCollection'](arg1);
 }
 
 export function SyncAll(arg1, arg2) {

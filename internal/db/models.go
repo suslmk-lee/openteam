@@ -386,3 +386,178 @@ type CodeValue struct {
 	IsActive    bool   `json:"isActive"`
 	CreatedAt   string `json:"createdAt"`
 }
+
+// AIProvider is a manually managed AI vendor registry entry.
+type AIProvider struct {
+	ID          int64  `json:"id"`
+	UserID      int64  `json:"userId"`
+	Code        string `json:"code"`
+	DisplayName string `json:"displayName"`
+	Enabled     bool   `json:"enabled"`
+	CreatedAt   string `json:"createdAt"`
+}
+
+// AIModel is a manually managed model registry entry.
+type AIModel struct {
+	ID          int64  `json:"id"`
+	UserID      int64  `json:"userId"`
+	ProviderID  int64  `json:"providerId"`
+	ModelCode   string `json:"modelCode"`
+	DisplayName string `json:"displayName"`
+	Enabled     bool   `json:"enabled"`
+	CreatedAt   string `json:"createdAt"`
+}
+
+// AIBillingPlan stores fixed + overage billing settings by provider/model.
+type AIBillingPlan struct {
+	ID                    int64   `json:"id"`
+	UserID                int64   `json:"userId"`
+	ProviderID            int64   `json:"providerId"`
+	ModelID               *int64  `json:"modelId"`
+	MonthlyFixedUSD       float64 `json:"monthlyFixedUsd"`
+	IncludedInputTokens   int64   `json:"includedInputTokens"`
+	IncludedOutputTokens  int64   `json:"includedOutputTokens"`
+	OverageInputPer1kUSD  float64 `json:"overageInputPer1kUsd"`
+	OverageOutputPer1kUSD float64 `json:"overageOutputPer1kUsd"`
+	EffectiveFrom         string  `json:"effectiveFrom"`
+	EffectiveTo           *string `json:"effectiveTo"`
+	CreatedAt             string  `json:"createdAt"`
+}
+
+// AIUsageDaily stores day-level aggregated usage by provider/model/feature.
+type AIUsageDaily struct {
+	Day               string  `json:"day"`
+	UserID            int64   `json:"userId"`
+	ProviderID        int64   `json:"providerId"`
+	ModelID           int64   `json:"modelId"`
+	RawProvider       string  `json:"rawProvider"`
+	RawModel          string  `json:"rawModel"`
+	Feature           string  `json:"feature"`
+	RequestCount      int64   `json:"requestCount"`
+	InputTokens       int64   `json:"inputTokens"`
+	OutputTokens      int64   `json:"outputTokens"`
+	CacheReadTokens   int64   `json:"cacheReadTokens"`
+	CacheCreateTokens int64   `json:"cacheCreateTokens"`
+	PaygCostUSD       float64 `json:"paygCostUsd"`
+	CreatedAt         string  `json:"createdAt"`
+	UpdatedAt         string  `json:"updatedAt"`
+}
+
+// AIFXRate stores daily USD->KRW FX rates.
+type AIFXRate struct {
+	Day       string  `json:"day"`
+	Base      string  `json:"base"`
+	Quote     string  `json:"quote"`
+	Rate      float64 `json:"rate"`
+	Source    string  `json:"source"`
+	FetchedAt string  `json:"fetchedAt"`
+}
+
+// AIUsageSummaryRow is used by dashboard totals grouped by provider/model.
+type AIUsageSummaryRow struct {
+	ProviderCode      string  `json:"providerCode"`
+	ProviderName      string  `json:"providerName"`
+	ModelCode         string  `json:"modelCode"`
+	ModelName         string  `json:"modelName"`
+	RequestCount      int64   `json:"requestCount"`
+	InputTokens       int64   `json:"inputTokens"`
+	OutputTokens      int64   `json:"outputTokens"`
+	CacheReadTokens   int64   `json:"cacheReadTokens"`
+	CacheCreateTokens int64   `json:"cacheCreateTokens"`
+	PaygCostUSD       float64 `json:"paygCostUsd"`
+	FixedCostUSD      float64 `json:"fixedCostUsd"`
+	OverageCostUSD    float64 `json:"overageCostUsd"`
+	TotalCostUSD      float64 `json:"totalCostUsd"`
+	TotalCostKRW      float64 `json:"totalCostKrw"`
+	IsUnregistered    bool    `json:"isUnregistered"`
+}
+
+type AIUsageDailyPoint struct {
+	Day          string  `json:"day"`
+	TotalCostUSD float64 `json:"totalCostUsd"`
+	TotalCostKRW float64 `json:"totalCostKrw"`
+	InputTokens  int64   `json:"inputTokens"`
+	OutputTokens int64   `json:"outputTokens"`
+}
+
+type AIUsageOverview struct {
+	Month          string  `json:"month"`
+	RequestCount   int64   `json:"requestCount"`
+	InputTokens    int64   `json:"inputTokens"`
+	OutputTokens   int64   `json:"outputTokens"`
+	TotalCostUSD   float64 `json:"totalCostUsd"`
+	TotalCostKRW   float64 `json:"totalCostKrw"`
+	FixedCostUSD   float64 `json:"fixedCostUsd"`
+	OverageCostUSD float64 `json:"overageCostUsd"`
+	PaygCostUSD    float64 `json:"paygCostUsd"`
+}
+
+type AIUsageDashboard struct {
+	Overview       AIUsageOverview     `json:"overview"`
+	ByProvider     []AIUsageSummaryRow `json:"byProvider"`
+	ByModel        []AIUsageSummaryRow `json:"byModel"`
+	Unregistered   []AIUsageSummaryRow `json:"unregistered"`
+	Daily          []AIUsageDailyPoint `json:"daily"`
+	FXRateUsed     float64             `json:"fxRateUsed"`
+	FXRateDate     string              `json:"fxRateDate"`
+	FXSource       string              `json:"fxSource"`
+	FXFallbackUsed bool                `json:"fxFallbackUsed"`
+}
+
+type PersonalAISourceSummaryRow struct {
+	SourceCode   string  `json:"sourceCode"`
+	SourceName   string  `json:"sourceName"`
+	RequestCount int64   `json:"requestCount"`
+	InputTokens  int64   `json:"inputTokens"`
+	OutputTokens int64   `json:"outputTokens"`
+	TotalCostUSD float64 `json:"totalCostUsd"`
+	TotalCostKRW float64 `json:"totalCostKrw"`
+}
+
+type PersonalAIUsageOverview struct {
+	Month                string  `json:"month"`
+	RequestCount         int64   `json:"requestCount"`
+	InternalInputTokens  int64   `json:"internalInputTokens"`
+	InternalOutputTokens int64   `json:"internalOutputTokens"`
+	ExternalInputTokens  int64   `json:"externalInputTokens"`
+	ExternalOutputTokens int64   `json:"externalOutputTokens"`
+	InternalCostUSD      float64 `json:"internalCostUsd"`
+	ExternalCostUSD      float64 `json:"externalCostUsd"`
+	TotalCostUSD         float64 `json:"totalCostUsd"`
+	TotalCostKRW         float64 `json:"totalCostKrw"`
+}
+
+type PersonalAIUsageDashboard struct {
+	Overview       PersonalAIUsageOverview      `json:"overview"`
+	BySource       []PersonalAISourceSummaryRow `json:"bySource"`
+	ByProvider     []AIUsageSummaryRow          `json:"byProvider"`
+	ByModel        []AIUsageSummaryRow          `json:"byModel"`
+	Daily          []AIUsageDailyPoint          `json:"daily"`
+	FXRateUsed     float64                      `json:"fxRateUsed"`
+	FXRateDate     string                       `json:"fxRateDate"`
+	FXSource       string                       `json:"fxSource"`
+	FXFallbackUsed bool                         `json:"fxFallbackUsed"`
+}
+
+type PersonalAICollectorResult struct {
+	SourceCode    string   `json:"sourceCode"`
+	SourceName    string   `json:"sourceName"`
+	ScannedFiles  int      `json:"scannedFiles"`
+	ParsedEntries int      `json:"parsedEntries"`
+	ImportedRows  int      `json:"importedRows"`
+	Warnings      []string `json:"warnings"`
+}
+
+type PersonalAICollectorResponse struct {
+	Month   string                      `json:"month"`
+	Results []PersonalAICollectorResult `json:"results"`
+}
+
+type PersonalAICollectStatus struct {
+	Running    bool                         `json:"running"`
+	Month      string                       `json:"month"`
+	StartedAt  string                       `json:"startedAt"`
+	FinishedAt string                       `json:"finishedAt"`
+	LastError  string                       `json:"lastError"`
+	LastResult *PersonalAICollectorResponse `json:"lastResult"`
+}

@@ -28,6 +28,8 @@ import PersonalAttendance from './pages/PersonalAttendance'
 import VaultRouteRedirect from './pages/VaultRouteRedirect'
 import VaultExplorePage from './pages/VaultExplorePage'
 import VaultIngestPage from './pages/VaultIngestPage'
+import AIUsage from './pages/AIUsage'
+import PersonalAIUsage from './pages/PersonalAIUsage'
 
 const container = document.getElementById('root')
 const root = createRoot(container!)
@@ -70,6 +72,8 @@ root.render(
                     <Route path="/settings/common-codes" element={<CommonCodes />} />
                     <Route path="/settings/team-profile" element={<Settings section="team-profile" />} />
                     <Route path="/settings/attendance" element={<PersonalAttendance />} />
+                    <Route path="/settings/ai-usage" element={<AIUsage />} />
+                    <Route path="/settings/personal-ai-usage" element={<PersonalAIUsage />} />
                     <Route path="*" element={<Navigate to="/" replace />} />
                   </Route>
                 </Routes>

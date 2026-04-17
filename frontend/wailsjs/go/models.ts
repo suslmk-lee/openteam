@@ -1,5 +1,243 @@
 export namespace db {
 	
+	export class AIBillingPlan {
+	    id: number;
+	    userId: number;
+	    providerId: number;
+	    modelId?: number;
+	    monthlyFixedUsd: number;
+	    includedInputTokens: number;
+	    includedOutputTokens: number;
+	    overageInputPer1kUsd: number;
+	    overageOutputPer1kUsd: number;
+	    effectiveFrom: string;
+	    effectiveTo?: string;
+	    createdAt: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AIBillingPlan(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.userId = source["userId"];
+	        this.providerId = source["providerId"];
+	        this.modelId = source["modelId"];
+	        this.monthlyFixedUsd = source["monthlyFixedUsd"];
+	        this.includedInputTokens = source["includedInputTokens"];
+	        this.includedOutputTokens = source["includedOutputTokens"];
+	        this.overageInputPer1kUsd = source["overageInputPer1kUsd"];
+	        this.overageOutputPer1kUsd = source["overageOutputPer1kUsd"];
+	        this.effectiveFrom = source["effectiveFrom"];
+	        this.effectiveTo = source["effectiveTo"];
+	        this.createdAt = source["createdAt"];
+	    }
+	}
+	export class AIFXRate {
+	    day: string;
+	    base: string;
+	    quote: string;
+	    rate: number;
+	    source: string;
+	    fetchedAt: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AIFXRate(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.day = source["day"];
+	        this.base = source["base"];
+	        this.quote = source["quote"];
+	        this.rate = source["rate"];
+	        this.source = source["source"];
+	        this.fetchedAt = source["fetchedAt"];
+	    }
+	}
+	export class AIModel {
+	    id: number;
+	    userId: number;
+	    providerId: number;
+	    modelCode: string;
+	    displayName: string;
+	    enabled: boolean;
+	    createdAt: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AIModel(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.userId = source["userId"];
+	        this.providerId = source["providerId"];
+	        this.modelCode = source["modelCode"];
+	        this.displayName = source["displayName"];
+	        this.enabled = source["enabled"];
+	        this.createdAt = source["createdAt"];
+	    }
+	}
+	export class AIProvider {
+	    id: number;
+	    userId: number;
+	    code: string;
+	    displayName: string;
+	    enabled: boolean;
+	    createdAt: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AIProvider(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.userId = source["userId"];
+	        this.code = source["code"];
+	        this.displayName = source["displayName"];
+	        this.enabled = source["enabled"];
+	        this.createdAt = source["createdAt"];
+	    }
+	}
+	export class AIUsageDailyPoint {
+	    day: string;
+	    totalCostUsd: number;
+	    totalCostKrw: number;
+	    inputTokens: number;
+	    outputTokens: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new AIUsageDailyPoint(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.day = source["day"];
+	        this.totalCostUsd = source["totalCostUsd"];
+	        this.totalCostKrw = source["totalCostKrw"];
+	        this.inputTokens = source["inputTokens"];
+	        this.outputTokens = source["outputTokens"];
+	    }
+	}
+	export class AIUsageSummaryRow {
+	    providerCode: string;
+	    providerName: string;
+	    modelCode: string;
+	    modelName: string;
+	    requestCount: number;
+	    inputTokens: number;
+	    outputTokens: number;
+	    cacheReadTokens: number;
+	    cacheCreateTokens: number;
+	    paygCostUsd: number;
+	    fixedCostUsd: number;
+	    overageCostUsd: number;
+	    totalCostUsd: number;
+	    totalCostKrw: number;
+	    isUnregistered: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new AIUsageSummaryRow(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.providerCode = source["providerCode"];
+	        this.providerName = source["providerName"];
+	        this.modelCode = source["modelCode"];
+	        this.modelName = source["modelName"];
+	        this.requestCount = source["requestCount"];
+	        this.inputTokens = source["inputTokens"];
+	        this.outputTokens = source["outputTokens"];
+	        this.cacheReadTokens = source["cacheReadTokens"];
+	        this.cacheCreateTokens = source["cacheCreateTokens"];
+	        this.paygCostUsd = source["paygCostUsd"];
+	        this.fixedCostUsd = source["fixedCostUsd"];
+	        this.overageCostUsd = source["overageCostUsd"];
+	        this.totalCostUsd = source["totalCostUsd"];
+	        this.totalCostKrw = source["totalCostKrw"];
+	        this.isUnregistered = source["isUnregistered"];
+	    }
+	}
+	export class AIUsageOverview {
+	    month: string;
+	    requestCount: number;
+	    inputTokens: number;
+	    outputTokens: number;
+	    totalCostUsd: number;
+	    totalCostKrw: number;
+	    fixedCostUsd: number;
+	    overageCostUsd: number;
+	    paygCostUsd: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new AIUsageOverview(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.month = source["month"];
+	        this.requestCount = source["requestCount"];
+	        this.inputTokens = source["inputTokens"];
+	        this.outputTokens = source["outputTokens"];
+	        this.totalCostUsd = source["totalCostUsd"];
+	        this.totalCostKrw = source["totalCostKrw"];
+	        this.fixedCostUsd = source["fixedCostUsd"];
+	        this.overageCostUsd = source["overageCostUsd"];
+	        this.paygCostUsd = source["paygCostUsd"];
+	    }
+	}
+	export class AIUsageDashboard {
+	    overview: AIUsageOverview;
+	    byProvider: AIUsageSummaryRow[];
+	    byModel: AIUsageSummaryRow[];
+	    unregistered: AIUsageSummaryRow[];
+	    daily: AIUsageDailyPoint[];
+	    fxRateUsed: number;
+	    fxRateDate: string;
+	    fxSource: string;
+	    fxFallbackUsed: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new AIUsageDashboard(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.overview = this.convertValues(source["overview"], AIUsageOverview);
+	        this.byProvider = this.convertValues(source["byProvider"], AIUsageSummaryRow);
+	        this.byModel = this.convertValues(source["byModel"], AIUsageSummaryRow);
+	        this.unregistered = this.convertValues(source["unregistered"], AIUsageSummaryRow);
+	        this.daily = this.convertValues(source["daily"], AIUsageDailyPoint);
+	        this.fxRateUsed = source["fxRateUsed"];
+	        this.fxRateDate = source["fxRateDate"];
+	        this.fxSource = source["fxSource"];
+	        this.fxFallbackUsed = source["fxFallbackUsed"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
+	
 	export class Activity {
 	    id: number;
 	    integrationId: number;
@@ -290,6 +528,203 @@ export namespace db {
 	        this.lateCount = source["lateCount"];
 	    }
 	}
+	export class PersonalAICollectorResult {
+	    sourceCode: string;
+	    sourceName: string;
+	    scannedFiles: number;
+	    parsedEntries: number;
+	    importedRows: number;
+	    warnings: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new PersonalAICollectorResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.sourceCode = source["sourceCode"];
+	        this.sourceName = source["sourceName"];
+	        this.scannedFiles = source["scannedFiles"];
+	        this.parsedEntries = source["parsedEntries"];
+	        this.importedRows = source["importedRows"];
+	        this.warnings = source["warnings"];
+	    }
+	}
+	export class PersonalAICollectorResponse {
+	    month: string;
+	    results: PersonalAICollectorResult[];
+	
+	    static createFrom(source: any = {}) {
+	        return new PersonalAICollectorResponse(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.month = source["month"];
+	        this.results = this.convertValues(source["results"], PersonalAICollectorResult);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class PersonalAICollectStatus {
+	    running: boolean;
+	    month: string;
+	    startedAt: string;
+	    finishedAt: string;
+	    lastError: string;
+	    lastResult?: PersonalAICollectorResponse;
+	
+	    static createFrom(source: any = {}) {
+	        return new PersonalAICollectStatus(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.running = source["running"];
+	        this.month = source["month"];
+	        this.startedAt = source["startedAt"];
+	        this.finishedAt = source["finishedAt"];
+	        this.lastError = source["lastError"];
+	        this.lastResult = this.convertValues(source["lastResult"], PersonalAICollectorResponse);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
+	
+	export class PersonalAISourceSummaryRow {
+	    sourceCode: string;
+	    sourceName: string;
+	    requestCount: number;
+	    inputTokens: number;
+	    outputTokens: number;
+	    totalCostUsd: number;
+	    totalCostKrw: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new PersonalAISourceSummaryRow(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.sourceCode = source["sourceCode"];
+	        this.sourceName = source["sourceName"];
+	        this.requestCount = source["requestCount"];
+	        this.inputTokens = source["inputTokens"];
+	        this.outputTokens = source["outputTokens"];
+	        this.totalCostUsd = source["totalCostUsd"];
+	        this.totalCostKrw = source["totalCostKrw"];
+	    }
+	}
+	export class PersonalAIUsageOverview {
+	    month: string;
+	    requestCount: number;
+	    internalInputTokens: number;
+	    internalOutputTokens: number;
+	    externalInputTokens: number;
+	    externalOutputTokens: number;
+	    internalCostUsd: number;
+	    externalCostUsd: number;
+	    totalCostUsd: number;
+	    totalCostKrw: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new PersonalAIUsageOverview(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.month = source["month"];
+	        this.requestCount = source["requestCount"];
+	        this.internalInputTokens = source["internalInputTokens"];
+	        this.internalOutputTokens = source["internalOutputTokens"];
+	        this.externalInputTokens = source["externalInputTokens"];
+	        this.externalOutputTokens = source["externalOutputTokens"];
+	        this.internalCostUsd = source["internalCostUsd"];
+	        this.externalCostUsd = source["externalCostUsd"];
+	        this.totalCostUsd = source["totalCostUsd"];
+	        this.totalCostKrw = source["totalCostKrw"];
+	    }
+	}
+	export class PersonalAIUsageDashboard {
+	    overview: PersonalAIUsageOverview;
+	    bySource: PersonalAISourceSummaryRow[];
+	    byProvider: AIUsageSummaryRow[];
+	    byModel: AIUsageSummaryRow[];
+	    daily: AIUsageDailyPoint[];
+	    fxRateUsed: number;
+	    fxRateDate: string;
+	    fxSource: string;
+	    fxFallbackUsed: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new PersonalAIUsageDashboard(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.overview = this.convertValues(source["overview"], PersonalAIUsageOverview);
+	        this.bySource = this.convertValues(source["bySource"], PersonalAISourceSummaryRow);
+	        this.byProvider = this.convertValues(source["byProvider"], AIUsageSummaryRow);
+	        this.byModel = this.convertValues(source["byModel"], AIUsageSummaryRow);
+	        this.daily = this.convertValues(source["daily"], AIUsageDailyPoint);
+	        this.fxRateUsed = source["fxRateUsed"];
+	        this.fxRateDate = source["fxRateDate"];
+	        this.fxSource = source["fxSource"];
+	        this.fxFallbackUsed = source["fxFallbackUsed"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
 	export class Project {
 	    id: number;
 	    userId: number;
@@ -1295,6 +1730,42 @@ export namespace main {
 	        this.name = source["name"];
 	        this.color = source["color"];
 	        this.type = source["type"];
+	    }
+	}
+	export class OpenAIChatMessage {
+	    role: string;
+	    content: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new OpenAIChatMessage(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.role = source["role"];
+	        this.content = source["content"];
+	    }
+	}
+	export class OpenAIChatResult {
+	    reply: string;
+	    model: string;
+	    inputTokens: number;
+	    outputTokens: number;
+	    totalTokens: number;
+	    costUsd: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new OpenAIChatResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.reply = source["reply"];
+	        this.model = source["model"];
+	        this.inputTokens = source["inputTokens"];
+	        this.outputTokens = source["outputTokens"];
+	        this.totalTokens = source["totalTokens"];
+	        this.costUsd = source["costUsd"];
 	    }
 	}
 	export class SkillCommand {

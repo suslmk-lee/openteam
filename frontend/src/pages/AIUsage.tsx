@@ -17,8 +17,7 @@ const TREND_OPTIONS: Array<{ key: TrendMetric; label: string }> = [
 const PROVIDER_PRESETS: Array<{ code: string; label: string }> = [
   { code: 'minimax', label: 'MiniMax' },
   { code: 'anthropic', label: 'Anthropic (Claude)' },
-  { code: 'openai', label: 'OpenAI' },
-  { code: 'codex', label: 'Codex' },
+  { code: 'openai', label: 'OpenAI (GPT/Codex)' },
   { code: 'google', label: 'Google (Gemini)' },
   { code: 'xai', label: 'xAI (Grok)' },
   { code: 'deepseek', label: 'DeepSeek' },
@@ -31,6 +30,7 @@ const PROVIDER_PRESETS: Array<{ code: string; label: string }> = [
 const DEFAULT_PROVIDER_CODE = PROVIDER_PRESETS[0].code
 
 function providerPresetLabel(code: string) {
+  if ((code || '').toLowerCase() === 'codex') return 'OpenAI (GPT/Codex)'
   return PROVIDER_PRESETS.find(preset => preset.code === code)?.label || ''
 }
 

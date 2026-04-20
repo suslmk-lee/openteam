@@ -1,7 +1,7 @@
 import type { Dispatch, SetStateAction } from 'react'
 
 export type ChatRole = 'user' | 'assistant'
-export type ChatModel = 'openai' | 'claude'
+export type ChatModel = 'openai' | 'claude' | 'minimax'
 
 export interface ChatReference {
   id: string

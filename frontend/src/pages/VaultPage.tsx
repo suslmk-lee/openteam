@@ -413,7 +413,8 @@ export default function VaultPage({ mode = 'explore' }: VaultPageProps) {
       setError(null)
 
       try {
-        const result = await IngestKnowledgeSource(sourceType, trimmedSource, chatSession.chatModel, requestedBy)
+        const modelForIngest = chatSession.chatModel === 'minimax' ? 'openai' : chatSession.chatModel
+        const result = await IngestKnowledgeSource(sourceType, trimmedSource, modelForIngest, requestedBy)
         const metadataBits: string[] = []
         if ((result.elapsedMs ?? 0) > 0) metadataBits.push(`elapsed ${result.elapsedMs}ms`)
         if ((result.createdPaths?.length ?? 0) > 0) metadataBits.push(`files ${result.createdPaths?.length}`)
@@ -563,7 +564,8 @@ export default function VaultPage({ mode = 'explore' }: VaultPageProps) {
       setError(null)
 
       try {
-        const results = await IngestKnowledgeBatch(sourceType, sources, chatSession.chatModel, requestedBy)
+        const modelForIngest = chatSession.chatModel === 'minimax' ? 'openai' : chatSession.chatModel
+        const results = await IngestKnowledgeBatch(sourceType, sources, modelForIngest, requestedBy)
         const successCount = results.filter(result => result.status !== 'failed').length
         const failedCount = results.length - successCount
         const warnings = results.flatMap(result => result.warnings ?? [])
@@ -676,7 +678,8 @@ export default function VaultPage({ mode = 'explore' }: VaultPageProps) {
 
       const sourceType: IngestSourceType = sources.every(isIngestURL) ? 'url' : 'file'
       try {
-        const results = await IngestKnowledgeBatch(sourceType, sources, chatSession.chatModel, requestedBy)
+        const modelForIngest = chatSession.chatModel === 'minimax' ? 'openai' : chatSession.chatModel
+        const results = await IngestKnowledgeBatch(sourceType, sources, modelForIngest, requestedBy)
         const successCount = results.filter(result => result.status !== 'failed').length
         const failedCount = results.length - successCount
         const warningLines = results
@@ -759,7 +762,7 @@ export default function VaultPage({ mode = 'explore' }: VaultPageProps) {
       const result = await SaveKnowledgeQuery(
         userMessage.content.trim(),
         assistantEntry.message.content.trim(),
-        chatSession.chatModel,
+        chatSession.chatModel === 'minimax' ? 'openai' : chatSession.chatModel,
         requestedBy,
         referencePaths,
       )
@@ -807,7 +810,7 @@ export default function VaultPage({ mode = 'explore' }: VaultPageProps) {
           return false
         }
 
-        if (chatSession.chatModel === 'openai' && !chatSession.apiKey) {
+        if (chatSession.chatModel !== 'claude' && !chatSession.apiKey) {
           chatSession.setShowKeyInput(true)
           return false
         }

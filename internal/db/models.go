@@ -443,6 +443,27 @@ type AIUsageDaily struct {
 	UpdatedAt         string  `json:"updatedAt"`
 }
 
+// AIUsageHistoryEvent stores append-only usage events for long-term history.
+type AIUsageHistoryEvent struct {
+	ID                int64   `json:"id"`
+	OccurredAt        string  `json:"occurredAt"`
+	Day               string  `json:"day"`
+	UserID            int64   `json:"userId"`
+	ProviderID        int64   `json:"providerId"`
+	ModelID           int64   `json:"modelId"`
+	RawProvider       string  `json:"rawProvider"`
+	RawModel          string  `json:"rawModel"`
+	Feature           string  `json:"feature"`
+	RequestCount      int64   `json:"requestCount"`
+	InputTokens       int64   `json:"inputTokens"`
+	OutputTokens      int64   `json:"outputTokens"`
+	CacheReadTokens   int64   `json:"cacheReadTokens"`
+	CacheCreateTokens int64   `json:"cacheCreateTokens"`
+	PaygCostUSD       float64 `json:"paygCostUsd"`
+	MetadataJSON      string  `json:"metadataJson"`
+	CreatedAt         string  `json:"createdAt"`
+}
+
 // AIFXRate stores daily USD->KRW FX rates.
 type AIFXRate struct {
 	Day       string  `json:"day"`
@@ -478,6 +499,28 @@ type AIUsageDailyPoint struct {
 	TotalCostKRW float64 `json:"totalCostKrw"`
 	InputTokens  int64   `json:"inputTokens"`
 	OutputTokens int64   `json:"outputTokens"`
+}
+
+type AIUsageDailySeriesPoint struct {
+	Day          string  `json:"day"`
+	RequestCount int64   `json:"requestCount"`
+	InputTokens  int64   `json:"inputTokens"`
+	OutputTokens int64   `json:"outputTokens"`
+	TotalCostUSD float64 `json:"totalCostUsd"`
+	TotalCostKRW float64 `json:"totalCostKrw"`
+}
+
+type AIUsageSeriesRow struct {
+	ProviderCode string                    `json:"providerCode"`
+	ProviderName string                    `json:"providerName"`
+	ModelCode    string                    `json:"modelCode"`
+	ModelName    string                    `json:"modelName"`
+	RequestCount int64                     `json:"requestCount"`
+	InputTokens  int64                     `json:"inputTokens"`
+	OutputTokens int64                     `json:"outputTokens"`
+	TotalCostUSD float64                   `json:"totalCostUsd"`
+	TotalCostKRW float64                   `json:"totalCostKrw"`
+	Daily        []AIUsageDailySeriesPoint `json:"daily"`
 }
 
 type AIUsageOverview struct {
@@ -528,15 +571,17 @@ type PersonalAIUsageOverview struct {
 }
 
 type PersonalAIUsageDashboard struct {
-	Overview       PersonalAIUsageOverview      `json:"overview"`
-	BySource       []PersonalAISourceSummaryRow `json:"bySource"`
-	ByProvider     []AIUsageSummaryRow          `json:"byProvider"`
-	ByModel        []AIUsageSummaryRow          `json:"byModel"`
-	Daily          []AIUsageDailyPoint          `json:"daily"`
-	FXRateUsed     float64                      `json:"fxRateUsed"`
-	FXRateDate     string                       `json:"fxRateDate"`
-	FXSource       string                       `json:"fxSource"`
-	FXFallbackUsed bool                         `json:"fxFallbackUsed"`
+	Overview        PersonalAIUsageOverview      `json:"overview"`
+	BySource        []PersonalAISourceSummaryRow `json:"bySource"`
+	ByProvider      []AIUsageSummaryRow          `json:"byProvider"`
+	ByModel         []AIUsageSummaryRow          `json:"byModel"`
+	Daily           []AIUsageDailyPoint          `json:"daily"`
+	DailyByProvider []AIUsageSeriesRow           `json:"dailyByProvider"`
+	DailyByModel    []AIUsageSeriesRow           `json:"dailyByModel"`
+	FXRateUsed      float64                      `json:"fxRateUsed"`
+	FXRateDate      string                       `json:"fxRateDate"`
+	FXSource        string                       `json:"fxSource"`
+	FXFallbackUsed  bool                         `json:"fxFallbackUsed"`
 }
 
 type PersonalAICollectorResult struct {
@@ -554,10 +599,24 @@ type PersonalAICollectorResponse struct {
 }
 
 type PersonalAICollectStatus struct {
-	Running    bool                         `json:"running"`
-	Month      string                       `json:"month"`
-	StartedAt  string                       `json:"startedAt"`
-	FinishedAt string                       `json:"finishedAt"`
-	LastError  string                       `json:"lastError"`
-	LastResult *PersonalAICollectorResponse `json:"lastResult"`
+	Running                bool                         `json:"running"`
+	Trigger                string                       `json:"trigger"`
+	Month                  string                       `json:"month"`
+	StartedAt              string                       `json:"startedAt"`
+	FinishedAt             string                       `json:"finishedAt"`
+	LastError              string                       `json:"lastError"`
+	LastResult             *PersonalAICollectorResponse `json:"lastResult"`
+	AutoEnabled            bool                         `json:"autoEnabled"`
+	AutoIntervalSeconds    int                          `json:"autoIntervalSeconds"`
+	AutoNextRunAt          string                       `json:"autoNextRunAt"`
+	AutoLastTriggeredAt    string                       `json:"autoLastTriggeredAt"`
+	AutoLastTriggeredMonth string                       `json:"autoLastTriggeredMonth"`
+}
+
+type PersonalAIAutoCollectConfig struct {
+	Enabled            bool   `json:"enabled"`
+	IntervalSeconds    int    `json:"intervalSeconds"`
+	NextRunAt          string `json:"nextRunAt"`
+	LastTriggeredAt    string `json:"lastTriggeredAt"`
+	LastTriggeredMonth string `json:"lastTriggeredMonth"`
 }

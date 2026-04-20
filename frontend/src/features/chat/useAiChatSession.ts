@@ -2,15 +2,13 @@ import { useEffect, useState } from 'react'
 import { useAppApi } from '../../hooks/useAppApi'
 import type { AiChatSession, ChatContextProvider, ChatMessage, ChatModel, ClaudeMeta } from './types'
 
-const OPENAI_MODEL = 'gpt-4o-mini'
-
 function combineContext(systemPrompt: string, contextText: string) {
   return [systemPrompt.trim(), contextText.trim()].filter(Boolean).join('\n\n')
 }
 
 export function useAiChatSession(contextProvider: ChatContextProvider): AiChatSession {
   const appApi = useAppApi()
-  const { CheckClaudeCLI, ClaudeChatWithSession, GetIntegrations, OpenAIChatWithMessages } = appApi
+  const { CheckClaudeCLI, ClaudeChatWithSession, GetIntegrations, OpenAIChatWithMessages, MiniMaxChatWithMessages } = appApi
 
   const [open, setOpen] = useState(false)
   const [maximized, setMaximized] = useState(false)
@@ -18,6 +16,8 @@ export function useAiChatSession(contextProvider: ChatContextProvider): AiChatSe
   const [sending, setSending] = useState(false)
   const [input, setInput] = useState('')
   const [apiKey, setApiKeyState] = useState('')
+  const [openAIApiKey, setOpenAIApiKey] = useState('')
+  const [miniMaxApiKey, setMiniMaxApiKey] = useState('')
   const [keyLoaded, setKeyLoaded] = useState(false)
   const [chatModel, setChatModel] = useState<ChatModel>('openai')
   const [claudeAvailable, setClaudeAvailable] = useState(false)
@@ -32,7 +32,13 @@ export function useAiChatSession(contextProvider: ChatContextProvider): AiChatSe
   function setApiKey(key: string) {
     setApiKeyState(key)
     if (typeof window !== 'undefined') {
-      localStorage.setItem('openai_api_key', key)
+      if (chatModel === 'minimax') {
+        setMiniMaxApiKey(key)
+        localStorage.setItem('minimax_api_key', key)
+      } else {
+        setOpenAIApiKey(key)
+        localStorage.setItem('openai_api_key', key)
+      }
     }
   }
 
@@ -72,30 +78,62 @@ export function useAiChatSession(contextProvider: ChatContextProvider): AiChatSe
   useEffect(() => {
     GetIntegrations()
       .then((integrations: any[]) => {
+        let openAIKey = ''
         const openAIIntegration = integrations?.find((item: any) => item.toolType === 'openai')
         if (openAIIntegration?.enabled && openAIIntegration.configJson) {
           try {
             const config = JSON.parse(openAIIntegration.configJson)
             if (config.apiKey) {
-              setApiKey(config.apiKey)
-              setKeyLoaded(true)
-              return
+              openAIKey = String(config.apiKey)
             }
           } catch {
             // fall through to localStorage
           }
         }
+        if (!openAIKey) {
+          openAIKey = typeof window !== 'undefined' ? localStorage.getItem('openai_api_key') || '' : ''
+        }
 
-        const stored = typeof window !== 'undefined' ? localStorage.getItem('openai_api_key') || '' : ''
-        setApiKey(stored)
+        let miniMaxKey = ''
+        const miniMaxIntegration = integrations?.find((item: any) => item.toolType === 'minimax')
+        if (miniMaxIntegration?.enabled && miniMaxIntegration.configJson) {
+          try {
+            const config = JSON.parse(miniMaxIntegration.configJson)
+            if (config.apiKey) {
+              miniMaxKey = String(config.apiKey)
+            }
+          } catch {
+            // fall through to localStorage
+          }
+        }
+        if (!miniMaxKey) {
+          miniMaxKey = typeof window !== 'undefined' ? localStorage.getItem('minimax_api_key') || '' : ''
+        }
+
+        setOpenAIApiKey(openAIKey)
+        setMiniMaxApiKey(miniMaxKey)
         setKeyLoaded(true)
       })
       .catch(() => {
-        const stored = typeof window !== 'undefined' ? localStorage.getItem('openai_api_key') || '' : ''
-        setApiKey(stored)
+        const openAIKey = typeof window !== 'undefined' ? localStorage.getItem('openai_api_key') || '' : ''
+        const miniMaxKey = typeof window !== 'undefined' ? localStorage.getItem('minimax_api_key') || '' : ''
+        setOpenAIApiKey(openAIKey)
+        setMiniMaxApiKey(miniMaxKey)
         setKeyLoaded(true)
       })
   }, [GetIntegrations])
+
+  useEffect(() => {
+    if (chatModel === 'openai') {
+      setApiKeyState(openAIApiKey)
+      return
+    }
+    if (chatModel === 'minimax') {
+      setApiKeyState(miniMaxApiKey)
+      return
+    }
+    setApiKeyState('')
+  }, [chatModel, miniMaxApiKey, openAIApiKey])
 
   async function handleClaudeSkill(cmd: string) {
     const userMsg: ChatMessage = { role: 'user', content: cmd }
@@ -127,7 +165,7 @@ export function useAiChatSession(contextProvider: ChatContextProvider): AiChatSe
   async function handleSendText(text: string): Promise<boolean> {
     const trimmed = text.trim()
     if (!trimmed || sending) return false
-    if (chatModel === 'openai' && !apiKey) {
+    if (chatModel !== 'claude' && !apiKey) {
       setShowKeyInput(true)
       return false
     }
@@ -161,6 +199,15 @@ export function useAiChatSession(contextProvider: ChatContextProvider): AiChatSe
         setCumOutputTokens(prev => prev + res.outputTokens)
         setCumCostUsd(prev => prev + res.costUsd)
         reply = res.reply
+      } else if (chatModel === 'minimax') {
+        const result = await MiniMaxChatWithMessages(
+          combinedContext,
+          nextMessages.map(message => ({ role: message.role, content: message.content })),
+        )
+        setCumInputTokens(prev => prev + (result.inputTokens || 0))
+        setCumOutputTokens(prev => prev + (result.outputTokens || 0))
+        setCumCostUsd(prev => prev + (result.costUsd || 0))
+        reply = result.reply || '(no response)'
       } else {
         const result = await OpenAIChatWithMessages(
           combinedContext,

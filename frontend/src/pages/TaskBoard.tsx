@@ -808,7 +808,7 @@ export default function TaskBoard() {
       cmd: '/summary',
       desc: 'Summarize current issues',
       run: async () => {
-        if (chatSession.sending || (chatSession.chatModel === 'openai' && !chatSession.apiKey)) {
+        if (chatSession.sending || (chatSession.chatModel !== 'claude' && !chatSession.apiKey)) {
           return false
         }
         return chatSession.handleSendText('Summarize the current issues by status and priority.')
@@ -818,7 +818,7 @@ export default function TaskBoard() {
       cmd: '/urgent',
       desc: 'List urgent issues',
       run: async () => {
-        if (chatSession.sending || (chatSession.chatModel === 'openai' && !chatSession.apiKey)) {
+        if (chatSession.sending || (chatSession.chatModel !== 'claude' && !chatSession.apiKey)) {
           return false
         }
         return chatSession.handleSendText('Show urgent issues and blockers.')
@@ -828,7 +828,7 @@ export default function TaskBoard() {
       cmd: '/unassigned',
       desc: 'List unassigned issues',
       run: async () => {
-        if (chatSession.sending || (chatSession.chatModel === 'openai' && !chatSession.apiKey)) {
+        if (chatSession.sending || (chatSession.chatModel !== 'claude' && !chatSession.apiKey)) {
           return false
         }
         return chatSession.handleSendText('List all unassigned issues.')
@@ -838,7 +838,7 @@ export default function TaskBoard() {
       cmd: '/overdue',
       desc: 'List overdue issues',
       run: async () => {
-        if (chatSession.sending || (chatSession.chatModel === 'openai' && !chatSession.apiKey)) {
+        if (chatSession.sending || (chatSession.chatModel !== 'claude' && !chatSession.apiKey)) {
           return false
         }
         return chatSession.handleSendText(`Today is ${new Date().toISOString().slice(0, 10)}. Show overdue issues.`)

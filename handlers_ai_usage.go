@@ -26,6 +26,13 @@ type OpenAIChatResult struct {
 	CostUSD      float64 `json:"costUsd"`
 }
 
+type miniMaxIntegrationConfig struct {
+	APIKey        string `json:"apiKey"`
+	Model         string `json:"model"`
+	BaseURL       string `json:"baseUrl"`
+	UsageEndpoint string `json:"usageEndpoint,omitempty"`
+}
+
 func (a *App) OpenAIChatWithMessages(systemContext string, messages []OpenAIChatMessage) (OpenAIChatResult, error) {
 	cfg, err := a.getOpenAIConfig()
 	if err != nil {
@@ -145,12 +152,175 @@ func (a *App) OpenAIChatWithMessages(systemContext string, messages []OpenAIChat
 	return result, nil
 }
 
+func (a *App) MiniMaxChatWithMessages(systemContext string, messages []OpenAIChatMessage) (OpenAIChatResult, error) {
+	cfg, err := a.getMiniMaxConfig()
+	if err != nil {
+		return OpenAIChatResult{}, err
+	}
+	if cfg == nil || strings.TrimSpace(cfg.APIKey) == "" {
+		return OpenAIChatResult{}, fmt.Errorf("MiniMax API Key is not configured")
+	}
+
+	model := strings.TrimSpace(cfg.Model)
+	if model == "" {
+		model = "MiniMax-M2.7"
+	}
+
+	payloadMessages := make([]map[string]string, 0, len(messages)+1)
+	if strings.TrimSpace(systemContext) != "" {
+		payloadMessages = append(payloadMessages, map[string]string{
+			"role":    "system",
+			"content": systemContext,
+		})
+	}
+	for _, message := range messages {
+		role := strings.TrimSpace(strings.ToLower(message.Role))
+		if role != "user" && role != "assistant" && role != "system" {
+			continue
+		}
+		payloadMessages = append(payloadMessages, map[string]string{
+			"role":    role,
+			"content": message.Content,
+		})
+	}
+	if len(payloadMessages) == 0 {
+		return OpenAIChatResult{}, fmt.Errorf("no messages provided")
+	}
+
+	reqBody := map[string]any{
+		"model":      model,
+		"messages":   payloadMessages,
+		"max_tokens": 1024,
+	}
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return OpenAIChatResult{}, err
+	}
+
+	reqURL := strings.TrimRight(cfg.BaseURL, "/") + "/chat/completions"
+	req, err := http.NewRequest(http.MethodPost, reqURL, bytes.NewReader(body))
+	if err != nil {
+		return OpenAIChatResult{}, err
+	}
+	req.Header.Set("Authorization", "Bearer "+cfg.APIKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 45 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return OpenAIChatResult{}, err
+	}
+	defer resp.Body.Close()
+
+	rawBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 300 {
+		var apiErr struct {
+			Error struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		_ = json.Unmarshal(rawBody, &apiErr)
+		if strings.TrimSpace(apiErr.Error.Message) != "" {
+			return OpenAIChatResult{}, fmt.Errorf("%s", apiErr.Error.Message)
+		}
+		return OpenAIChatResult{}, fmt.Errorf("MiniMax API returned HTTP %d", resp.StatusCode)
+	}
+
+	var parsed struct {
+		Model   string `json:"model"`
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+		Usage struct {
+			PromptTokens     int `json:"prompt_tokens"`
+			CompletionTokens int `json:"completion_tokens"`
+			TotalTokens      int `json:"total_tokens"`
+		} `json:"usage"`
+	}
+	if err := json.Unmarshal(rawBody, &parsed); err != nil {
+		return OpenAIChatResult{}, err
+	}
+	if len(parsed.Choices) == 0 {
+		return OpenAIChatResult{}, fmt.Errorf("MiniMax returned empty response")
+	}
+
+	result := OpenAIChatResult{
+		Reply:        strings.TrimSpace(parsed.Choices[0].Message.Content),
+		Model:        strings.TrimSpace(parsed.Model),
+		InputTokens:  parsed.Usage.PromptTokens,
+		OutputTokens: parsed.Usage.CompletionTokens,
+		TotalTokens:  parsed.Usage.TotalTokens,
+		CostUSD:      0,
+	}
+	if result.Model == "" {
+		result.Model = model
+	}
+
+	_ = a.trackAIUsage(aiUsageEvent{
+		ProviderCode: "minimax",
+		ModelCode:    result.Model,
+		Feature:      "chat",
+		RequestCount: 1,
+		InputTokens:  int64(result.InputTokens),
+		OutputTokens: int64(result.OutputTokens),
+		PaygCostUSD:  result.CostUSD,
+		OccurredAt:   time.Now(),
+	})
+
+	return result, nil
+}
+
+func (a *App) getMiniMaxConfig() (*miniMaxIntegrationConfig, error) {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return nil, err
+	}
+
+	intg, err := a.database.GetIntegrationByType(user.ID, "minimax")
+	if err != nil {
+		return nil, err
+	}
+	if intg == nil || !intg.Enabled {
+		return nil, nil
+	}
+
+	var cfg miniMaxIntegrationConfig
+	if err := json.Unmarshal([]byte(intg.ConfigJSON), &cfg); err != nil {
+		return nil, fmt.Errorf("invalid minimax config json: %w", err)
+	}
+	if strings.TrimSpace(cfg.APIKey) == "" {
+		return nil, nil
+	}
+	if strings.TrimSpace(cfg.Model) == "" {
+		cfg.Model = "MiniMax-M2.7"
+	}
+	if strings.TrimSpace(cfg.BaseURL) == "" {
+		cfg.BaseURL = "https://api.minimax.io/v1"
+	}
+	cfg.BaseURL = strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/")
+	cfg.UsageEndpoint = strings.TrimSpace(cfg.UsageEndpoint)
+	return &cfg, nil
+}
+
 func (a *App) ListAIProviders() ([]db.AIProvider, error) {
 	user, err := a.database.GetOrCreateDefaultUser()
 	if err != nil {
 		return nil, err
 	}
-	return a.database.ListAIProviders(user.ID)
+	items, err := a.database.ListAIProviders(user.ID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range items {
+		items[i].Code = canonicalAIProviderCode(items[i].Code)
+		items[i].DisplayName = canonicalAIProviderDisplayName(items[i].Code, items[i].DisplayName)
+		if strings.TrimSpace(items[i].DisplayName) == "" {
+			items[i].DisplayName = items[i].Code
+		}
+	}
+	return items, nil
 }
 
 func (a *App) SaveAIProvider(id int64, code, displayName string, enabled bool) (db.AIProvider, error) {
@@ -170,9 +340,9 @@ func (a *App) SaveAIProvider(id int64, code, displayName string, enabled bool) (
 		return db.AIProvider{}, err
 	}
 	item.ID = newID
-	item.Code = strings.ToLower(strings.TrimSpace(item.Code))
-	item.DisplayName = strings.TrimSpace(item.DisplayName)
-	if item.DisplayName == "" {
+	item.Code = canonicalAIProviderCode(item.Code)
+	item.DisplayName = canonicalAIProviderDisplayName(item.Code, item.DisplayName)
+	if strings.TrimSpace(item.DisplayName) == "" {
 		item.DisplayName = item.Code
 	}
 	return *item, nil

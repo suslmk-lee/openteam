@@ -17,6 +17,7 @@ type aiUsageEvent struct {
 	ProviderCode      string
 	ModelCode         string
 	Feature           string
+	MetadataJSON      string
 	RequestCount      int64
 	InputTokens       int64
 	OutputTokens      int64
@@ -24,6 +25,155 @@ type aiUsageEvent struct {
 	CacheCreateTokens int64
 	PaygCostUSD       float64
 	OccurredAt        time.Time
+}
+
+var usageKSTLocation = time.FixedZone("KST", 9*60*60)
+
+func usageTimeInKST(value time.Time) time.Time {
+	if value.IsZero() {
+		value = time.Now()
+	}
+	return value.In(usageKSTLocation)
+}
+
+func usageDayString(value time.Time) string {
+	return usageTimeInKST(value).Format("2006-01-02")
+}
+
+func canonicalAIProviderCode(input string) string {
+	code := strings.ToLower(strings.TrimSpace(input))
+	switch code {
+	case "codex":
+		return "openai"
+	case "mini-max", "mini_max":
+		return "minimax"
+	default:
+		return code
+	}
+}
+
+func defaultAIProviderDisplayName(providerCode string) string {
+	switch canonicalAIProviderCode(providerCode) {
+	case "openai":
+		return "OpenAI"
+	case "anthropic":
+		return "Anthropic"
+	case "minimax":
+		return "MiniMax"
+	case "google":
+		return "Google"
+	case "xai":
+		return "xAI"
+	case "mistral":
+		return "Mistral"
+	case "deepseek":
+		return "DeepSeek"
+	default:
+		return strings.TrimSpace(providerCode)
+	}
+}
+
+func canonicalAIProviderDisplayName(providerCode, displayName string) string {
+	code := canonicalAIProviderCode(providerCode)
+	name := strings.TrimSpace(displayName)
+	defaultName := defaultAIProviderDisplayName(code)
+	if name == "" {
+		return defaultName
+	}
+	if code == "openai" && (strings.EqualFold(name, "codex") || strings.EqualFold(name, "openai")) {
+		return defaultName
+	}
+	if defaultName != "" && (strings.EqualFold(name, code) || strings.EqualFold(name, defaultName)) {
+		return defaultName
+	}
+	return name
+}
+
+func shouldAutoRegisterProviderForUsage(providerCode string) bool {
+	code := canonicalAIProviderCode(providerCode)
+	switch code {
+	case "", "unknown", "unregistered", "external":
+		return false
+	default:
+		return true
+	}
+}
+
+func (a *App) resolveUsageProviderModelIDs(userID int64, providerCode, modelCode string) (int64, int64, error) {
+	providerCode = canonicalAIProviderCode(providerCode)
+	if !shouldAutoRegisterProviderForUsage(providerCode) {
+		return 0, 0, nil
+	}
+
+	provider, err := a.database.FindAIProviderByCode(userID, providerCode)
+	if err != nil {
+		return 0, 0, err
+	}
+	if provider == nil {
+		displayName := canonicalAIProviderDisplayName(providerCode, providerCode)
+		if strings.TrimSpace(displayName) == "" {
+			displayName = providerCode
+		}
+		if _, err := a.database.SaveAIProvider(&db.AIProvider{
+			UserID:      userID,
+			Code:        providerCode,
+			DisplayName: displayName,
+			Enabled:     true,
+		}); err != nil {
+			return 0, 0, err
+		}
+		provider, err = a.database.FindAIProviderByCode(userID, providerCode)
+		if err != nil {
+			return 0, 0, err
+		}
+	}
+	if provider == nil {
+		return 0, 0, nil
+	}
+
+	modelCode = strings.TrimSpace(modelCode)
+	if modelCode == "" || strings.EqualFold(modelCode, "unknown") {
+		return provider.ID, 0, nil
+	}
+
+	model, err := a.database.FindAIModelByCode(userID, provider.ID, modelCode)
+	if err != nil {
+		return provider.ID, 0, err
+	}
+	if model == nil {
+		if _, err := a.database.SaveAIModel(&db.AIModel{
+			UserID:      userID,
+			ProviderID:  provider.ID,
+			ModelCode:   modelCode,
+			DisplayName: modelCode,
+			Enabled:     true,
+		}); err != nil {
+			return provider.ID, 0, err
+		}
+		model, err = a.database.FindAIModelByCode(userID, provider.ID, modelCode)
+		if err != nil {
+			return provider.ID, 0, err
+		}
+	}
+	if model == nil {
+		return provider.ID, 0, nil
+	}
+	return provider.ID, model.ID, nil
+}
+
+func parseUsageDayInKST(value string) (time.Time, error) {
+	return time.ParseInLocation("2006-01-02", strings.TrimSpace(value), usageKSTLocation)
+}
+
+func marshalUsageMetadata(metadata map[string]any) string {
+	if len(metadata) == 0 {
+		return ""
+	}
+	encoded, err := json.Marshal(metadata)
+	if err != nil {
+		return ""
+	}
+	return string(encoded)
 }
 
 func (a *App) trackAIUsage(event aiUsageEvent) error {
@@ -38,7 +188,7 @@ func (a *App) trackAIUsage(event aiUsageEvent) error {
 		return fmt.Errorf("default user is not available")
 	}
 
-	providerCode := strings.ToLower(strings.TrimSpace(event.ProviderCode))
+	providerCode := canonicalAIProviderCode(event.ProviderCode)
 	modelCode := strings.TrimSpace(event.ModelCode)
 	feature := strings.TrimSpace(event.Feature)
 	if feature == "" {
@@ -46,7 +196,7 @@ func (a *App) trackAIUsage(event aiUsageEvent) error {
 	}
 
 	usage := &db.AIUsageDaily{
-		Day:               event.OccurredAt.Format("2006-01-02"),
+		Day:               usageDayString(event.OccurredAt),
 		UserID:            user.ID,
 		ProviderID:        0,
 		ModelID:           0,
@@ -62,14 +212,15 @@ func (a *App) trackAIUsage(event aiUsageEvent) error {
 	}
 
 	if providerCode != "" {
-		if provider, findErr := a.database.FindAIProviderByCode(user.ID, providerCode); findErr == nil && provider != nil {
-			usage.ProviderID = provider.ID
+		providerID, modelID, resolveErr := a.resolveUsageProviderModelIDs(user.ID, providerCode, modelCode)
+		if resolveErr != nil {
+			log.Printf("[AIUsage] provider/model registry resolution failed (%s/%s): %v", providerCode, modelCode, resolveErr)
+		} else if providerID > 0 {
+			usage.ProviderID = providerID
 			usage.RawProvider = ""
-			if modelCode != "" {
-				if model, modelErr := a.database.FindAIModelByCode(user.ID, provider.ID, modelCode); modelErr == nil && model != nil {
-					usage.ModelID = model.ID
-					usage.RawModel = ""
-				}
+			if modelID > 0 {
+				usage.ModelID = modelID
+				usage.RawModel = ""
 			}
 		}
 	}
@@ -77,6 +228,31 @@ func (a *App) trackAIUsage(event aiUsageEvent) error {
 	if err := a.database.IncrementAIUsageDaily(usage); err != nil {
 		return err
 	}
+
+	history := &db.AIUsageHistoryEvent{
+		OccurredAt:        usageTimeInKST(event.OccurredAt).Format(time.RFC3339Nano),
+		Day:               usage.Day,
+		UserID:            usage.UserID,
+		ProviderID:        usage.ProviderID,
+		ModelID:           usage.ModelID,
+		RawProvider:       providerCode,
+		RawModel:          modelCode,
+		Feature:           feature,
+		RequestCount:      event.RequestCount,
+		InputTokens:       event.InputTokens,
+		OutputTokens:      event.OutputTokens,
+		CacheReadTokens:   event.CacheReadTokens,
+		CacheCreateTokens: event.CacheCreateTokens,
+		PaygCostUSD:       event.PaygCostUSD,
+		MetadataJSON:      strings.TrimSpace(event.MetadataJSON),
+	}
+	if err := a.database.AppendAIUsageHistoryEvent(history); err != nil {
+		return err
+	}
+	if err := a.maybeEnforceAIUsageHistoryRetention(user.ID, time.Now()); err != nil {
+		log.Printf("[AIUsage] history retention skipped due to error: %v", err)
+	}
+
 	return nil
 }
 
@@ -101,14 +277,14 @@ func (a *App) trackOpenAIUsageFromClient(client *ai.Client, feature string) {
 func normalizeUsageMonth(month string) (string, time.Time, time.Time, error) {
 	value := strings.TrimSpace(month)
 	if value == "" {
-		now := time.Now()
+		now := usageTimeInKST(time.Now())
 		value = now.Format("2006-01")
 	}
 	parsed, err := time.Parse("2006-01", value)
 	if err != nil {
 		return "", time.Time{}, time.Time{}, fmt.Errorf("invalid month format: %w", err)
 	}
-	start := time.Date(parsed.Year(), parsed.Month(), 1, 0, 0, 0, 0, time.Local)
+	start := time.Date(parsed.Year(), parsed.Month(), 1, 0, 0, 0, 0, usageKSTLocation)
 	end := start.AddDate(0, 1, 0).Add(-time.Nanosecond)
 	return parsed.Format("2006-01"), start, end, nil
 }
@@ -150,7 +326,7 @@ func (a *App) fetchUSDKRWRate(day string) (*db.AIFXRate, error) {
 func (a *App) ensureUSDKRWRate(day string) (rate float64, rateDay, source string, fallbackUsed bool, err error) {
 	day = strings.TrimSpace(day)
 	if day == "" {
-		day = time.Now().Format("2006-01-02")
+		day = usageDayString(time.Now())
 	}
 
 	cached, err := a.database.GetAIFXRate(day, "USD", "KRW")
@@ -284,6 +460,8 @@ func (a *App) buildAIUsageDashboard(userID int64, month string) (db.AIUsageDashb
 
 	providerByID := make(map[int64]db.AIProvider, len(providers))
 	for _, item := range providers {
+		item.Code = canonicalAIProviderCode(item.Code)
+		item.DisplayName = canonicalAIProviderDisplayName(item.Code, item.DisplayName)
 		providerByID[item.ID] = item
 	}
 	modelByID := make(map[int64]db.AIModel, len(models))
@@ -295,16 +473,16 @@ func (a *App) buildAIUsageDashboard(userID int64, month string) (db.AIUsageDashb
 	dailyMap := map[string]*db.AIUsageDailyPoint{}
 
 	for _, row := range usageRows {
-		providerCode := row.RawProvider
-		providerName := row.RawProvider
+		providerCode := canonicalAIProviderCode(row.RawProvider)
+		providerName := canonicalAIProviderDisplayName(providerCode, row.RawProvider)
 		modelCode := row.RawModel
 		modelName := row.RawModel
 		isUnregistered := false
 
 		if row.ProviderID > 0 {
 			if provider, ok := providerByID[row.ProviderID]; ok {
-				providerCode = provider.Code
-				providerName = provider.DisplayName
+				providerCode = canonicalAIProviderCode(provider.Code)
+				providerName = canonicalAIProviderDisplayName(providerCode, provider.DisplayName)
 			} else {
 				isUnregistered = true
 			}
@@ -438,7 +616,7 @@ func (a *App) buildAIUsageDashboard(userID int64, month string) (db.AIUsageDashb
 
 		var providerID int64
 		for _, provider := range providers {
-			if provider.Code == providerCode {
+			if canonicalAIProviderCode(provider.Code) == providerCode {
 				providerID = provider.ID
 				break
 			}

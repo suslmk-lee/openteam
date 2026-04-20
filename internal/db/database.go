@@ -319,6 +319,25 @@ func (d *Database) migrate() error {
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			PRIMARY KEY(day, user_id, provider_id, model_id, raw_provider, raw_model, feature)
 		)`,
+		`CREATE TABLE IF NOT EXISTS ai_usage_history_events (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			occurred_at DATETIME NOT NULL,
+			day DATE NOT NULL,
+			user_id INTEGER NOT NULL REFERENCES users(id),
+			provider_id INTEGER NOT NULL DEFAULT 0,
+			model_id INTEGER NOT NULL DEFAULT 0,
+			raw_provider TEXT NOT NULL DEFAULT '',
+			raw_model TEXT NOT NULL DEFAULT '',
+			feature TEXT NOT NULL DEFAULT 'unknown',
+			request_count INTEGER NOT NULL DEFAULT 0,
+			input_tokens INTEGER NOT NULL DEFAULT 0,
+			output_tokens INTEGER NOT NULL DEFAULT 0,
+			cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+			cache_create_tokens INTEGER NOT NULL DEFAULT 0,
+			payg_cost_usd REAL NOT NULL DEFAULT 0,
+			metadata_json TEXT NOT NULL DEFAULT '',
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
 		`CREATE TABLE IF NOT EXISTS ai_fx_rates (
 			day DATE NOT NULL,
 			base TEXT NOT NULL,
@@ -329,6 +348,9 @@ func (d *Database) migrate() error {
 			PRIMARY KEY(day, base, quote)
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_ai_usage_daily_month ON ai_usage_daily(user_id, day)`,
+		`CREATE INDEX IF NOT EXISTS idx_ai_usage_history_events_user_day ON ai_usage_history_events(user_id, day)`,
+		`CREATE INDEX IF NOT EXISTS idx_ai_usage_history_events_user_occurred ON ai_usage_history_events(user_id, occurred_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_ai_usage_history_events_feature ON ai_usage_history_events(user_id, feature)`,
 	}
 
 	for _, m := range migrations {

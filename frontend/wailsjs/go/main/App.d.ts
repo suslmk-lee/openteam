@@ -112,9 +112,13 @@ export function GetMyLinearIssues():Promise<Array<main.LinearIssue>>;
 
 export function GetOrCreateWeeklyReport(arg1:string,arg2:string):Promise<db.WeeklyReport>;
 
+export function GetPersonalAIAutoCollect():Promise<db.PersonalAIAutoCollectConfig>;
+
 export function GetPersonalAIUsageCollectionStatus():Promise<db.PersonalAICollectStatus>;
 
 export function GetPersonalAIUsageDashboard(arg1:string):Promise<db.PersonalAIUsageDashboard>;
+
+export function GetPersonalAIUsageHistory(arg1:string,arg2:number):Promise<Array<db.AIUsageHistoryEvent>>;
 
 export function GetPositionTypes():Promise<Array<string>>;
 
@@ -184,6 +188,8 @@ export function ListWeeklyReports():Promise<Array<db.WeeklyReport>>;
 
 export function LookupLinearViewer(arg1:string):Promise<Record<string, string>>;
 
+export function MiniMaxChatWithMessages(arg1:string,arg2:Array<main.OpenAIChatMessage>):Promise<main.OpenAIChatResult>;
+
 export function OpenAIChatWithMessages(arg1:string,arg2:Array<main.OpenAIChatMessage>):Promise<main.OpenAIChatResult>;
 
 export function OpenFile(arg1:string):Promise<void>;
@@ -239,6 +245,8 @@ export function SaveTeamMember(arg1:db.TeamMember):Promise<db.TeamMember>;
 export function ScanClaudeSkills():Promise<Array<main.SkillCommand>>;
 
 export function SearchVault(arg1:string):Promise<Array<db.VaultItem>>;
+
+export function SetPersonalAIAutoCollect(arg1:boolean,arg2:number):Promise<db.PersonalAIAutoCollectConfig>;
 
 export function SetupGWSAuth():Promise<string>;
 

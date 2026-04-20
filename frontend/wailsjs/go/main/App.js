@@ -218,12 +218,20 @@ export function GetOrCreateWeeklyReport(arg1, arg2) {
   return window['go']['main']['App']['GetOrCreateWeeklyReport'](arg1, arg2);
 }
 
+export function GetPersonalAIAutoCollect() {
+  return window['go']['main']['App']['GetPersonalAIAutoCollect']();
+}
+
 export function GetPersonalAIUsageCollectionStatus() {
   return window['go']['main']['App']['GetPersonalAIUsageCollectionStatus']();
 }
 
 export function GetPersonalAIUsageDashboard(arg1) {
   return window['go']['main']['App']['GetPersonalAIUsageDashboard'](arg1);
+}
+
+export function GetPersonalAIUsageHistory(arg1, arg2) {
+  return window['go']['main']['App']['GetPersonalAIUsageHistory'](arg1, arg2);
 }
 
 export function GetPositionTypes() {
@@ -362,6 +370,10 @@ export function LookupLinearViewer(arg1) {
   return window['go']['main']['App']['LookupLinearViewer'](arg1);
 }
 
+export function MiniMaxChatWithMessages(arg1, arg2) {
+  return window['go']['main']['App']['MiniMaxChatWithMessages'](arg1, arg2);
+}
+
 export function OpenAIChatWithMessages(arg1, arg2) {
   return window['go']['main']['App']['OpenAIChatWithMessages'](arg1, arg2);
 }
@@ -472,6 +484,10 @@ export function ScanClaudeSkills() {
 
 export function SearchVault(arg1) {
   return window['go']['main']['App']['SearchVault'](arg1);
+}
+
+export function SetPersonalAIAutoCollect(arg1, arg2) {
+  return window['go']['main']['App']['SetPersonalAIAutoCollect'](arg1, arg2);
 }
 
 export function SetupGWSAuth() {

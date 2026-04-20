@@ -122,6 +122,72 @@ export namespace db {
 	        this.outputTokens = source["outputTokens"];
 	    }
 	}
+	export class AIUsageHistoryEvent {
+	    id: number;
+	    occurredAt: string;
+	    day: string;
+	    userId: number;
+	    providerId: number;
+	    modelId: number;
+	    rawProvider: string;
+	    rawModel: string;
+	    feature: string;
+	    requestCount: number;
+	    inputTokens: number;
+	    outputTokens: number;
+	    cacheReadTokens: number;
+	    cacheCreateTokens: number;
+	    paygCostUsd: number;
+	    metadataJson: string;
+	    createdAt: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AIUsageHistoryEvent(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.occurredAt = source["occurredAt"];
+	        this.day = source["day"];
+	        this.userId = source["userId"];
+	        this.providerId = source["providerId"];
+	        this.modelId = source["modelId"];
+	        this.rawProvider = source["rawProvider"];
+	        this.rawModel = source["rawModel"];
+	        this.feature = source["feature"];
+	        this.requestCount = source["requestCount"];
+	        this.inputTokens = source["inputTokens"];
+	        this.outputTokens = source["outputTokens"];
+	        this.cacheReadTokens = source["cacheReadTokens"];
+	        this.cacheCreateTokens = source["cacheCreateTokens"];
+	        this.paygCostUsd = source["paygCostUsd"];
+	        this.metadataJson = source["metadataJson"];
+	        this.createdAt = source["createdAt"];
+	    }
+	}
+	export class AIUsageDailySeriesPoint {
+	    day: string;
+	    requestCount: number;
+	    inputTokens: number;
+	    outputTokens: number;
+	    totalCostUsd: number;
+	    totalCostKrw: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new AIUsageDailySeriesPoint(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.day = source["day"];
+	        this.requestCount = source["requestCount"];
+	        this.inputTokens = source["inputTokens"];
+	        this.outputTokens = source["outputTokens"];
+	        this.totalCostUsd = source["totalCostUsd"];
+	        this.totalCostKrw = source["totalCostKrw"];
+	    }
+	}
 	export class AIUsageSummaryRow {
 	    providerCode: string;
 	    providerName: string;
@@ -236,7 +302,54 @@ export namespace db {
 		    return a;
 		}
 	}
+	export class AIUsageSeriesRow {
+	    providerCode: string;
+	    providerName: string;
+	    modelCode: string;
+	    modelName: string;
+	    requestCount: number;
+	    inputTokens: number;
+	    outputTokens: number;
+	    totalCostUsd: number;
+	    totalCostKrw: number;
+	    daily: AIUsageDailySeriesPoint[];
 	
+	    static createFrom(source: any = {}) {
+	        return new AIUsageSeriesRow(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.providerCode = source["providerCode"];
+	        this.providerName = source["providerName"];
+	        this.modelCode = source["modelCode"];
+	        this.modelName = source["modelName"];
+	        this.requestCount = source["requestCount"];
+	        this.inputTokens = source["inputTokens"];
+	        this.outputTokens = source["outputTokens"];
+	        this.totalCostUsd = source["totalCostUsd"];
+	        this.totalCostKrw = source["totalCostKrw"];
+	        this.daily = this.convertValues(source["daily"], AIUsageDailySeriesPoint);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	
 	export class Activity {
 	    id: number;
@@ -528,6 +641,26 @@ export namespace db {
 	        this.lateCount = source["lateCount"];
 	    }
 	}
+	export class PersonalAIAutoCollectConfig {
+	    enabled: boolean;
+	    intervalSeconds: number;
+	    nextRunAt: string;
+	    lastTriggeredAt: string;
+	    lastTriggeredMonth: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new PersonalAIAutoCollectConfig(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.enabled = source["enabled"];
+	        this.intervalSeconds = source["intervalSeconds"];
+	        this.nextRunAt = source["nextRunAt"];
+	        this.lastTriggeredAt = source["lastTriggeredAt"];
+	        this.lastTriggeredMonth = source["lastTriggeredMonth"];
+	    }
+	}
 	export class PersonalAICollectorResult {
 	    sourceCode: string;
 	    sourceName: string;
@@ -584,11 +717,17 @@ export namespace db {
 	}
 	export class PersonalAICollectStatus {
 	    running: boolean;
+	    trigger: string;
 	    month: string;
 	    startedAt: string;
 	    finishedAt: string;
 	    lastError: string;
 	    lastResult?: PersonalAICollectorResponse;
+	    autoEnabled: boolean;
+	    autoIntervalSeconds: number;
+	    autoNextRunAt: string;
+	    autoLastTriggeredAt: string;
+	    autoLastTriggeredMonth: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new PersonalAICollectStatus(source);
@@ -597,11 +736,17 @@ export namespace db {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.running = source["running"];
+	        this.trigger = source["trigger"];
 	        this.month = source["month"];
 	        this.startedAt = source["startedAt"];
 	        this.finishedAt = source["finishedAt"];
 	        this.lastError = source["lastError"];
 	        this.lastResult = this.convertValues(source["lastResult"], PersonalAICollectorResponse);
+	        this.autoEnabled = source["autoEnabled"];
+	        this.autoIntervalSeconds = source["autoIntervalSeconds"];
+	        this.autoNextRunAt = source["autoNextRunAt"];
+	        this.autoLastTriggeredAt = source["autoLastTriggeredAt"];
+	        this.autoLastTriggeredMonth = source["autoLastTriggeredMonth"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -684,6 +829,8 @@ export namespace db {
 	    byProvider: AIUsageSummaryRow[];
 	    byModel: AIUsageSummaryRow[];
 	    daily: AIUsageDailyPoint[];
+	    dailyByProvider: AIUsageSeriesRow[];
+	    dailyByModel: AIUsageSeriesRow[];
 	    fxRateUsed: number;
 	    fxRateDate: string;
 	    fxSource: string;
@@ -700,6 +847,8 @@ export namespace db {
 	        this.byProvider = this.convertValues(source["byProvider"], AIUsageSummaryRow);
 	        this.byModel = this.convertValues(source["byModel"], AIUsageSummaryRow);
 	        this.daily = this.convertValues(source["daily"], AIUsageDailyPoint);
+	        this.dailyByProvider = this.convertValues(source["dailyByProvider"], AIUsageSeriesRow);
+	        this.dailyByModel = this.convertValues(source["dailyByModel"], AIUsageSeriesRow);
 	        this.fxRateUsed = source["fxRateUsed"];
 	        this.fxRateDate = source["fxRateDate"];
 	        this.fxSource = source["fxSource"];
@@ -1832,4 +1981,3 @@ export namespace main {
 	}
 
 }
-

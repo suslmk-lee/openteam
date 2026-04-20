@@ -122,50 +122,6 @@ export namespace db {
 	        this.outputTokens = source["outputTokens"];
 	    }
 	}
-	export class AIUsageHistoryEvent {
-	    id: number;
-	    occurredAt: string;
-	    day: string;
-	    userId: number;
-	    providerId: number;
-	    modelId: number;
-	    rawProvider: string;
-	    rawModel: string;
-	    feature: string;
-	    requestCount: number;
-	    inputTokens: number;
-	    outputTokens: number;
-	    cacheReadTokens: number;
-	    cacheCreateTokens: number;
-	    paygCostUsd: number;
-	    metadataJson: string;
-	    createdAt: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new AIUsageHistoryEvent(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.id = source["id"];
-	        this.occurredAt = source["occurredAt"];
-	        this.day = source["day"];
-	        this.userId = source["userId"];
-	        this.providerId = source["providerId"];
-	        this.modelId = source["modelId"];
-	        this.rawProvider = source["rawProvider"];
-	        this.rawModel = source["rawModel"];
-	        this.feature = source["feature"];
-	        this.requestCount = source["requestCount"];
-	        this.inputTokens = source["inputTokens"];
-	        this.outputTokens = source["outputTokens"];
-	        this.cacheReadTokens = source["cacheReadTokens"];
-	        this.cacheCreateTokens = source["cacheCreateTokens"];
-	        this.paygCostUsd = source["paygCostUsd"];
-	        this.metadataJson = source["metadataJson"];
-	        this.createdAt = source["createdAt"];
-	    }
-	}
 	export class AIUsageDailySeriesPoint {
 	    day: string;
 	    requestCount: number;
@@ -302,6 +258,51 @@ export namespace db {
 		    return a;
 		}
 	}
+	export class AIUsageHistoryEvent {
+	    id: number;
+	    occurredAt: string;
+	    day: string;
+	    userId: number;
+	    providerId: number;
+	    modelId: number;
+	    rawProvider: string;
+	    rawModel: string;
+	    feature: string;
+	    requestCount: number;
+	    inputTokens: number;
+	    outputTokens: number;
+	    cacheReadTokens: number;
+	    cacheCreateTokens: number;
+	    paygCostUsd: number;
+	    metadataJson: string;
+	    createdAt: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AIUsageHistoryEvent(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.occurredAt = source["occurredAt"];
+	        this.day = source["day"];
+	        this.userId = source["userId"];
+	        this.providerId = source["providerId"];
+	        this.modelId = source["modelId"];
+	        this.rawProvider = source["rawProvider"];
+	        this.rawModel = source["rawModel"];
+	        this.feature = source["feature"];
+	        this.requestCount = source["requestCount"];
+	        this.inputTokens = source["inputTokens"];
+	        this.outputTokens = source["outputTokens"];
+	        this.cacheReadTokens = source["cacheReadTokens"];
+	        this.cacheCreateTokens = source["cacheCreateTokens"];
+	        this.paygCostUsd = source["paygCostUsd"];
+	        this.metadataJson = source["metadataJson"];
+	        this.createdAt = source["createdAt"];
+	    }
+	}
+	
 	export class AIUsageSeriesRow {
 	    providerCode: string;
 	    providerName: string;
@@ -1981,3 +1982,4 @@ export namespace main {
 	}
 
 }
+

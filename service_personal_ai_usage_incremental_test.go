@@ -142,3 +142,160 @@ func TestParseUsageEventsFromFileWithOptions_LargeLineBasedFileIsNotSkipped(t *t
 		t.Fatalf("expected at least one parsed event from large line-based file")
 	}
 }
+
+func TestParseUsageEventsFromFileWithOptions_TotalTokenUsageUsesMonthDelta(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "usage.jsonl")
+
+	lines := []string{
+		`{"timestamp":"2026-03-31T10:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"session_id":"session-1","model":"gpt-5","provider":"openai","total_token_usage":{"input_tokens":1000,"output_tokens":100}}}}`,
+		`{"timestamp":"2026-04-01T01:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"session_id":"session-1","model":"gpt-5","provider":"openai","total_token_usage":{"input_tokens":1100,"output_tokens":120}}}}`,
+	}
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	kst := kstLocationForTest()
+	monthStart := time.Date(2026, 4, 1, 0, 0, 0, 0, kst)
+	monthEnd := monthStart.AddDate(0, 1, 0).Add(-time.Nanosecond)
+
+	events, err := parseUsageEventsFromFileWithOptions(path, "openai", monthStart, monthEnd, 0, time.Time{})
+	if err != nil {
+		t.Fatalf("parseUsageEventsFromFileWithOptions failed: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected 1 in-month event, got %d", len(events))
+	}
+	if events[0].inputTokens != 100 || events[0].outputTokens != 20 {
+		t.Fatalf("expected in-month delta 100/20, got %d/%d", events[0].inputTokens, events[0].outputTokens)
+	}
+}
+
+func TestParseUsageEventsFromFileWithOptionsAndCounterState_UsesPriorBaselineForIncrementalTail(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "usage.jsonl")
+
+	line1 := `{"timestamp":"2026-04-10T00:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"session_id":"session-1","model":"gpt-5","provider":"openai","total_token_usage":{"input_tokens":100,"output_tokens":10}}}}`
+	line2 := `{"timestamp":"2026-04-10T01:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"session_id":"session-1","model":"gpt-5","provider":"openai","total_token_usage":{"input_tokens":130,"output_tokens":16}}}}`
+	content := line1 + "\n" + line2 + "\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	offset := int64(len(line1 + "\n"))
+	kst := kstLocationForTest()
+	monthStart := time.Date(2026, 4, 1, 0, 0, 0, 0, kst)
+	monthEnd := monthStart.AddDate(0, 1, 0).Add(-time.Nanosecond)
+
+	prior := map[string]localTokenCounterSnapshot{
+		"session-1": {
+			InputTokens:  100,
+			OutputTokens: 10,
+		},
+	}
+
+	events, nextCounters, err := parseUsageEventsFromFileWithOptionsAndCounterState(
+		path,
+		"openai",
+		monthStart,
+		monthEnd,
+		offset,
+		time.Time{},
+		prior,
+	)
+	if err != nil {
+		t.Fatalf("parseUsageEventsFromFileWithOptionsAndCounterState failed: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected 1 tail event, got %d", len(events))
+	}
+	if events[0].inputTokens != 30 || events[0].outputTokens != 6 {
+		t.Fatalf("expected delta 30/6 with prior baseline, got %d/%d", events[0].inputTokens, events[0].outputTokens)
+	}
+	if snapshot, ok := nextCounters["session-1"]; !ok || snapshot.InputTokens != 130 || snapshot.OutputTokens != 16 {
+		t.Fatalf("expected next counter snapshot 130/16, got %+v", snapshot)
+	}
+}
+
+func TestParseUsageEventsFromFileWithOptionsAndCounterState_FullScanIgnoresPriorBaseline(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "usage.jsonl")
+
+	lines := []string{
+		`{"timestamp":"2026-04-10T00:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"session_id":"session-1","model":"gpt-5","provider":"openai","total_token_usage":{"input_tokens":100,"output_tokens":10}}}}`,
+		`{"timestamp":"2026-04-10T01:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"session_id":"session-1","model":"gpt-5","provider":"openai","total_token_usage":{"input_tokens":130,"output_tokens":16}}}}`,
+	}
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	kst := kstLocationForTest()
+	monthStart := time.Date(2026, 4, 1, 0, 0, 0, 0, kst)
+	monthEnd := monthStart.AddDate(0, 1, 0).Add(-time.Nanosecond)
+
+	prior := map[string]localTokenCounterSnapshot{
+		"session-1": {
+			InputTokens:  1000,
+			OutputTokens: 100,
+		},
+	}
+
+	events, _, err := parseUsageEventsFromFileWithOptionsAndCounterState(
+		path,
+		"openai",
+		monthStart,
+		monthEnd,
+		0,
+		time.Time{},
+		prior,
+	)
+	if err != nil {
+		t.Fatalf("parseUsageEventsFromFileWithOptionsAndCounterState failed: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event from full scan baseline delta, got %d", len(events))
+	}
+	if events[0].inputTokens != 30 || events[0].outputTokens != 6 {
+		t.Fatalf("expected full scan delta 30/6, got %d/%d", events[0].inputTokens, events[0].outputTokens)
+	}
+}
+
+func TestParseUsageEventsFromFileWithOptionsAndCounterState_ResetSkipsAbsoluteSpike(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "usage.jsonl")
+
+	line := `{"timestamp":"2026-04-10T01:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"session_id":"session-1","model":"gpt-5","provider":"openai","total_token_usage":{"input_tokens":120,"output_tokens":12}}}}`
+	if err := os.WriteFile(path, []byte(line+"\n"), 0o600); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	kst := kstLocationForTest()
+	monthStart := time.Date(2026, 4, 1, 0, 0, 0, 0, kst)
+	monthEnd := monthStart.AddDate(0, 1, 0).Add(-time.Nanosecond)
+
+	prior := map[string]localTokenCounterSnapshot{
+		"session-1": {
+			InputTokens:  1000,
+			OutputTokens: 100,
+		},
+	}
+
+	events, nextCounters, err := parseUsageEventsFromFileWithOptionsAndCounterState(
+		path,
+		"openai",
+		monthStart,
+		monthEnd,
+		int64(0),
+		time.Time{},
+		prior,
+	)
+	if err != nil {
+		t.Fatalf("parseUsageEventsFromFileWithOptionsAndCounterState failed: %v", err)
+	}
+	if len(events) != 0 {
+		t.Fatalf("expected 0 events on counter reset baseline update, got %d", len(events))
+	}
+	if snapshot, ok := nextCounters["session-1"]; !ok || snapshot.InputTokens != 120 || snapshot.OutputTokens != 12 {
+		t.Fatalf("expected next counter snapshot 120/12, got %+v", snapshot)
+	}
+}

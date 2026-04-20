@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { ArrowUp, ChevronDown, Loader2, Maximize2, MessageSquare, Mic, Minimize2, Plus, Sparkles, X } from 'lucide-react'
-import type { AiChatSession, ChatCommand, ChatMessage, ChatReference } from './types'
+import type { AiChatSession, ChatCommand, ChatMessage, ChatModel, ChatReference } from './types'
 
 function escapeHtml(text: string): string {
   return text
@@ -188,10 +188,14 @@ export function AiChatPanel({
     : []
   const panelInset = 12
   const [reasoningLevel, setReasoningLevel] = useState('high')
-  const openAiModelLabel = 'GPT-4o mini'
-  const modelDisplay = session.chatModel === 'claude'
-    ? session.claudeMeta?.model || 'Claude Code'
-    : openAiModelLabel
+  const modelDisplay =
+    session.chatModel === 'claude'
+      ? session.claudeMeta?.model || 'Claude Code'
+      : session.chatModel === 'minimax'
+        ? 'MiniMax'
+        : 'OpenAI'
+  const keyLabel = session.chatModel === 'minimax' ? 'MiniMax API Key' : 'OpenAI API Key'
+  const keyPlaceholder = session.chatModel === 'minimax' ? 'minimax-...' : 'sk-...'
 
   function findMatchingCommand(rawInput: string) {
     const normalized = rawInput.toLowerCase()
@@ -349,13 +353,13 @@ export function AiChatPanel({
 
         {session.showKeyInput && (
           <div className="shrink-0 border-b border-amber-100 bg-amber-50 px-4 py-2 dark:border-amber-500/20 dark:bg-amber-500/10">
-            <p className="mb-1.5 text-xs text-amber-700 dark:text-amber-300">OpenAI API Key</p>
+            <p className="mb-1.5 text-xs text-amber-700 dark:text-amber-300">{keyLabel}</p>
             <div className="flex gap-2">
               <input
                 type="password"
                 value={session.localKeyInput}
                 onChange={event => session.setLocalKeyInput(event.target.value)}
-                placeholder="sk-..."
+                placeholder={keyPlaceholder}
                 className="flex-1 rounded-lg border border-amber-200 bg-white px-2 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-400 dark:border-amber-500/30 dark:bg-slate-800 dark:text-slate-100"
               />
               <button
@@ -527,11 +531,12 @@ export function AiChatPanel({
                 <div className="relative">
                   <select
                     value={session.chatModel}
-                    onChange={event => session.setChatModel(event.target.value as 'openai' | 'claude')}
+                    onChange={event => session.setChatModel(event.target.value as ChatModel)}
                     className="h-7 appearance-none rounded-lg border border-slate-300 bg-white pl-2 pr-6 text-[11px] font-medium text-slate-700 outline-none transition-colors hover:bg-slate-100 focus:ring-2 focus:ring-violet-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
                   >
                     {session.claudeAvailable && <option value="claude">Claude</option>}
                     <option value="openai">OpenAI</option>
+                    <option value="minimax">MiniMax</option>
                   </select>
                   <ChevronDown size={12} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-400" />
                 </div>
@@ -550,7 +555,7 @@ export function AiChatPanel({
                   <ChevronDown size={12} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-400" />
                 </div>
 
-                {session.chatModel === 'openai' && session.keyLoaded && !session.apiKey && (
+                {session.chatModel !== 'claude' && session.keyLoaded && !session.apiKey && (
                   <button
                     type="button"
                     onClick={() => session.setShowKeyInput(prev => !prev)}

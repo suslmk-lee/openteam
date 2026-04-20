@@ -7,6 +7,8 @@ import (
 	"openreport/internal/db"
 )
 
+const defaultPersonalAIHistoryLimit = 500
+
 func (a *App) GetPersonalAIUsageDashboard(month string) (db.PersonalAIUsageDashboard, error) {
 	user, err := a.database.GetOrCreateDefaultUser()
 	if err != nil {
@@ -20,7 +22,31 @@ func (a *App) CollectPersonalAIUsage(month string) (db.PersonalAICollectorRespon
 	if err != nil {
 		return db.PersonalAICollectorResponse{}, err
 	}
-	return a.collectPersonalAIUsage(user.ID, month)
+	return a.collectPersonalAIUsage(user.ID, month, personalCollectRunOptions{
+		Incremental: false,
+		Trigger:     personalAICollectTriggerManual,
+	})
+}
+
+func (a *App) GetPersonalAIUsageHistory(month string, limit int) ([]db.AIUsageHistoryEvent, error) {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return nil, err
+	}
+	if err := a.ensurePersonalTeam(user.ID); err != nil {
+		return nil, err
+	}
+	normalizedMonth, _, _, err := normalizeUsageMonth(month)
+	if err != nil {
+		return nil, err
+	}
+	if limit <= 0 {
+		limit = defaultPersonalAIHistoryLimit
+	}
+	if limit > 2000 {
+		limit = 2000
+	}
+	return a.database.ListAIUsageHistoryEventsByMonth(user.ID, normalizedMonth, limit)
 }
 
 func (a *App) AddPersonalAIManualUsage(
@@ -43,9 +69,9 @@ func (a *App) AddPersonalAIManualUsage(
 	}
 
 	targetDay := strings.TrimSpace(day)
-	occurredAt := time.Now()
+	occurredAt := usageTimeInKST(time.Now())
 	if targetDay != "" {
-		if parsed, parseErr := time.Parse("2006-01-02", targetDay); parseErr == nil {
+		if parsed, parseErr := parseUsageDayInKST(targetDay); parseErr == nil {
 			occurredAt = parsed.Add(12 * time.Hour)
 		}
 	}
@@ -54,6 +80,10 @@ func (a *App) AddPersonalAIManualUsage(
 		ProviderCode: strings.TrimSpace(strings.ToLower(providerCode)),
 		ModelCode:    strings.TrimSpace(modelCode),
 		Feature:      featureExternalManual,
+		MetadataJSON: marshalUsageMetadata(map[string]any{
+			"collector": "manual_entry",
+			"day":       targetDay,
+		}),
 		RequestCount: 1,
 		InputTokens:  inputTokens,
 		OutputTokens: outputTokens,

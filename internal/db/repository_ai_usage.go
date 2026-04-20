@@ -8,7 +8,17 @@ import (
 )
 
 func normalizeAICode(input string) string {
-	return strings.ToLower(strings.TrimSpace(input))
+	code := strings.ToLower(strings.TrimSpace(input))
+	switch code {
+	case "codex":
+		return "openai"
+	default:
+		return code
+	}
+}
+
+type sqlExecer interface {
+	Exec(query string, args ...any) (sql.Result, error)
 }
 
 func (d *Database) ListAIProviders(userID int64) ([]AIProvider, error) {
@@ -330,10 +340,10 @@ func (d *Database) DeleteAIBillingPlan(userID, planID int64) error {
 	return err
 }
 
-func (d *Database) IncrementAIUsageDaily(usage *AIUsageDaily) error {
+func (d *Database) incrementAIUsageDailyWithExecer(exec sqlExecer, usage *AIUsageDaily) error {
 	day := strings.TrimSpace(usage.Day)
 	if day == "" {
-		day = time.Now().Format("2006-01-02")
+		day = time.Now().In(time.FixedZone("KST", 9*60*60)).Format("2006-01-02")
 	}
 	feature := strings.TrimSpace(usage.Feature)
 	if feature == "" {
@@ -342,27 +352,72 @@ func (d *Database) IncrementAIUsageDaily(usage *AIUsageDaily) error {
 	rawProvider := normalizeAICode(usage.RawProvider)
 	rawModel := strings.TrimSpace(usage.RawModel)
 
-	query := `INSERT INTO ai_usage_daily (
+	updateQuery := `UPDATE ai_usage_daily
+		SET request_count = request_count + ?,
+		    input_tokens = input_tokens + ?,
+		    output_tokens = output_tokens + ?,
+		    cache_read_tokens = cache_read_tokens + ?,
+		    cache_create_tokens = cache_create_tokens + ?,
+		    payg_cost_usd = payg_cost_usd + ?,
+		    updated_at = CURRENT_TIMESTAMP
+		WHERE day = ? AND user_id = ?
+		  AND ((provider_id = ?) OR (? IS NULL AND provider_id IS NULL))
+		  AND ((model_id = ?) OR (? IS NULL AND model_id IS NULL))
+		  AND raw_provider = ? AND raw_model = ? AND feature = ?`
+
+	tryUpdate := func(providerID, modelID any) (bool, error) {
+		res, err := exec.Exec(
+			updateQuery,
+			usage.RequestCount, usage.InputTokens, usage.OutputTokens, usage.CacheReadTokens, usage.CacheCreateTokens, usage.PaygCostUSD,
+			day, usage.UserID,
+			providerID, providerID,
+			modelID, modelID,
+			rawProvider, rawModel, feature,
+		)
+		if err != nil {
+			return false, err
+		}
+		affected, err := res.RowsAffected()
+		if err != nil {
+			return false, err
+		}
+		return affected > 0, nil
+	}
+
+	insertQuery := `INSERT INTO ai_usage_daily (
 		day, user_id, provider_id, model_id, raw_provider, raw_model, feature,
 		request_count, input_tokens, output_tokens, cache_read_tokens, cache_create_tokens, payg_cost_usd
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	ON CONFLICT(day, user_id, provider_id, model_id, raw_provider, raw_model, feature)
-	DO UPDATE SET
-		request_count = ai_usage_daily.request_count + excluded.request_count,
-		input_tokens = ai_usage_daily.input_tokens + excluded.input_tokens,
-		output_tokens = ai_usage_daily.output_tokens + excluded.output_tokens,
-		cache_read_tokens = ai_usage_daily.cache_read_tokens + excluded.cache_read_tokens,
-		cache_create_tokens = ai_usage_daily.cache_create_tokens + excluded.cache_create_tokens,
-		payg_cost_usd = ai_usage_daily.payg_cost_usd + excluded.payg_cost_usd,
-		updated_at = CURRENT_TIMESTAMP`
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	execInsert := func(providerID, modelID any) error {
-		_, err := d.conn.Exec(
-			query,
+		_, err := exec.Exec(
+			insertQuery,
 			day, usage.UserID, providerID, modelID, rawProvider, rawModel, feature,
 			usage.RequestCount, usage.InputTokens, usage.OutputTokens, usage.CacheReadTokens, usage.CacheCreateTokens, usage.PaygCostUSD,
 		)
 		return err
+	}
+
+	if updated, err := tryUpdate(usage.ProviderID, usage.ModelID); err == nil && updated {
+		return nil
+	} else if err != nil {
+		return err
+	}
+
+	legacyProviderID := any(usage.ProviderID)
+	legacyModelID := any(usage.ModelID)
+	if usage.ProviderID <= 0 {
+		legacyProviderID = nil
+	}
+	if usage.ModelID <= 0 {
+		legacyModelID = nil
+	}
+	if legacyProviderID != usage.ProviderID || legacyModelID != usage.ModelID {
+		if updated, err := tryUpdate(legacyProviderID, legacyModelID); err == nil && updated {
+			return nil
+		} else if err != nil {
+			return err
+		}
 	}
 
 	if err := execInsert(usage.ProviderID, usage.ModelID); err != nil {
@@ -384,6 +439,127 @@ func (d *Database) IncrementAIUsageDaily(usage *AIUsageDaily) error {
 		return err
 	}
 	return nil
+}
+
+func (d *Database) IncrementAIUsageDaily(usage *AIUsageDaily) error {
+	return d.incrementAIUsageDailyWithExecer(d.conn, usage)
+}
+
+func (d *Database) AppendAIUsageHistoryEvent(event *AIUsageHistoryEvent) error {
+	occurred := strings.TrimSpace(event.OccurredAt)
+	if occurred == "" {
+		occurred = time.Now().In(time.FixedZone("KST", 9*60*60)).Format(time.RFC3339Nano)
+	}
+	day := strings.TrimSpace(event.Day)
+	if day == "" {
+		day = time.Now().In(time.FixedZone("KST", 9*60*60)).Format("2006-01-02")
+	}
+	feature := strings.TrimSpace(event.Feature)
+	if feature == "" {
+		feature = "unknown"
+	}
+
+	_, err := d.conn.Exec(
+		`INSERT INTO ai_usage_history_events (
+			occurred_at, day, user_id, provider_id, model_id, raw_provider, raw_model, feature,
+			request_count, input_tokens, output_tokens, cache_read_tokens, cache_create_tokens, payg_cost_usd, metadata_json
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		occurred,
+		day,
+		event.UserID,
+		event.ProviderID,
+		event.ModelID,
+		normalizeAICode(event.RawProvider),
+		strings.TrimSpace(event.RawModel),
+		feature,
+		event.RequestCount,
+		event.InputTokens,
+		event.OutputTokens,
+		event.CacheReadTokens,
+		event.CacheCreateTokens,
+		event.PaygCostUSD,
+		strings.TrimSpace(event.MetadataJSON),
+	)
+	return err
+}
+
+func (d *Database) ListAIUsageHistoryEventsByMonth(userID int64, month string, limit int) ([]AIUsageHistoryEvent, error) {
+	parsed, err := time.Parse("2006-01", strings.TrimSpace(month))
+	if err != nil {
+		return nil, fmt.Errorf("invalid month format: %w", err)
+	}
+	if limit <= 0 {
+		limit = 500
+	}
+	start := parsed.Format("2006-01-02")
+	end := parsed.AddDate(0, 1, 0).Format("2006-01-02")
+
+	rows, err := d.conn.Query(
+		`SELECT id, occurred_at, day, user_id, provider_id, model_id, raw_provider, raw_model, feature,
+		        request_count, input_tokens, output_tokens, cache_read_tokens, cache_create_tokens, payg_cost_usd, metadata_json, created_at
+		 FROM ai_usage_history_events
+		 WHERE user_id = ? AND day >= ? AND day < ?
+		 ORDER BY occurred_at DESC, id DESC
+		 LIMIT ?`,
+		userID, start, end, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]AIUsageHistoryEvent, 0)
+	for rows.Next() {
+		var item AIUsageHistoryEvent
+		if err := rows.Scan(
+			&item.ID,
+			&item.OccurredAt,
+			&item.Day,
+			&item.UserID,
+			&item.ProviderID,
+			&item.ModelID,
+			&item.RawProvider,
+			&item.RawModel,
+			&item.Feature,
+			&item.RequestCount,
+			&item.InputTokens,
+			&item.OutputTokens,
+			&item.CacheReadTokens,
+			&item.CacheCreateTokens,
+			&item.PaygCostUSD,
+			&item.MetadataJSON,
+			&item.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, nil
+}
+
+func (d *Database) DeleteAIUsageHistoryEventsBefore(userID int64, day string) (int64, error) {
+	cutoff := strings.TrimSpace(day)
+	if cutoff == "" {
+		return 0, fmt.Errorf("cutoff day is required")
+	}
+	if _, err := time.Parse("2006-01-02", cutoff); err != nil {
+		return 0, fmt.Errorf("invalid cutoff day: %w", err)
+	}
+
+	res, err := d.conn.Exec(
+		`DELETE FROM ai_usage_history_events
+		 WHERE user_id = ? AND day < ?`,
+		userID,
+		cutoff,
+	)
+	if err != nil {
+		return 0, err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	return affected, nil
 }
 
 func (d *Database) ListAIUsageDailyByMonth(userID int64, month string) ([]AIUsageDaily, error) {

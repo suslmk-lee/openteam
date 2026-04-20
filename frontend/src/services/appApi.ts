@@ -88,6 +88,28 @@ export interface AIUsageDailyPoint {
   outputTokens: number
 }
 
+export interface AIUsageSeriesPoint {
+  day: string
+  requestCount: number
+  inputTokens: number
+  outputTokens: number
+  totalCostUsd: number
+  totalCostKrw: number
+}
+
+export interface AIUsageSeriesRow {
+  providerCode: string
+  providerName: string
+  modelCode: string
+  modelName: string
+  requestCount: number
+  inputTokens: number
+  outputTokens: number
+  totalCostUsd: number
+  totalCostKrw: number
+  daily: AIUsageSeriesPoint[]
+}
+
 export interface AIUsageDashboard {
   overview: {
     month: string
@@ -137,6 +159,8 @@ export interface PersonalAIUsageDashboard {
   byProvider: AIUsageSummaryRow[]
   byModel: AIUsageSummaryRow[]
   daily: AIUsageDailyPoint[]
+  dailyByProvider: AIUsageSeriesRow[]
+  dailyByModel: AIUsageSeriesRow[]
   fxRateUsed: number
   fxRateDate: string
   fxSource: string
@@ -157,13 +181,47 @@ export interface PersonalAICollectorResponse {
   results: PersonalAICollectorResult[]
 }
 
+export interface AIUsageHistoryEvent {
+  id: number
+  occurredAt: string
+  day: string
+  userId: number
+  providerId: number
+  modelId: number
+  rawProvider: string
+  rawModel: string
+  feature: string
+  requestCount: number
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheCreateTokens: number
+  paygCostUsd: number
+  metadataJson?: string
+  createdAt: string
+}
+
 export interface PersonalAICollectStatus {
   running: boolean
+  trigger?: string
   month: string
   startedAt: string
   finishedAt: string
   lastError: string
   lastResult?: PersonalAICollectorResponse | null
+  autoEnabled?: boolean
+  autoIntervalSeconds?: number
+  autoNextRunAt?: string
+  autoLastTriggeredAt?: string
+  autoLastTriggeredMonth?: string
+}
+
+export interface PersonalAIAutoCollectConfig {
+  enabled: boolean
+  intervalSeconds: number
+  nextRunAt: string
+  lastTriggeredAt: string
+  lastTriggeredMonth: string
 }
 
 export type AppApi = typeof AppModule & {
@@ -173,6 +231,17 @@ export type AppApi = typeof AppModule & {
   UpdateLinearIssue: (id: string, input: any) => Promise<void>
   CheckClaudeCLI: () => Promise<{ ok: boolean; version: string }>
   OpenAIChatWithMessages: (
+    systemContext: string,
+    messages: Array<{ role: string; content: string }>,
+  ) => Promise<{
+    reply: string
+    model: string
+    inputTokens: number
+    outputTokens: number
+    totalTokens: number
+    costUsd: number
+  }>
+  MiniMaxChatWithMessages: (
     systemContext: string,
     messages: Array<{ role: string; content: string }>,
   ) => Promise<{
@@ -222,8 +291,11 @@ export type AppApi = typeof AppModule & {
   DeleteAIBillingPlan: (id: number) => Promise<void>
   GetAIUsageDashboard: (month: string) => Promise<AIUsageDashboard>
   GetPersonalAIUsageDashboard: (month: string) => Promise<PersonalAIUsageDashboard>
+  GetPersonalAIUsageHistory: (month: string, limit: number) => Promise<AIUsageHistoryEvent[]>
   StartPersonalAIUsageCollection: (month: string) => Promise<PersonalAICollectStatus>
   GetPersonalAIUsageCollectionStatus: () => Promise<PersonalAICollectStatus>
+  GetPersonalAIAutoCollect: () => Promise<PersonalAIAutoCollectConfig>
+  SetPersonalAIAutoCollect: (enabled: boolean, intervalSeconds: number) => Promise<PersonalAIAutoCollectConfig>
   CollectPersonalAIUsage: (month: string) => Promise<PersonalAICollectorResponse>
   AddPersonalAIManualUsage: (
     day: string,
@@ -298,6 +370,14 @@ const unavailableOpenAIChatWithMessages: AppApi['OpenAIChatWithMessages'] = asyn
   totalTokens: 0,
   costUsd: 0,
 })
+const unavailableMiniMaxChatWithMessages: AppApi['MiniMaxChatWithMessages'] = async () => ({
+  reply: '',
+  model: '',
+  inputTokens: 0,
+  outputTokens: 0,
+  totalTokens: 0,
+  costUsd: 0,
+})
 const unavailableAIUsageDashboard = async (_month: string): Promise<AIUsageDashboard> =>
   ({
     overview: {
@@ -338,6 +418,8 @@ const unavailablePersonalAIUsageDashboard = async (_month: string): Promise<Pers
     byProvider: [],
     byModel: [],
     daily: [],
+    dailyByProvider: [],
+    dailyByModel: [],
     fxRateUsed: 0,
     fxRateDate: '',
     fxSource: '',
@@ -348,14 +430,29 @@ const unavailablePersonalAICollectorResponse = async (_month: string): Promise<P
     month: '',
     results: [],
   })
+const unavailablePersonalAIHistory = async (_month: string, _limit: number): Promise<AIUsageHistoryEvent[]> => []
 const unavailablePersonalAICollectStatus = async (): Promise<PersonalAICollectStatus> =>
   ({
     running: false,
+    trigger: '',
     month: '',
     startedAt: '',
     finishedAt: '',
     lastError: '',
     lastResult: null,
+    autoEnabled: false,
+    autoIntervalSeconds: 120,
+    autoNextRunAt: '',
+    autoLastTriggeredAt: '',
+    autoLastTriggeredMonth: '',
+  })
+const unavailablePersonalAIAutoCollectConfig = async (): Promise<PersonalAIAutoCollectConfig> =>
+  ({
+    enabled: false,
+    intervalSeconds: 120,
+    nextRunAt: '',
+    lastTriggeredAt: '',
+    lastTriggeredMonth: '',
   })
 const unavailableClaudeChat: AppApi['ClaudeChat'] = async () => {
   throw new Error('ClaudeChat not available')
@@ -417,6 +514,9 @@ export const appApi: AppApi = {
   OpenAIChatWithMessages:
     (fallbackModule as AppApi).OpenAIChatWithMessages ??
     unavailableOpenAIChatWithMessages,
+  MiniMaxChatWithMessages:
+    (fallbackModule as AppApi).MiniMaxChatWithMessages ??
+    unavailableMiniMaxChatWithMessages,
   ClaudeChat: (fallbackModule.ClaudeChat ?? unavailableClaudeChat) as AppApi['ClaudeChat'],
   ClaudeChatWithSession: (fallbackModule.ClaudeChatWithSession ?? unavailableClaudeChatWithSession) as AppApi['ClaudeChatWithSession'],
   ScanClaudeSkills:
@@ -455,12 +555,21 @@ export const appApi: AppApi = {
   GetPersonalAIUsageDashboard:
     (fallbackModule as AppApi).GetPersonalAIUsageDashboard ??
     (unavailablePersonalAIUsageDashboard as unknown as AppApi['GetPersonalAIUsageDashboard']),
+  GetPersonalAIUsageHistory:
+    (fallbackModule as AppApi).GetPersonalAIUsageHistory ??
+    (unavailablePersonalAIHistory as unknown as AppApi['GetPersonalAIUsageHistory']),
   StartPersonalAIUsageCollection:
     (fallbackModule as AppApi).StartPersonalAIUsageCollection ??
     (unavailablePersonalAICollectStatus as unknown as AppApi['StartPersonalAIUsageCollection']),
   GetPersonalAIUsageCollectionStatus:
     (fallbackModule as AppApi).GetPersonalAIUsageCollectionStatus ??
     (unavailablePersonalAICollectStatus as unknown as AppApi['GetPersonalAIUsageCollectionStatus']),
+  GetPersonalAIAutoCollect:
+    (fallbackModule as AppApi).GetPersonalAIAutoCollect ??
+    (unavailablePersonalAIAutoCollectConfig as unknown as AppApi['GetPersonalAIAutoCollect']),
+  SetPersonalAIAutoCollect:
+    (fallbackModule as AppApi).SetPersonalAIAutoCollect ??
+    (unavailablePersonalAIAutoCollectConfig as unknown as AppApi['SetPersonalAIAutoCollect']),
   CollectPersonalAIUsage:
     (fallbackModule as AppApi).CollectPersonalAIUsage ??
     (unavailablePersonalAICollectorResponse as unknown as AppApi['CollectPersonalAIUsage']),

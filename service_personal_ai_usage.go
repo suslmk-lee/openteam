@@ -44,6 +44,13 @@ type parsedUsageEvent struct {
 	outputTokens int64
 	costUSD      float64
 	occurredAt   time.Time
+	cumulative   bool
+	counterKey   string
+}
+
+type localTokenCounterSnapshot struct {
+	InputTokens  int64 `json:"inputTokens"`
+	OutputTokens int64 `json:"outputTokens"`
 }
 
 type personalCollectRunOptions struct {
@@ -721,6 +728,160 @@ func modelHintFromNode(node any) string {
 	return normalizeModelHint(fmt.Sprintf("%v", value))
 }
 
+func buildTokenCounterKey(root, payload, info map[string]any, provider, model string) string {
+	streamID := firstStringValue(
+		info["session_id"],
+		info["sessionId"],
+		info["conversation_id"],
+		info["conversationId"],
+		info["thread_id"],
+		info["threadId"],
+		info["run_id"],
+		info["runId"],
+		info["request_id"],
+		info["requestId"],
+		payload["session_id"],
+		payload["sessionId"],
+		payload["conversation_id"],
+		payload["conversationId"],
+		payload["thread_id"],
+		payload["threadId"],
+		payload["run_id"],
+		payload["runId"],
+		payload["request_id"],
+		payload["requestId"],
+		root["session_id"],
+		root["sessionId"],
+		root["conversation_id"],
+		root["conversationId"],
+		root["thread_id"],
+		root["threadId"],
+		root["run_id"],
+		root["runId"],
+		root["request_id"],
+		root["requestId"],
+	)
+	if streamID != "" {
+		return strings.ToLower(strings.TrimSpace(streamID))
+	}
+
+	provider = strings.ToLower(strings.TrimSpace(provider))
+	model = strings.TrimSpace(model)
+	if provider == "" {
+		provider = "unknown-provider"
+	}
+	if model == "" {
+		model = "unknown-model"
+	}
+	return provider + "|" + model
+}
+
+func parseLocalTokenCounterState(raw string) map[string]localTokenCounterSnapshot {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return map[string]localTokenCounterSnapshot{}
+	}
+
+	parsed := map[string]localTokenCounterSnapshot{}
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		return map[string]localTokenCounterSnapshot{}
+	}
+	return parsed
+}
+
+func serializeLocalTokenCounterState(state map[string]localTokenCounterSnapshot) string {
+	if len(state) == 0 {
+		return ""
+	}
+	encoded, err := json.Marshal(state)
+	if err != nil {
+		return ""
+	}
+	return string(encoded)
+}
+
+func normalizeParsedUsageEvents(
+	events []parsedUsageEvent,
+	monthStart, monthEnd time.Time,
+	notBefore time.Time,
+	priorCounters map[string]localTokenCounterSnapshot,
+) ([]parsedUsageEvent, map[string]localTokenCounterSnapshot) {
+	counters := map[string]localTokenCounterSnapshot{}
+	for key, value := range priorCounters {
+		counters[key] = value
+	}
+
+	if !notBefore.IsZero() {
+		notBefore = usageTimeInKST(notBefore)
+	}
+	normalized := make([]parsedUsageEvent, 0, len(events))
+	for _, event := range events {
+		if event.occurredAt.IsZero() {
+			continue
+		}
+		eventTime := usageTimeInKST(event.occurredAt)
+
+		absoluteInput := event.inputTokens
+		absoluteOutput := event.outputTokens
+		if event.cumulative {
+			key := strings.TrimSpace(event.counterKey)
+			if key == "" {
+				key = strings.ToLower(strings.TrimSpace(event.providerCode)) + "|" + strings.TrimSpace(event.modelCode)
+			}
+
+			previous, ok := counters[key]
+			counters[key] = localTokenCounterSnapshot{
+				InputTokens:  absoluteInput,
+				OutputTokens: absoluteOutput,
+			}
+
+			// Cumulative counters (total_token_usage) need a prior snapshot to compute
+			// an actual usage delta. The first seen value is a baseline, not usage.
+			// This rule prevents inflating monthly totals when only cumulative totals exist.
+			if !ok {
+				continue
+			}
+
+			deltaInput := absoluteInput - previous.InputTokens
+			deltaOutput := absoluteOutput - previous.OutputTokens
+
+			// Counter resets or stream switches should start a new baseline.
+			// Treating the reset event's absolute value as usage can inflate totals.
+			if deltaInput < 0 || deltaOutput < 0 {
+				continue
+			}
+
+			if deltaInput < 0 {
+				deltaInput = 0
+			}
+			if deltaOutput < 0 {
+				deltaOutput = 0
+			}
+
+			event.inputTokens = deltaInput
+			event.outputTokens = deltaOutput
+		}
+
+		eventTime = usageTimeInKST(eventTime)
+		if eventTime.Before(monthStart) || eventTime.After(monthEnd) {
+			continue
+		}
+		if !notBefore.IsZero() && eventTime.Before(notBefore) {
+			continue
+		}
+
+		if event.inputTokens == 0 && event.outputTokens == 0 && event.costUSD <= 0 {
+			continue
+		}
+
+		event.occurredAt = eventTime
+		event.day = usageDayString(eventTime)
+		normalized = append(normalized, event)
+	}
+
+	return normalized, counters
+}
+
 func extractTokenCountUsageEvent(node any, fallbackDay time.Time, providerFallback string, monthStart, monthEnd time.Time) (parsedUsageEvent, bool) {
 	return extractTokenCountUsageEventWithFallback(node, fallbackDay, providerFallback, monthStart, monthEnd, "")
 }
@@ -755,8 +916,10 @@ func extractTokenCountUsageEventWithFallback(
 	}
 
 	usageNode, _ := info["last_token_usage"].(map[string]any)
+	cumulative := false
 	if usageNode == nil {
 		usageNode, _ = info["total_token_usage"].(map[string]any)
+		cumulative = true
 	}
 	if usageNode == nil {
 		return parsedUsageEvent{}, false
@@ -799,9 +962,8 @@ func extractTokenCountUsageEventWithFallback(
 		eventTime = parsed
 	}
 	eventTime = usageTimeInKST(eventTime)
-	if eventTime.Before(monthStart) || eventTime.After(monthEnd) {
-		return parsedUsageEvent{}, false
-	}
+	_ = monthStart
+	_ = monthEnd
 
 	return parsedUsageEvent{
 		day:          usageDayString(eventTime),
@@ -810,6 +972,8 @@ func extractTokenCountUsageEventWithFallback(
 		inputTokens:  inputTokens,
 		outputTokens: outputTokens,
 		occurredAt:   eventTime,
+		cumulative:   cumulative,
+		counterKey:   buildTokenCounterKey(root, payload, info, provider, model),
 	}, true
 }
 
@@ -880,9 +1044,8 @@ func extractUsageEventFromNodeWithFallback(
 		}
 	}
 	eventTime = usageTimeInKST(eventTime)
-	if eventTime.Before(monthStart) || eventTime.After(monthEnd) {
-		return parsedUsageEvent{}, false
-	}
+	_ = monthStart
+	_ = monthEnd
 
 	return parsedUsageEvent{
 		day:          usageDayString(eventTime),
@@ -930,20 +1093,6 @@ func collectUsageEventsFromTreeWithFallback(
 func isLineBasedCollectorFile(path string) bool {
 	ext := strings.ToLower(filepath.Ext(path))
 	return ext == ".jsonl" || ext == ".ndjson" || ext == ".log" || ext == ".txt"
-}
-
-func filterParsedUsageEventsNotBefore(events []parsedUsageEvent, notBefore time.Time) []parsedUsageEvent {
-	if len(events) == 0 || notBefore.IsZero() {
-		return events
-	}
-	filtered := events[:0]
-	for _, event := range events {
-		if !event.occurredAt.IsZero() && event.occurredAt.Before(notBefore) {
-			continue
-		}
-		filtered = append(filtered, event)
-	}
-	return filtered
 }
 
 func parseUsageEventsFromFile(path string, providerFallback string, monthStart, monthEnd time.Time) ([]parsedUsageEvent, error) {
@@ -1045,9 +1194,30 @@ func parseUsageEventsFromFileWithOptions(
 	startOffset int64,
 	notBefore time.Time,
 ) ([]parsedUsageEvent, error) {
+	events, _, err := parseUsageEventsFromFileWithOptionsAndCounterState(
+		path,
+		providerFallback,
+		monthStart,
+		monthEnd,
+		startOffset,
+		notBefore,
+		nil,
+	)
+	return events, err
+}
+
+func parseUsageEventsFromFileWithOptionsAndCounterState(
+	path string,
+	providerFallback string,
+	monthStart time.Time,
+	monthEnd time.Time,
+	startOffset int64,
+	notBefore time.Time,
+	priorCounters map[string]localTokenCounterSnapshot,
+) ([]parsedUsageEvent, map[string]localTokenCounterSnapshot, error) {
 	info, err := os.Stat(path)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if startOffset < 0 {
 		startOffset = 0
@@ -1055,9 +1225,14 @@ func parseUsageEventsFromFileWithOptions(
 	if startOffset > info.Size() {
 		startOffset = 0
 	}
+	if startOffset == 0 {
+		// Full-file parses should derive baselines from the file itself.
+		// Reusing prior tail state here can inflate first deltas.
+		priorCounters = nil
+	}
 	lineBased := isLineBasedCollectorFile(path)
 	if info.Size() > 16*1024*1024 && startOffset == 0 && !lineBased {
-		return nil, nil
+		return nil, map[string]localTokenCounterSnapshot{}, nil
 	}
 	fallbackDay := usageTimeInKST(info.ModTime())
 	events := make([]parsedUsageEvent, 0)
@@ -1065,7 +1240,7 @@ func parseUsageEventsFromFileWithOptions(
 	if lineBased {
 		file, err := os.Open(path)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		defer file.Close()
 
@@ -1112,26 +1287,29 @@ func parseUsageEventsFromFileWithOptions(
 			}
 		}
 		if err := scanner.Err(); err != nil {
-			return filterParsedUsageEventsNotBefore(events, notBefore), nil
+			normalized, counters := normalizeParsedUsageEvents(events, monthStart, monthEnd, notBefore, priorCounters)
+			return normalized, counters, nil
 		}
-		return filterParsedUsageEventsNotBefore(events, notBefore), nil
+		normalized, counters := normalizeParsedUsageEvents(events, monthStart, monthEnd, notBefore, priorCounters)
+		return normalized, counters, nil
 	}
 
 	if startOffset > 0 {
-		return nil, nil
+		return nil, map[string]localTokenCounterSnapshot{}, nil
 	}
 
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var payload any
 	if err := json.Unmarshal(raw, &payload); err != nil {
-		return nil, nil
+		return nil, map[string]localTokenCounterSnapshot{}, nil
 	}
 	modelFallback := modelHintFromNode(payload)
 	collectUsageEventsFromTreeWithFallback(payload, fallbackDay, providerFallback, monthStart, monthEnd, modelFallback, &events)
-	return filterParsedUsageEventsNotBefore(events, notBefore), nil
+	normalized, counters := normalizeParsedUsageEvents(events, monthStart, monthEnd, notBefore, priorCounters)
+	return normalized, counters, nil
 }
 
 func parsePersonalAICollectCursorPayload(raw string) personalAICollectCursorPayload {
@@ -1239,11 +1417,13 @@ func (a *App) runLocalUsageCollector(
 		Files:         map[string]personalAICollectFileCursor{},
 		State:         map[string]string{},
 	}
-	for filePath, cursor := range sourceCursor.Files {
-		nextCursor.Files[filePath] = cursor
-	}
-	for key, value := range sourceCursor.State {
-		nextCursor.State[key] = value
+	if options.Incremental {
+		for filePath, cursor := range sourceCursor.Files {
+			nextCursor.Files[filePath] = cursor
+		}
+		for key, value := range sourceCursor.State {
+			nextCursor.State[key] = value
+		}
 	}
 
 	var notBefore time.Time
@@ -1311,9 +1491,23 @@ func (a *App) runLocalUsageCollector(
 				}
 			}
 
-			events, err := parseUsageEventsFromFileWithOptions(path, providerFallback, monthStart, monthEnd, startOffset, notBefore)
+			priorCounters := parseLocalTokenCounterState(sourceCursor.State[path])
+			events, nextCounters, err := parseUsageEventsFromFileWithOptionsAndCounterState(
+				path,
+				providerFallback,
+				monthStart,
+				monthEnd,
+				startOffset,
+				notBefore,
+				priorCounters,
+			)
 			if err != nil {
 				return nil
+			}
+			if encoded := serializeLocalTokenCounterState(nextCounters); encoded != "" {
+				nextCursor.State[path] = encoded
+			} else {
+				delete(nextCursor.State, path)
 			}
 			for _, event := range events {
 				result.ParsedEntries++

@@ -13,6 +13,7 @@ import {
   Monitor,
 } from 'lucide-react'
 import { useAppApi } from '../hooks/useAppApi'
+import AISettingsSection from '../components/settings/AISettingsSection'
 import { useTeamProfile } from '../contexts/TeamProfileContext'
 import { useTheme } from '../contexts/ThemeContext'
 

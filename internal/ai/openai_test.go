@@ -44,3 +44,10 @@ func TestNormalizeReportText(t *testing.T) {
 		}
 	})
 }
+
+func TestClientChatCompletionsURL(t *testing.T) {
+	client := NewClient("k", "m", "https://example.ai/v1/")
+	if got := client.chatCompletionsURL(); got != "https://example.ai/v1/chat/completions" {
+		t.Fatalf("unexpected chat completions URL: %s", got)
+	}
+}

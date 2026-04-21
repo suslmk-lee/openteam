@@ -129,6 +129,7 @@ export default function VaultPage({ mode = 'explore' }: VaultPageProps) {
   } = appApi
   const { profile } = useTeamProfile()
   const chatSession = useAiChatSession(query => buildVaultChatContext(query, appApi.RetrieveVaultContext))
+  const ingestModel = chatSession.effectiveProvider === 'claude_cli' ? 'claude' : 'openai'
 
   const [breadcrumbs, setBreadcrumbs] = useState<VaultItem[]>([])
   const [folders, setFolders] = useState<VaultItem[]>([])
@@ -452,7 +453,7 @@ export default function VaultPage({ mode = 'explore' }: VaultPageProps) {
         setIngestingSource(null)
       }
     },
-    [IngestKnowledgeSource, chatSession.chatModel, reloadVisibleItems, requestedBy],
+    [IngestKnowledgeSource, ingestModel, reloadVisibleItems, requestedBy],
   )
 
   const handleOpenFilePicker = useCallback(() => {
@@ -590,7 +591,7 @@ export default function VaultPage({ mode = 'explore' }: VaultPageProps) {
         setIngestingSource(null)
       }
     },
-    [IngestKnowledgeBatch, batchDraft, chatSession.chatModel, pageBusy, refreshVisibleItems, requestedBy],
+    [IngestKnowledgeBatch, batchDraft, ingestModel, pageBusy, refreshVisibleItems, requestedBy],
   )
 
   const handleIngestCommand = useCallback(
@@ -780,7 +781,7 @@ export default function VaultPage({ mode = 'explore' }: VaultPageProps) {
       ])
       return false
     }
-  }, [SaveKnowledgeQuery, chatSession.messages, chatSession.setMessages, chatSession.chatModel, pageBusy, reloadVisibleItems, requestedBy])
+  }, [SaveKnowledgeQuery, chatSession.messages, chatSession.setMessages, ingestModel, pageBusy, reloadVisibleItems, requestedBy])
 
   const vaultChatSession = {
     ...chatSession,

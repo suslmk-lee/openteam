@@ -46,11 +46,31 @@ type chatResponse struct {
 	} `json:"usage"`
 }
 
-func NewClient(apiKey, model string) *Client {
+func NewClient(apiKey, model string, baseURL ...string) *Client {
 	if model == "" {
 		model = "gpt-4o-mini"
 	}
-	return &Client{APIKey: apiKey, Model: model}
+
+	resolvedBaseURL := DefaultOpenAIBaseURL
+	if len(baseURL) > 0 {
+		if trimmed := strings.TrimSpace(baseURL[0]); trimmed != "" {
+			resolvedBaseURL = strings.TrimRight(trimmed, "/")
+		}
+	}
+
+	return &Client{
+		APIKey:  apiKey,
+		Model:   model,
+		BaseURL: resolvedBaseURL,
+	}
+}
+
+func (c *Client) chatCompletionsURL() string {
+	base := strings.TrimRight(strings.TrimSpace(c.BaseURL), "/")
+	if base == "" {
+		base = DefaultOpenAIBaseURL
+	}
+	return base + "/chat/completions"
 }
 
 func (c *Client) LastUsage() OpenAIUsage {
@@ -98,7 +118,7 @@ func (c *Client) GenerateReportSentence(source, section, category, title, summar
 	}
 
 	httpClient := &http.Client{Timeout: 20 * time.Second}
-	req, err := http.NewRequest(http.MethodPost, "https://api.openai.com/v1/chat/completions", bytes.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, c.chatCompletionsURL(), bytes.NewReader(body))
 	if err != nil {
 		return "", err
 	}
@@ -161,7 +181,7 @@ func (c *Client) GenerateGroupedReportSentence(section, category, topic string, 
 	}
 
 	httpClient := &http.Client{Timeout: 30 * time.Second}
-	req, err := http.NewRequest(http.MethodPost, "https://api.openai.com/v1/chat/completions", bytes.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, c.chatCompletionsURL(), bytes.NewReader(body))
 	if err != nil {
 		return "", err
 	}
@@ -276,7 +296,7 @@ func (c *Client) ChatCompletion(systemPrompt, userMessage string) (string, error
 		return "", err
 	}
 
-	req, err := http.NewRequest("POST", "https://api.openai.com/v1/chat/completions", bytes.NewReader(bodyBytes))
+	req, err := http.NewRequest("POST", c.chatCompletionsURL(), bytes.NewReader(bodyBytes))
 	if err != nil {
 		return "", err
 	}

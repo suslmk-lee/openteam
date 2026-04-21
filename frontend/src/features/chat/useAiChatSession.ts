@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useAppApi } from '../../hooks/useAppApi'
-import type { AiChatSession, ChatContextProvider, ChatMessage, ChatModel, ClaudeMeta } from './types'
+import type { AIProviderID, AISettings } from '../../services/appApi'
+import type { AiChatSession, ChatContextProvider, ChatMessage, ChatProvider, ClaudeMeta } from './types'
 
 function combineContext(systemPrompt: string, contextText: string) {
   return [systemPrompt.trim(), contextText.trim()].filter(Boolean).join('\n\n')
@@ -26,8 +27,11 @@ export function useAiChatSession(contextProvider: ChatContextProvider): AiChatSe
   const [cumInputTokens, setCumInputTokens] = useState(0)
   const [cumOutputTokens, setCumOutputTokens] = useState(0)
   const [cumCostUsd, setCumCostUsd] = useState(0)
-  const [showKeyInput, setShowKeyInput] = useState(false)
-  const [localKeyInput, setLocalKeyInput] = useState('')
+  const [providerDefaults, setProviderDefaults] = useState<Record<AIProviderID, string>>({
+    openai: DEFAULT_MODEL,
+    minimax: DEFAULT_MODEL,
+    claude_cli: '',
+  })
 
   function setApiKey(key: string) {
     setApiKeyState(key)
@@ -40,12 +44,20 @@ export function useAiChatSession(contextProvider: ChatContextProvider): AiChatSe
         localStorage.setItem('openai_api_key', key)
       }
     }
-  }
+    return globalProvider
+  }, [canOverride, overrideEnabled, chatProvider, globalProvider])
 
-  function saveKey() {
-    setApiKey(localKeyInput.trim())
-    setLocalKeyInput('')
-    setShowKeyInput(false)
+  const effectiveModel = useMemo(() => {
+    if (canOverride && overrideEnabled) {
+      return chatModel
+    }
+    return globalModel
+  }, [canOverride, overrideEnabled, chatModel, globalModel])
+
+  function setChatProvider(provider: ChatProvider) {
+    setChatProviderState(provider)
+    const fallback = providerDefaults[provider] || DEFAULT_MODEL
+    setChatModel(fallback)
   }
 
   function clearSession() {
@@ -56,8 +68,6 @@ export function useAiChatSession(contextProvider: ChatContextProvider): AiChatSe
     setCumInputTokens(0)
     setCumOutputTokens(0)
     setCumCostUsd(0)
-    setShowKeyInput(false)
-    setLocalKeyInput('')
   }
 
   function toggleMaximized() {
@@ -65,15 +75,55 @@ export function useAiChatSession(contextProvider: ChatContextProvider): AiChatSe
   }
 
   useEffect(() => {
-    CheckClaudeCLI()
-      .then(result => {
-        if (result.ok) {
-          setClaudeAvailable(true)
-          setChatModel('claude')
-        }
-      })
-      .catch(() => {})
-  }, [CheckClaudeCLI])
+    let cancelled = false
+
+    async function loadAISettings() {
+      let hasClaudeCLI = false
+      try {
+        const result = await CheckClaudeCLI()
+        hasClaudeCLI = Boolean(result.ok)
+      } catch {
+        hasClaudeCLI = false
+      }
+
+      let settings: AISettings
+      try {
+        settings = await GetAISettings()
+      } catch {
+        settings = fallbackSettings()
+      }
+
+      if (cancelled) return
+
+      setClaudeAvailable(hasClaudeCLI)
+
+      const defaults: Record<AIProviderID, string> = {
+        openai: providerModel(settings, 'openai'),
+        minimax: providerModel(settings, 'minimax'),
+        claude_cli: providerModel(settings, 'claude_cli'),
+      }
+      setProviderDefaults(defaults)
+
+      const providers = listAvailableProviders(settings, hasClaudeCLI)
+      const requestedDefault = normalizeProvider(settings.defaultProvider || DEFAULT_PROVIDER)
+      const nextGlobalProvider = providers.includes(requestedDefault) ? requestedDefault : providers[0]
+      const nextGlobalModel = providerModel(settings, nextGlobalProvider)
+      const nextCanOverride = Boolean(settings.policy?.chatAllowOverride)
+
+      setAvailableProviders(providers)
+      setGlobalProvider(nextGlobalProvider)
+      setGlobalModel(nextGlobalModel)
+      setCanOverride(nextCanOverride)
+      setOverrideEnabled(false)
+      setChatProviderState(nextGlobalProvider)
+      setChatModel(nextGlobalModel)
+    }
+
+    void loadAISettings()
+    return () => {
+      cancelled = true
+    }
+  }, [CheckClaudeCLI, GetAISettings])
 
   useEffect(() => {
     GetIntegrations()
@@ -170,16 +220,15 @@ export function useAiChatSession(contextProvider: ChatContextProvider): AiChatSe
       return false
     }
 
-    setShowKeyInput(false)
     const userMsg: ChatMessage = { role: 'user', content: trimmed }
-    const nextMessages = [...messages, userMsg]
-    setMessages(nextMessages)
+    const history = [...messages, userMsg]
+    setMessages(history)
     setSending(true)
 
     try {
       const context = await contextProvider(trimmed)
-      const combinedContext = combineContext(context.systemPrompt, context.contextText)
-      let reply = ''
+      const historyContext = buildConversationContext(messages)
+      const combinedContext = combineContext(context.systemPrompt, context.contextText, historyContext)
 
       if (chatModel === 'claude') {
         // Always pass retrieval context per turn so resumed Claude sessions stay grounded.
@@ -239,11 +288,18 @@ export function useAiChatSession(contextProvider: ChatContextProvider): AiChatSe
     sending,
     input,
     setInput,
-    apiKey,
-    setApiKey,
-    keyLoaded,
+    chatProvider,
+    setChatProvider,
     chatModel,
     setChatModel,
+    globalProvider,
+    globalModel,
+    effectiveProvider,
+    effectiveModel,
+    availableProviders,
+    canOverride,
+    overrideEnabled,
+    setOverrideEnabled,
     claudeAvailable,
     claudeSessionID,
     setClaudeSessionID,
@@ -255,11 +311,6 @@ export function useAiChatSession(contextProvider: ChatContextProvider): AiChatSe
     setCumInputTokens,
     setCumOutputTokens,
     setCumCostUsd,
-    showKeyInput,
-    setShowKeyInput,
-    localKeyInput,
-    setLocalKeyInput,
-    saveKey,
     handleSendText,
     handleClaudeSkill,
     clearSession,

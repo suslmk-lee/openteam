@@ -808,12 +808,12 @@ Linear 이슈 목록을 바탕으로 한국어 보고서용 문장을 작성하�
 		}
 	}
 
-	cfg, err := a.getOpenAIConfig()
+	cfg, err := a.getOpenAIConfigForFeature(ai.FeatureLinearSummary)
 	if err != nil || cfg == nil {
 		return "", fmt.Errorf("AI 설정이 없습니다. Claude CLI 설치 또는 OpenAI API Key를 설정해주세요")
 	}
 
-	client := ai.NewClient(cfg.APIKey, cfg.Model)
+	client := ai.NewClient(cfg.APIKey, cfg.Model, cfg.BaseURL)
 	reply, err := client.ChatCompletion(systemPrompt, userPrompt)
 	if err != nil {
 		return "", fmt.Errorf("OpenAI API 호출 실패: %w", err)
@@ -878,12 +878,12 @@ API ??蹂댁븞 媛뺥솕
 	}
 
 	// Fallback to OpenAI
-	cfg, err := a.getOpenAIConfig()
+	cfg, err := a.getOpenAIConfigForFeature(ai.FeatureLinearSummary)
 	if err != nil || cfg == nil {
 		return "", fmt.Errorf("AI ?ㅼ젙???놁뒿?덈떎. Claude CLI ?ㅼ튂 ?먮뒗 OpenAI API Key瑜??ㅼ젙?댁＜?몄슂")
 	}
 
-	client := ai.NewClient(cfg.APIKey, cfg.Model)
+	client := ai.NewClient(cfg.APIKey, cfg.Model, cfg.BaseURL)
 	reply, err := client.ChatCompletion(systemPrompt, userPrompt)
 	if err != nil {
 		return "", fmt.Errorf("OpenAI API ?몄텧 ?ㅽ뙣: %w", err)

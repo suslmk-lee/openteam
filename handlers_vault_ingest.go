@@ -418,7 +418,7 @@ func defaultIngestKnowledgeExtractor(app *App, src *ingestSource) (*ingestStruct
 		if cfg == nil {
 			return nil, fmt.Errorf("openai config is not available")
 		}
-		client := ai.NewClient(cfg.APIKey, cfg.Model)
+		client := ai.NewClient(cfg.APIKey, cfg.Model, cfg.BaseURL)
 		raw, err = client.ChatCompletion("Return strict JSON only.", prompt)
 		if err != nil {
 			return nil, err

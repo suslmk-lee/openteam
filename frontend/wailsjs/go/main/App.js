@@ -50,6 +50,10 @@ export function AutoMapLinearMembers() {
   return window['go']['main']['App']['AutoMapLinearMembers']();
 }
 
+export function ChatWithAI(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['ChatWithAI'](arg1, arg2, arg3, arg4);
+}
+
 export function CheckClaudeCLI() {
   return window['go']['main']['App']['CheckClaudeCLI']();
 }

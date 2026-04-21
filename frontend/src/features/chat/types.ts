@@ -1,4 +1,5 @@
 import type { Dispatch, SetStateAction } from 'react'
+import type { AIProviderID } from '../../services/appApi'
 
 export type ChatRole = 'user' | 'assistant'
 export type ChatModel = 'openai' | 'claude' | 'minimax'
@@ -51,11 +52,18 @@ export interface AiChatSession {
   sending: boolean
   input: string
   setInput: Dispatch<SetStateAction<string>>
-  apiKey: string
-  setApiKey: (key: string) => void
-  keyLoaded: boolean
-  chatModel: ChatModel
-  setChatModel: (model: ChatModel) => void
+  chatProvider: ChatProvider
+  setChatProvider: (provider: ChatProvider) => void
+  chatModel: string
+  setChatModel: Dispatch<SetStateAction<string>>
+  globalProvider: ChatProvider
+  globalModel: string
+  effectiveProvider: ChatProvider
+  effectiveModel: string
+  availableProviders: ChatProvider[]
+  canOverride: boolean
+  overrideEnabled: boolean
+  setOverrideEnabled: Dispatch<SetStateAction<boolean>>
   claudeAvailable: boolean
   claudeSessionID: string
   setClaudeSessionID: Dispatch<SetStateAction<string>>
@@ -67,11 +75,6 @@ export interface AiChatSession {
   setCumInputTokens: Dispatch<SetStateAction<number>>
   setCumOutputTokens: Dispatch<SetStateAction<number>>
   setCumCostUsd: Dispatch<SetStateAction<number>>
-  showKeyInput: boolean
-  setShowKeyInput: Dispatch<SetStateAction<boolean>>
-  localKeyInput: string
-  setLocalKeyInput: Dispatch<SetStateAction<string>>
-  saveKey: () => void
   handleSendText: (text: string) => Promise<boolean>
   handleClaudeSkill: (cmd: string) => Promise<void>
   clearSession: () => void

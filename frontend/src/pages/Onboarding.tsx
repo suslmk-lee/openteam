@@ -108,7 +108,7 @@ export default function Onboarding() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center p-6">
+    <div className="h-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center p-6 overflow-y-auto">
       <div className="w-full max-w-2xl">
         {/* Progress indicator */}
         <div className="flex items-center justify-center gap-2 mb-8">

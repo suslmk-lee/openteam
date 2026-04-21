@@ -47,6 +47,10 @@ const TOOL_OPTIONS = [
   { type: 'jira', label: 'Jira', description: 'REST API' },
 ]
 
+const OPENAI_MODEL_OPTIONS = ['gpt-5.4-mini', 'gpt-5.4', 'gpt-5.3-codex', 'gpt-4o-mini']
+const MINIMAX_MODEL_OPTIONS = ['MiniMax-M2.7', 'MiniMax-M2.5']
+const MINIMAX_USAGE_ENDPOINT_DEFAULT = 'https://www.minimax.io/v1/token_plan/remains'
+
 type SettingsSection = 'user' | 'template' | 'integrations' | 'categories' | 'team-profile'
 
 export default function Settings({ section = 'user' }: { section?: SettingsSection }) {
@@ -89,6 +93,11 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
   const [openAIApiKey, setOpenAIApiKey] = useState('')
   const [openAIModel, setOpenAIModel] = useState('gpt-4o-mini')
   const [openAIEnabled, setOpenAIEnabled] = useState(false)
+  const [miniMaxApiKey, setMiniMaxApiKey] = useState('')
+  const [miniMaxModel, setMiniMaxModel] = useState('MiniMax-M2.7')
+  const [miniMaxBaseUrl, setMiniMaxBaseUrl] = useState('https://api.minimax.io/v1')
+  const [miniMaxUsageEndpoint, setMiniMaxUsageEndpoint] = useState(MINIMAX_USAGE_ENDPOINT_DEFAULT)
+  const [miniMaxEnabled, setMiniMaxEnabled] = useState(false)
 
   // Google Calendar settings
   const [availableCalendars, setAvailableCalendars] = useState<Array<{id: string, summary: string, primary?: boolean}>>([])
@@ -226,6 +235,23 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
         } catch {
           setOpenAIApiKey('')
           setOpenAIModel('gpt-4o-mini')
+        }
+      }
+
+      const miniMaxInt = (ints || []).find((i: Integration) => i.toolType === 'minimax')
+      if (miniMaxInt) {
+        setMiniMaxEnabled(!!miniMaxInt.enabled)
+        try {
+          const config = JSON.parse(miniMaxInt.configJson || '{}')
+          setMiniMaxApiKey(config.apiKey || '')
+          setMiniMaxModel(config.model || 'MiniMax-M2.7')
+          setMiniMaxBaseUrl(config.baseUrl || 'https://api.minimax.io/v1')
+          setMiniMaxUsageEndpoint(config.usageEndpoint || MINIMAX_USAGE_ENDPOINT_DEFAULT)
+        } catch {
+          setMiniMaxApiKey('')
+          setMiniMaxModel('MiniMax-M2.7')
+          setMiniMaxBaseUrl('https://api.minimax.io/v1')
+          setMiniMaxUsageEndpoint(MINIMAX_USAGE_ENDPOINT_DEFAULT)
         }
       }
     } catch (err) {
@@ -465,7 +491,161 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
 
           {section === 'integrations' && (
           <>
-          <AISettingsSection onSaved={() => showStatus('AI 설정이 저장되었습니다')} />
+          <section className="bg-white dark:bg-[var(--color-card)] border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+            <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100 mb-2">OpenAI 보고서 작성</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
+              메일 활동을 보고서 문장으로 자동 작성합니다. API Key는 로컬 DB에 저장됩니다.
+            </p>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm text-slate-600 dark:text-slate-300 mb-1">OpenAI API Key</label>
+                <input
+                  type="password"
+                  placeholder="sk-..."
+                  value={openAIApiKey}
+                  onChange={e => setOpenAIApiKey(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-slate-600 dark:text-slate-300 mb-1">Model</label>
+                <select
+                  value={openAIModel}
+                  onChange={e => setOpenAIModel(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {OPENAI_MODEL_OPTIONS.map(model => (
+                    <option key={model} value={model}>{model}</option>
+                  ))}
+                </select>
+              </div>
+
+              <label className="inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+                <input
+                  type="checkbox"
+                  checked={openAIEnabled}
+                  onChange={e => setOpenAIEnabled(e.target.checked)}
+                  className="rounded border-slate-300"
+                />
+                메일 보고서 작성에 OpenAI 사용
+              </label>
+
+              <div className="pt-1">
+                <button
+                  onClick={async () => {
+                    try {
+                      const configJson = JSON.stringify({
+                        apiKey: openAIApiKey.trim(),
+                        model: (openAIModel || 'gpt-4o-mini').trim(),
+                      })
+                      await SaveIntegration('openai', configJson, openAIEnabled)
+                      showStatus('OpenAI 설정이 저장되었습니다')
+                      const ints = await GetIntegrations()
+                      setIntegrations(ints || [])
+                    } catch (err) {
+                      console.error('Failed to save OpenAI config:', err)
+                    }
+                  }}
+                  className="px-4 py-2 text-sm bg-blue-600 text-white hover:bg-blue-700 rounded-lg transition-colors"
+                >
+                  OpenAI 설정 저장
+                </button>
+              </div>
+            </div>
+          </section>
+          <section className="bg-white dark:bg-[var(--color-card)] border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+            <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100 mb-2">MiniMax 채팅 설정</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
+              채팅/지식기반 대화에서 MiniMax API를 사용합니다. API Key와 모델을 설정하면 채팅 모델 선택에서 사용할 수 있습니다.
+            </p>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm text-slate-600 dark:text-slate-300 mb-1">MiniMax API Key</label>
+                <input
+                  type="password"
+                  placeholder="minimax-..."
+                  value={miniMaxApiKey}
+                  onChange={e => setMiniMaxApiKey(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-slate-600 dark:text-slate-300 mb-1">Model</label>
+                <select
+                  value={miniMaxModel}
+                  onChange={e => setMiniMaxModel(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {MINIMAX_MODEL_OPTIONS.map(model => (
+                    <option key={model} value={model}>{model}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm text-slate-600 dark:text-slate-300 mb-1">Base URL</label>
+                <input
+                  type="text"
+                  placeholder="https://api.minimax.io/v1"
+                  value={miniMaxBaseUrl}
+                  onChange={e => setMiniMaxBaseUrl(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-slate-600 dark:text-slate-300 mb-1">Usage Endpoint</label>
+                <input
+                  type="text"
+                  placeholder={MINIMAX_USAGE_ENDPOINT_DEFAULT}
+                  value={miniMaxUsageEndpoint}
+                  onChange={e => setMiniMaxUsageEndpoint(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                  개인 AI 통합 사용량 수집 시 MiniMax 계정 사용량 API 호출에 사용됩니다.
+                </p>
+              </div>
+
+              <label className="inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+                <input
+                  type="checkbox"
+                  checked={miniMaxEnabled}
+                  onChange={e => setMiniMaxEnabled(e.target.checked)}
+                  className="rounded border-slate-300"
+                />
+                채팅에서 MiniMax 사용
+              </label>
+
+              <div className="pt-1">
+                <button
+                  onClick={async () => {
+                    try {
+                      const configJson = JSON.stringify({
+                        apiKey: miniMaxApiKey.trim(),
+                        model: (miniMaxModel || 'MiniMax-M2.7').trim(),
+                        baseUrl: (miniMaxBaseUrl || 'https://api.minimax.io/v1').trim(),
+                        usageEndpoint: (miniMaxUsageEndpoint || MINIMAX_USAGE_ENDPOINT_DEFAULT).trim(),
+                      })
+                      await SaveIntegration('minimax', configJson, miniMaxEnabled)
+                      showStatus('MiniMax 설정이 저장되었습니다')
+                      const ints = await GetIntegrations()
+                      setIntegrations(ints || [])
+                    } catch (err) {
+                      console.error('Failed to save MiniMax config:', err)
+                    }
+                  }}
+                  className="px-4 py-2 text-sm bg-blue-600 text-white hover:bg-blue-700 rounded-lg transition-colors"
+                >
+                  MiniMax 설정 저장
+                </button>
+              </div>
+            </div>
+          </section>
 
           <section className="bg-white dark:bg-[var(--color-card)] border border-slate-200 dark:border-slate-700 rounded-xl p-6">
             <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100 mb-4">Google 연동 (gws)</h3>

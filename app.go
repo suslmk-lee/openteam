@@ -6,6 +6,8 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
+	"time"
 
 	"openreport/internal/db"
 )
@@ -20,6 +22,13 @@ type App struct {
 	report    *ReportService
 	team      *TeamService
 	external  *ExternalService
+
+	personalCollectMu     sync.RWMutex
+	personalCollectStatus db.PersonalAICollectStatus
+	personalAutoCancel    context.CancelFunc
+
+	aiHistoryRetentionMu  sync.Mutex
+	aiHistoryRetentionDay string
 }
 
 func NewApp() *App {
@@ -55,6 +64,9 @@ func (a *App) startup(ctx context.Context) {
 				a.vaultRoot = root
 			}
 		}
+		if retentionErr := a.maybeEnforceAIUsageHistoryRetention(user.ID, time.Now()); retentionErr != nil {
+			log.Printf("Warning: failed to apply AI history retention: %v", retentionErr)
+		}
 	}
 
 	if count, err := a.RefreshVault(); err != nil {
@@ -63,10 +75,15 @@ func (a *App) startup(ctx context.Context) {
 		log.Printf("Vault cache initialized with %d items", count)
 	}
 
+	if err := a.bootstrapPersonalAIAutoCollect(); err != nil {
+		log.Printf("Warning: failed to bootstrap personal AI auto collection: %v", err)
+	}
+
 	log.Println("OpenReport started. Data dir:", a.dataDir)
 }
 
 func (a *App) shutdown(ctx context.Context) {
+	a.stopPersonalAIAutoCollectWorker()
 	if a.database != nil {
 		a.database.Close()
 	}

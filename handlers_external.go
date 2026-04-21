@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"time"
 
 	"openreport/internal/ai"
 	"openreport/internal/db"
@@ -526,9 +527,9 @@ func (a *App) ClaudeChatWithSession(prompt, systemContext, sessionID string) (Cl
 		return ClaudeChatResult{}, fmt.Errorf("claude CLI ?묐떟 ?뚯떛 ?ㅽ뙣")
 	}
 	if found.IsError {
-		return ClaudeChatResult{}, fmt.Errorf("claude CLI ?ㅻ쪟: %s", found.Result)
+		return ClaudeChatResult{}, fmt.Errorf("claude CLI 오류: %s", found.Result)
 	}
-	return ClaudeChatResult{
+	result := ClaudeChatResult{
 		Reply:        strings.TrimSpace(found.Result),
 		SessionID:    found.SessionID,
 		Model:        model,
@@ -538,7 +539,20 @@ func (a *App) ClaudeChatWithSession(prompt, systemContext, sessionID string) (Cl
 		CacheRead:    found.Usage.CacheReadInputTokens,
 		CacheCreate:  found.Usage.CacheCreationInputTokens,
 		CostUSD:      found.TotalCostUSD,
-	}, nil
+	}
+	_ = a.trackAIUsage(aiUsageEvent{
+		ProviderCode:      "claude",
+		ModelCode:         result.Model,
+		Feature:           "chat",
+		RequestCount:      1,
+		InputTokens:       int64(result.InputTokens),
+		OutputTokens:      int64(result.OutputTokens),
+		CacheReadTokens:   int64(result.CacheRead),
+		CacheCreateTokens: int64(result.CacheCreate),
+		PaygCostUSD:       result.CostUSD,
+		OccurredAt:        time.Now(),
+	})
+	return result, nil
 }
 
 // SkillCommand represents a single slash command discovered in a Claude skill.
@@ -804,6 +818,7 @@ Linear 이슈 목록을 바탕으로 한국어 보고서용 문장을 작성하�
 	if err != nil {
 		return "", fmt.Errorf("OpenAI API 호출 실패: %w", err)
 	}
+	a.trackOpenAIUsageFromClient(client, "linear_report")
 
 	normalized := normalizeLinearNarrativeContent(reply)
 	if looksLikeEncodingIssueReply(normalized) {
@@ -873,6 +888,7 @@ API ??蹂댁븞 媛뺥솕
 	if err != nil {
 		return "", fmt.Errorf("OpenAI API ?몄텧 ?ㅽ뙣: %w", err)
 	}
+	a.trackOpenAIUsageFromClient(client, "linear_report")
 
 	return normalizeNarrativeContent(reply), nil
 }

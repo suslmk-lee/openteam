@@ -15,6 +15,8 @@ export function AddEmploymentType(arg1:string):Promise<void>;
 
 export function AddManualActivity(arg1:string,arg2:string,arg3:string):Promise<db.Activity>;
 
+export function AddPersonalAIManualUsage(arg1:string,arg2:string,arg3:string,arg4:number,arg5:number,arg6:number):Promise<void>;
+
 export function AddPositionType(arg1:string):Promise<void>;
 
 export function AddProjectCategory(arg1:string):Promise<void>;
@@ -38,6 +40,14 @@ export function CheckGWSCLI():Promise<main.StatusResult>;
 export function ClaudeChat(arg1:string,arg2:string):Promise<string>;
 
 export function ClaudeChatWithSession(arg1:string,arg2:string,arg3:string):Promise<main.ClaudeChatResult>;
+
+export function CollectPersonalAIUsage(arg1:string):Promise<db.PersonalAICollectorResponse>;
+
+export function DeleteAIBillingPlan(arg1:number):Promise<void>;
+
+export function DeleteAIModel(arg1:number):Promise<void>;
+
+export function DeleteAIProvider(arg1:number):Promise<void>;
 
 export function DeleteAttendanceRecord(arg1:number):Promise<void>;
 
@@ -68,6 +78,8 @@ export function DeleteTeamMember(arg1:number):Promise<void>;
 export function ExportWeeklyReport(arg1:number):Promise<string>;
 
 export function GetAISettings():Promise<ai.Settings>;
+
+export function GetAIUsageDashboard(arg1:string):Promise<db.AIUsageDashboard>;
 
 export function GetAttendanceSummary(arg1:string,arg2:string):Promise<Array<db.AttendanceSummary>>;
 
@@ -104,6 +116,16 @@ export function GetMyAttendanceSummary(arg1:string,arg2:string):Promise<db.MyAtt
 export function GetMyLinearIssues():Promise<Array<main.LinearIssue>>;
 
 export function GetOrCreateWeeklyReport(arg1:string,arg2:string):Promise<db.WeeklyReport>;
+
+export function GetPersonalAIAutoCollect():Promise<db.PersonalAIAutoCollectConfig>;
+
+export function GetPersonalAIUsageCollectionStatus():Promise<db.PersonalAICollectStatus>;
+
+export function GetPersonalAIUsageDashboard(arg1:string):Promise<db.PersonalAIUsageDashboard>;
+
+export function GetPersonalAIUsageHistory(arg1:string,arg2:number):Promise<Array<db.AIUsageHistoryEvent>>;
+
+export function GetPersonalAIUsageTodayUsage():Promise<db.PersonalAIUsageTodayUsage>;
 
 export function GetPositionTypes():Promise<Array<string>>;
 
@@ -145,6 +167,12 @@ export function IngestKnowledgeBatch(arg1:string,arg2:Array<string>,arg3:string,
 
 export function IngestKnowledgeSource(arg1:string,arg2:string,arg3:string,arg4:string):Promise<db.IngestResult>;
 
+export function ListAIBillingPlans():Promise<Array<db.AIBillingPlan>>;
+
+export function ListAIModels():Promise<Array<db.AIModel>>;
+
+export function ListAIProviders():Promise<Array<db.AIProvider>>;
+
 export function ListActivitiesByDateRange(arg1:string,arg2:string):Promise<Array<db.Activity>>;
 
 export function ListAttendanceRecords(arg1:number,arg2:string,arg3:string):Promise<Array<db.AttendanceRecord>>;
@@ -167,6 +195,10 @@ export function ListWeeklyReports():Promise<Array<db.WeeklyReport>>;
 
 export function LookupLinearViewer(arg1:string):Promise<Record<string, string>>;
 
+export function MiniMaxChatWithMessages(arg1:string,arg2:Array<main.OpenAIChatMessage>):Promise<main.OpenAIChatResult>;
+
+export function OpenAIChatWithMessages(arg1:string,arg2:Array<main.OpenAIChatMessage>):Promise<main.OpenAIChatResult>;
+
 export function OpenFile(arg1:string):Promise<void>;
 
 export function PopulateReportFromLinear(arg1:number,arg2:string,arg3:string):Promise<number>;
@@ -179,11 +211,19 @@ export function PreprocessReportItemsWithAI(arg1:number):Promise<main.SyncResult
 
 export function RefineMarkdownWithAI(arg1:string):Promise<string>;
 
+export function RefreshUSDKRWRate(arg1:string):Promise<db.AIFXRate>;
+
 export function RefreshVault():Promise<number>;
 
 export function RetrieveVaultContext(arg1:string,arg2:number):Promise<Array<db.VaultReference>>;
 
 export function RunKnowledgeBaseLint():Promise<db.IngestResult>;
+
+export function SaveAIBillingPlan(arg1:number,arg2:number,arg3:number,arg4:number,arg5:number,arg6:number,arg7:number,arg8:number,arg9:string,arg10:string):Promise<db.AIBillingPlan>;
+
+export function SaveAIModel(arg1:number,arg2:number,arg3:string,arg4:string,arg5:boolean):Promise<db.AIModel>;
+
+export function SaveAIProvider(arg1:number,arg2:string,arg3:string,arg4:boolean):Promise<db.AIProvider>;
 
 export function SaveAISettings(arg1:ai.Settings):Promise<void>;
 
@@ -215,9 +255,13 @@ export function ScanClaudeSkills():Promise<Array<main.SkillCommand>>;
 
 export function SearchVault(arg1:string):Promise<Array<db.VaultItem>>;
 
+export function SetPersonalAIAutoCollect(arg1:boolean,arg2:number):Promise<db.PersonalAIAutoCollectConfig>;
+
 export function SetupGWSAuth():Promise<string>;
 
 export function SetupTeamProfile(arg1:string,arg2:string,arg3:string,arg4:number):Promise<void>;
+
+export function StartPersonalAIUsageCollection(arg1:string):Promise<db.PersonalAICollectStatus>;
 
 export function SyncAll(arg1:string,arg2:string):Promise<Array<main.SyncResult>>;
 

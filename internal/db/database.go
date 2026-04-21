@@ -265,6 +265,92 @@ func (d *Database) migrate() error {
 			FOREIGN KEY(parent_id) REFERENCES vault_items(id)
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_vault_items_parent_id ON vault_items(parent_id)`,
+		`CREATE TABLE IF NOT EXISTS ai_providers (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id INTEGER NOT NULL REFERENCES users(id),
+			code TEXT NOT NULL,
+			display_name TEXT NOT NULL,
+			enabled INTEGER NOT NULL DEFAULT 1,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(user_id, code)
+		)`,
+		`CREATE TABLE IF NOT EXISTS ai_models (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id INTEGER NOT NULL REFERENCES users(id),
+			provider_id INTEGER NOT NULL REFERENCES ai_providers(id),
+			model_code TEXT NOT NULL,
+			display_name TEXT NOT NULL,
+			enabled INTEGER NOT NULL DEFAULT 1,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(user_id, provider_id, model_code)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_ai_models_provider ON ai_models(provider_id)`,
+		`CREATE TABLE IF NOT EXISTS ai_billing_plans (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id INTEGER NOT NULL REFERENCES users(id),
+			provider_id INTEGER NOT NULL REFERENCES ai_providers(id),
+			model_id INTEGER REFERENCES ai_models(id),
+			monthly_fixed_usd REAL NOT NULL DEFAULT 0,
+			included_input_tokens INTEGER NOT NULL DEFAULT 0,
+			included_output_tokens INTEGER NOT NULL DEFAULT 0,
+			overage_input_per_1k_usd REAL NOT NULL DEFAULT 0,
+			overage_output_per_1k_usd REAL NOT NULL DEFAULT 0,
+			effective_from DATE NOT NULL,
+			effective_to DATE,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_ai_billing_plans_lookup
+			ON ai_billing_plans(user_id, provider_id, model_id, effective_from, effective_to)`,
+		`CREATE TABLE IF NOT EXISTS ai_usage_daily (
+			day DATE NOT NULL,
+			user_id INTEGER NOT NULL REFERENCES users(id),
+			provider_id INTEGER NOT NULL DEFAULT 0,
+			model_id INTEGER NOT NULL DEFAULT 0,
+			raw_provider TEXT NOT NULL DEFAULT '',
+			raw_model TEXT NOT NULL DEFAULT '',
+			feature TEXT NOT NULL DEFAULT 'unknown',
+			request_count INTEGER NOT NULL DEFAULT 0,
+			input_tokens INTEGER NOT NULL DEFAULT 0,
+			output_tokens INTEGER NOT NULL DEFAULT 0,
+			cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+			cache_create_tokens INTEGER NOT NULL DEFAULT 0,
+			payg_cost_usd REAL NOT NULL DEFAULT 0,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY(day, user_id, provider_id, model_id, raw_provider, raw_model, feature)
+		)`,
+		`CREATE TABLE IF NOT EXISTS ai_usage_history_events (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			occurred_at DATETIME NOT NULL,
+			day DATE NOT NULL,
+			user_id INTEGER NOT NULL REFERENCES users(id),
+			provider_id INTEGER NOT NULL DEFAULT 0,
+			model_id INTEGER NOT NULL DEFAULT 0,
+			raw_provider TEXT NOT NULL DEFAULT '',
+			raw_model TEXT NOT NULL DEFAULT '',
+			feature TEXT NOT NULL DEFAULT 'unknown',
+			request_count INTEGER NOT NULL DEFAULT 0,
+			input_tokens INTEGER NOT NULL DEFAULT 0,
+			output_tokens INTEGER NOT NULL DEFAULT 0,
+			cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+			cache_create_tokens INTEGER NOT NULL DEFAULT 0,
+			payg_cost_usd REAL NOT NULL DEFAULT 0,
+			metadata_json TEXT NOT NULL DEFAULT '',
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE IF NOT EXISTS ai_fx_rates (
+			day DATE NOT NULL,
+			base TEXT NOT NULL,
+			quote TEXT NOT NULL,
+			rate REAL NOT NULL,
+			source TEXT NOT NULL DEFAULT 'manual',
+			fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY(day, base, quote)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_ai_usage_daily_month ON ai_usage_daily(user_id, day)`,
+		`CREATE INDEX IF NOT EXISTS idx_ai_usage_history_events_user_day ON ai_usage_history_events(user_id, day)`,
+		`CREATE INDEX IF NOT EXISTS idx_ai_usage_history_events_user_occurred ON ai_usage_history_events(user_id, occurred_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_ai_usage_history_events_feature ON ai_usage_history_events(user_id, feature)`,
 	}
 
 	for _, m := range migrations {

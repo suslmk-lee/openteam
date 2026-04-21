@@ -197,7 +197,24 @@ function providerDisplayName(code: string) {
   }
 }
 
-function useAnimatedNumber(target: number, durationMs = 700) {
+type AnimatedNumberOptions = {
+  durationMs?: number
+  integer?: boolean
+  maxAnimatedDelta?: number
+}
+
+function digitLength(value: number) {
+  const abs = Math.abs(Math.round(value))
+  if (abs === 0) return 1
+  return Math.floor(Math.log10(abs)) + 1
+}
+
+function useAnimatedNumber(target: number, options: AnimatedNumberOptions = {}) {
+  const {
+    durationMs = 700,
+    integer = false,
+    maxAnimatedDelta = 200000,
+  } = options
   const [value, setValue] = useState(target)
   const fromRef = useRef(target)
   const rafRef = useRef<number | null>(null)
@@ -211,6 +228,15 @@ function useAnimatedNumber(target: number, durationMs = 700) {
       setValue(to)
       return
     }
+    if (integer) {
+      const delta = Math.abs(to - from)
+      const digitGap = Math.abs(digitLength(to) - digitLength(from))
+      if (delta > maxAnimatedDelta || digitGap >= 2) {
+        fromRef.current = to
+        setValue(Math.round(to))
+        return
+      }
+    }
 
     if (rafRef.current) {
       window.cancelAnimationFrame(rafRef.current)
@@ -222,13 +248,16 @@ function useAnimatedNumber(target: number, durationMs = 700) {
       if (startRef.current === 0) startRef.current = ts
       const elapsed = ts - startRef.current
       const progress = Math.max(0, Math.min(1, elapsed / durationMs))
-      const eased = 1 - Math.pow(1 - progress, 3)
+      const eased = progress < 0.5
+        ? 4 * Math.pow(progress, 3)
+        : 1 - Math.pow(-2 * progress + 2, 3) / 2
       const next = from + (to - from) * eased
-      setValue(next)
+      setValue(integer ? Math.round(next) : next)
       if (progress < 1) {
         rafRef.current = window.requestAnimationFrame(step)
       } else {
         fromRef.current = to
+        setValue(integer ? Math.round(to) : to)
         rafRef.current = null
       }
     }
@@ -241,7 +270,7 @@ function useAnimatedNumber(target: number, durationMs = 700) {
         rafRef.current = null
       }
     }
-  }, [target, durationMs])
+  }, [target, durationMs, integer, maxAnimatedDelta])
 
   return value
 }
@@ -780,9 +809,9 @@ export default function PersonalAIUsage() {
         {dashboard && (
           <>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-3 lg:grid-cols-5">
-              <Card title="총 요청" numericValue={dashboard.overview.requestCount} formatter={formatCount} />
-              <Card title="내부 입력 토큰" numericValue={dashboard.overview.internalInputTokens} formatter={formatCount} />
-              <Card title="외부 입력 토큰" numericValue={dashboard.overview.externalInputTokens} formatter={formatCount} />
+              <Card title="총 요청" numericValue={dashboard.overview.requestCount} formatter={formatCount} integerAnimation />
+              <Card title="내부 입력 토큰" numericValue={dashboard.overview.internalInputTokens} formatter={formatCount} integerAnimation />
+              <Card title="외부 입력 토큰" numericValue={dashboard.overview.externalInputTokens} formatter={formatCount} integerAnimation />
               <Card title="총 비용 (USD)" numericValue={dashboard.overview.totalCostUsd} formatter={formatUsd} />
               <Card title="총 비용 (KRW)" numericValue={dashboard.overview.totalCostKrw} formatter={formatKrw} />
             </div>
@@ -942,10 +971,10 @@ export default function PersonalAIUsage() {
                     <p className="text-xs text-slate-500">USDKRW: {(todayUsage?.fxRateUsed || 0).toFixed(2)} {todayUsage?.fxFallbackUsed ? '(fallback)' : ''}</p>
                   </div>
                   <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6">
-                    <Card title="오늘 요청" numericValue={todayTotals.requestCount} formatter={formatCount} />
-                    <Card title="오늘 입력" numericValue={todayTotals.inputTokens} formatter={formatCount} />
-                    <Card title="오늘 출력" numericValue={todayTotals.outputTokens} formatter={formatCount} />
-                    <Card title="오늘 총 토큰" numericValue={todayTotals.totalTokens} formatter={formatCount} />
+                    <Card title="오늘 요청" numericValue={todayTotals.requestCount} formatter={formatCount} integerAnimation />
+                    <Card title="오늘 입력" numericValue={todayTotals.inputTokens} formatter={formatCount} integerAnimation />
+                    <Card title="오늘 출력" numericValue={todayTotals.outputTokens} formatter={formatCount} integerAnimation />
+                    <Card title="오늘 총 토큰" numericValue={todayTotals.totalTokens} formatter={formatCount} integerAnimation />
                     <Card title="오늘 비용 (USD)" numericValue={todayTotals.paygCostUsd} formatter={formatUsd} />
                     <Card title="오늘 비용 (KRW)" numericValue={todayTotals.paygCostKrw} formatter={formatKrw} />
                   </div>
@@ -1146,21 +1175,47 @@ function Card({
   value,
   numericValue,
   formatter,
+  integerAnimation,
 }: {
   title: string
   value?: string
   numericValue?: number
   formatter?: (value: number) => string
+  integerAnimation?: boolean
 }) {
-  const animated = useAnimatedNumber(Number(numericValue ?? 0), 800)
+  const animated = useAnimatedNumber(Number(numericValue ?? 0), {
+    durationMs: 980,
+    integer: !!integerAnimation,
+  })
+  const displayNumeric = integerAnimation ? Math.round(animated) : animated
   const displayValue = typeof numericValue === 'number'
-    ? (formatter ? formatter(animated) : String(Math.round(animated)))
+    ? (formatter ? formatter(displayNumeric) : String(Math.round(displayNumeric)))
     : (value || '-')
+  const [renderedValue, setRenderedValue] = useState(displayValue)
+  const [previousValue, setPreviousValue] = useState<string | null>(null)
+  const [valueAnimating, setValueAnimating] = useState(false)
+
+  useEffect(() => {
+    if (displayValue === renderedValue) return
+    setPreviousValue(renderedValue)
+    setRenderedValue(displayValue)
+    setValueAnimating(true)
+    const timer = window.setTimeout(() => {
+      setPreviousValue(null)
+      setValueAnimating(false)
+    }, 420)
+    return () => window.clearTimeout(timer)
+  }, [displayValue, renderedValue])
 
   return (
     <div className="rounded-xl border border-slate-700/70 bg-[#0b1220]/85 p-3 shadow-[0_0_0_1px_rgba(148,163,184,0.08)]">
       <p className="text-xs text-slate-400">{title}</p>
-      <p className="mt-1 text-lg font-semibold text-slate-100">{displayValue}</p>
+      <p className="metric-value-stack mt-1 text-lg font-semibold text-slate-100">
+        {previousValue && (
+          <span className="metric-value-leave">{previousValue}</span>
+        )}
+        <span className={valueAnimating ? 'metric-value-enter' : ''}>{renderedValue}</span>
+      </p>
     </div>
   )
 }
@@ -1364,7 +1419,7 @@ function PieChartPanel({ title, subtitle, items }: { title: string; subtitle: st
   const [hoverOpen, setHoverOpen] = useState(false)
   const [hoverPos, setHoverPos] = useState({ x: 0, y: 0 })
   const total = items.reduce((sum, item) => sum + item.value, 0)
-  const animatedTotal = useAnimatedNumber(total, 900)
+  const animatedTotal = useAnimatedNumber(total, { durationMs: 900, integer: true })
   const rankedItems = [...items].sort((a, b) => b.value - a.value)
   const gradient = items.length > 0
     ? (() => {
@@ -1890,4 +1945,3 @@ function WebGLMotionPanel({ enabled, metric, profile }: { enabled: boolean; metr
     </div>
   )
 }
-

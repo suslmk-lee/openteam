@@ -29,14 +29,27 @@ import { useShellLayout } from '../contexts/ShellLayoutContext'
 
 export default function Layout() {
   const { sidebarCollapsed: collapsed } = useShellLayout()
-  const [teamMenuOpen, setTeamMenuOpen] = useState(false)
-  const [vaultMenuOpen, setVaultMenuOpen] = useState(false)
-  const [reportMenuOpen, setReportMenuOpen] = useState(false)
-  const [workDataMenuOpen, setWorkDataMenuOpen] = useState(false)
-  const [settingsMenuOpen, setSettingsMenuOpen] = useState(false)
+  const [openMenu, setOpenMenu] = useState<null | 'vault' | 'report' | 'team' | 'workData' | 'settings'>(null)
   const { profile, loading } = useTeamProfile()
   const navigate = useNavigate()
   const location = useLocation()
+
+  const vaultMenuOpen = openMenu === 'vault'
+  const reportMenuOpen = openMenu === 'report'
+  const teamMenuOpen = openMenu === 'team'
+  const workDataMenuOpen = openMenu === 'workData'
+  const settingsMenuOpen = openMenu === 'settings'
+
+  const setOnlyMenu = (menu: 'vault' | 'report' | 'team' | 'workData' | 'settings') => {
+    setOpenMenu(prev => (prev === menu ? null : menu))
+  }
+
+  const subMenuTransitionStyle = (open: boolean) => ({
+    maxHeight: open ? '28rem' : '0px',
+    opacity: open ? 1 : 0,
+    transform: open ? 'translateY(0)' : 'translateY(-4px)',
+    pointerEvents: open ? 'auto' : 'none',
+  })
 
   // Redirect to onboarding if not setup
   useEffect(() => {
@@ -49,7 +62,7 @@ export default function Layout() {
 
   useEffect(() => {
     if (location.pathname.startsWith('/vault')) {
-      setVaultMenuOpen(true)
+      setOpenMenu('vault')
     }
   }, [location.pathname])
 
@@ -134,7 +147,7 @@ export default function Layout() {
               <button
                 type="button"
                 aria-label="지식베이스 메뉴"
-                onClick={() => setVaultMenuOpen(prev => !prev)}
+                onClick={() => setOnlyMenu('vault')}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
                   vaultMenuOpen ? 'bg-slate-700 dark:bg-slate-600 text-white' : 'text-slate-300 hover:bg-slate-700 dark:hover:bg-slate-600 hover:text-white dark:text-slate-300'
                 }`}
@@ -144,8 +157,10 @@ export default function Layout() {
                 {vaultMenuOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
               </button>
 
-              {vaultMenuOpen && (
-                <div className="ml-2 space-y-1 border-l-2 border-slate-700 pl-2">
+              <div
+                className="ml-2 space-y-1 border-l-2 border-slate-700 pl-2 overflow-hidden transition-all duration-300 ease-in-out"
+                style={subMenuTransitionStyle(vaultMenuOpen)}
+              >
                   <SidebarLink
                     to="/vault/explore"
                     icon={<BookOpen size={18} />}
@@ -160,15 +175,14 @@ export default function Layout() {
                     collapsed={false}
                     ariaLabel="지식베이스 추가"
                   />
-                </div>
-              )}
+              </div>
             </div>
           )}
           
           {/* Reports Accordion */}
           <div className="space-y-1">
             <button
-              onClick={() => setReportMenuOpen(!reportMenuOpen)}
+              onClick={() => setOnlyMenu('report')}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
                 reportMenuOpen ? 'bg-slate-700 dark:bg-slate-600 text-white' : 'text-slate-300 hover:bg-slate-700 dark:hover:bg-slate-600 hover:text-white dark:text-slate-300'
               } ${collapsed ? 'justify-center' : ''}`}
@@ -182,8 +196,11 @@ export default function Layout() {
               )}
             </button>
             
-            {!collapsed && reportMenuOpen && (
-              <div className="ml-2 space-y-1 border-l-2 border-slate-700 pl-2">
+            {!collapsed && (
+              <div
+                className="ml-2 space-y-1 border-l-2 border-slate-700 overflow-hidden transition-all duration-300 ease-in-out"
+                style={subMenuTransitionStyle(reportMenuOpen)}
+              >
                 <SidebarLink to="/report/create" icon={<FilePlus size={18} />} label="보고서 생성" collapsed={false} />
                 <SidebarLink to="/report/list" icon={<FileText size={18} />} label="보고서 목록" collapsed={false} />
               </div>
@@ -193,7 +210,7 @@ export default function Layout() {
           {/* Team Management Accordion */}
           <div className="space-y-1">
             <button
-              onClick={() => setTeamMenuOpen(!teamMenuOpen)}
+            onClick={() => setOnlyMenu('team')}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
                 teamMenuOpen ? 'bg-slate-700 dark:bg-slate-600 text-white' : 'text-slate-300 hover:bg-slate-700 dark:hover:bg-slate-600 hover:text-white dark:text-slate-300'
               } ${collapsed ? 'justify-center' : ''}`}
@@ -207,8 +224,11 @@ export default function Layout() {
               )}
             </button>
 
-            {!collapsed && teamMenuOpen && (
-              <div className="ml-2 space-y-1 border-l-2 border-slate-700 pl-2">
+            {!collapsed && (
+              <div
+                className="ml-2 space-y-1 border-l-2 border-slate-700 pl-2 overflow-hidden transition-all duration-300 ease-in-out"
+                style={subMenuTransitionStyle(teamMenuOpen)}
+              >
                 {teamMenuItems.map(item => (
                   <SidebarLink key={item.to} to={item.to} icon={item.icon} label={item.label} collapsed={false} />
                 ))}
@@ -219,7 +239,7 @@ export default function Layout() {
           {/* Work Data Accordion */}
           <div className="space-y-1">
             <button
-              onClick={() => setWorkDataMenuOpen(!workDataMenuOpen)}
+            onClick={() => setOnlyMenu('workData')}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
                 workDataMenuOpen ? 'bg-slate-700 dark:bg-slate-600 text-white' : 'text-slate-300 hover:bg-slate-700 dark:hover:bg-slate-600 hover:text-white dark:text-slate-300'
               } ${collapsed ? 'justify-center' : ''}`}
@@ -233,8 +253,11 @@ export default function Layout() {
               )}
             </button>
 
-            {!collapsed && workDataMenuOpen && (
-              <div className="ml-2 space-y-1 border-l-2 border-slate-700 pl-2">
+            {!collapsed && (
+              <div
+                className="ml-2 space-y-1 border-l-2 border-slate-700 overflow-hidden transition-all duration-300 ease-in-out"
+                style={subMenuTransitionStyle(workDataMenuOpen)}
+              >
                 <SidebarLink to="/workdata/gmail" icon={<Mail size={18} />} label="Gmail" collapsed={false} />
                 <SidebarLink to="/workdata/calendar" icon={<Calendar size={18} />} label="Google Calendar" collapsed={false} />
               </div>
@@ -244,7 +267,7 @@ export default function Layout() {
           {/* Settings Accordion */}
           <div className="space-y-1">
             <button
-              onClick={() => setSettingsMenuOpen(!settingsMenuOpen)}
+            onClick={() => setOnlyMenu('settings')}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
                 settingsMenuOpen ? 'bg-slate-700 dark:bg-slate-600 text-white' : 'text-slate-300 hover:bg-slate-700 dark:hover:bg-slate-600 hover:text-white dark:text-slate-300'
               } ${collapsed ? 'justify-center' : ''}`}
@@ -258,8 +281,11 @@ export default function Layout() {
               )}
             </button>
 
-            {!collapsed && settingsMenuOpen && (
-              <div className="ml-2 space-y-1 border-l-2 border-slate-700 dark:border-slate-600 pl-2">
+            {!collapsed && (
+              <div
+                className="ml-2 space-y-1 border-l-2 border-slate-700 dark:border-slate-600 pl-2 overflow-hidden transition-all duration-300 ease-in-out"
+                style={subMenuTransitionStyle(settingsMenuOpen)}
+              >
                 <SidebarLink to="/settings/team-profile" icon={<Users size={18} />} label="팀 프로필" collapsed={false} />
                 <SidebarLink to="/settings/user" icon={<Settings size={18} />} label="사용자 정보" collapsed={false} />
                 <SidebarLink to="/settings/attendance" icon={<User size={18} />} label="내 근태 관리" collapsed={false} />

@@ -83,6 +83,42 @@ html, body, #root {
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
+@keyframes metricValueEnter {
+  from { opacity: 0; transform: translateY(40%) scale(0.92); }
+  58% { opacity: 1; transform: translateY(-2%) scale(1.1); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes metricValueLeave {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(-40%) scale(0.94); }
+}
+
+.metric-value-stack {
+  position: relative;
+  display: block;
+  min-height: 1.65rem;
+  line-height: 1.2;
+  overflow: hidden;
+}
+
+.metric-value-stack > span {
+  display: block;
+  transform-origin: left center;
+  will-change: transform, opacity;
+}
+
+.metric-value-enter {
+  animation: metricValueEnter 420ms cubic-bezier(0.2, 0.75, 0.2, 1) both;
+}
+
+.metric-value-leave {
+  position: absolute;
+  inset: 0;
+  animation: metricValueLeave 420ms cubic-bezier(0.2, 0.75, 0.2, 1) both;
+  pointer-events: none;
+}
+
 /* Scoped dark-mode overrides for ReportEditor's legacy slate utility classes */
 .dark .report-editor .bg-white { background-color: var(--color-card) !important; }
 .dark .report-editor .bg-slate-50 { background-color: #111827 !important; }

@@ -247,13 +247,13 @@ func resolveUsageProviderModel(
 	}
 	providerName = canonicalAIProviderDisplayName(providerCode, providerName)
 	if strings.TrimSpace(providerName) == "" {
-		providerName = "癲??????쒓낯????源껎뀢癲?????????留곤┼??돢?룰퇌??Provider"
+		providerName = "미등록 제공사"
 	}
 	if strings.TrimSpace(modelCode) == "" {
 		modelCode = "unknown"
 	}
 	if strings.TrimSpace(modelName) == "" {
-		modelName = "癲??????쒓낯????源껎뀢癲?????????留곤┼??돢?룰퇌??Model"
+		modelName = "미등록 모델"
 	}
 
 	return providerCode, providerName, modelCode, modelName, isUnregistered
@@ -1597,7 +1597,7 @@ func (a *App) runLocalUsageCollector(
 			PaygCostUSD:  bucket.costUSD,
 			OccurredAt:   occurredAt,
 		}); err != nil {
-			result.Warnings = append(result.Warnings, fmt.Sprintf("?????????嚥????????%s/%s/%s): %v", day, providerCode, modelCode, err))
+			result.Warnings = append(result.Warnings, fmt.Sprintf("사용량 기록 실패 (%s/%s/%s): %v", day, providerCode, modelCode, err))
 			continue
 		}
 		result.ImportedRows++

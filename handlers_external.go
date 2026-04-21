@@ -527,7 +527,7 @@ func (a *App) ClaudeChatWithSession(prompt, systemContext, sessionID string) (Cl
 		return ClaudeChatResult{}, fmt.Errorf("claude CLI ?묐떟 ?뚯떛 ?ㅽ뙣")
 	}
 	if found.IsError {
-		return ClaudeChatResult{}, fmt.Errorf("claude CLI ?ㅻ쪟: %s", found.Result)
+		return ClaudeChatResult{}, fmt.Errorf("claude CLI 오류: %s", found.Result)
 	}
 	result := ClaudeChatResult{
 		Reply:        strings.TrimSpace(found.Result),

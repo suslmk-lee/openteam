@@ -696,7 +696,7 @@ func (a *App) RefineMarkdownWithAI(markdownText string) (string, error) {
 	client := ai.NewClient(cfg.APIKey, cfg.Model, cfg.BaseURL)
 	refined, err := client.ChatCompletion(systemPrompt, markdownText)
 	if err != nil {
-		return "", fmt.Errorf("AI ?ㅻ벉湲??ㅽ뙣: %w", err)
+		return "", fmt.Errorf("AI 다듬기 실패: %w", err)
 	}
 	a.trackOpenAIUsageFromClient(client, "report_refine")
 	return refined, nil

@@ -551,7 +551,7 @@ func (d *Database) GetOrCreateSelfTeamMember(userID int64, userName string) (int
 	// Create self team member
 	res, err := d.conn.Exec(
 		"INSERT INTO team_members (user_id, name, position, email, role, employment_type, active) VALUES (?, ?, ?, ?, ?, ?, ?)",
-		userID, userName, "蹂몄씤", "", "member", "", 1,
+		userID, userName, "본인", "", "member", "", 1,
 	)
 	if err != nil {
 		return 0, err
@@ -1730,4 +1730,3 @@ func (d *Database) ClearVaultItems() error {
 	_, err := d.conn.Exec(`DELETE FROM vault_items`)
 	return err
 }
-

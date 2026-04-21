@@ -36,4 +36,5 @@ CLAUDE.md
 .claude/*
 .docs/*
 .gstack/
-docs/*
+docs/
+.windsurf/workflows/

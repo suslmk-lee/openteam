@@ -13,6 +13,7 @@ import (
 type Client struct {
 	APIKey string
 	Model  string
+	BaseURL string
 	lastUsage OpenAIUsage
 }
 

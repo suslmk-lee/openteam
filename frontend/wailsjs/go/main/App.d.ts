@@ -77,6 +77,8 @@ export function DeleteTeamMember(arg1:number):Promise<void>;
 
 export function ExportWeeklyReport(arg1:number):Promise<string>;
 
+export function GetAISettings():Promise<ai.Settings>;
+
 export function GetAIUsageDashboard(arg1:string):Promise<db.AIUsageDashboard>;
 
 export function GetAttendanceSummary(arg1:string,arg2:string):Promise<Array<db.AttendanceSummary>>;
@@ -222,6 +224,8 @@ export function SaveAIBillingPlan(arg1:number,arg2:number,arg3:number,arg4:numbe
 export function SaveAIModel(arg1:number,arg2:number,arg3:string,arg4:string,arg5:boolean):Promise<db.AIModel>;
 
 export function SaveAIProvider(arg1:number,arg2:string,arg3:string,arg4:boolean):Promise<db.AIProvider>;
+
+export function SaveAISettings(arg1:ai.Settings):Promise<void>;
 
 export function SaveAttendanceRecord(arg1:db.AttendanceRecord):Promise<db.AttendanceRecord>;
 

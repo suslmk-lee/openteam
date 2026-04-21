@@ -23,7 +23,7 @@ import {
   BookOpen,
   Bot,
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 import { useTeamProfile } from '../contexts/TeamProfileContext'
 import { useShellLayout } from '../contexts/ShellLayoutContext'
 
@@ -44,7 +44,7 @@ export default function Layout() {
     setOpenMenu(prev => (prev === menu ? null : menu))
   }
 
-  const subMenuTransitionStyle = (open: boolean) => ({
+  const subMenuTransitionStyle = (open: boolean): CSSProperties => ({
     maxHeight: open ? '28rem' : '0px',
     opacity: open ? 1 : 0,
     transform: open ? 'translateY(0)' : 'translateY(-4px)',

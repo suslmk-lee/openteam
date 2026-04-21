@@ -3,24 +3,86 @@ import { useAppApi } from '../../hooks/useAppApi'
 import type { AIProviderID, AISettings } from '../../services/appApi'
 import type { AiChatSession, ChatContextProvider, ChatMessage, ChatProvider, ClaudeMeta } from './types'
 
-function combineContext(systemPrompt: string, contextText: string) {
-  return [systemPrompt.trim(), contextText.trim()].filter(Boolean).join('\n\n')
+const DEFAULT_PROVIDER: ChatProvider = 'openai'
+const DEFAULT_MODEL = 'gpt-4o-mini'
+const PROVIDER_ORDER: ChatProvider[] = ['openai', 'minimax', 'claude_cli']
+
+function normalizeProvider(raw: string): ChatProvider {
+  if (raw === 'openai' || raw === 'minimax' || raw === 'claude_cli') {
+    return raw
+  }
+  return DEFAULT_PROVIDER
+}
+
+function providerModel(settings: AISettings, provider: ChatProvider): string {
+  return settings.providers?.[provider]?.model?.trim() || DEFAULT_MODEL
+}
+
+function listAvailableProviders(settings: AISettings, claudeAvailable: boolean): ChatProvider[] {
+  const providers: ChatProvider[] = []
+  for (const provider of PROVIDER_ORDER) {
+    const enabled = Boolean(settings.providers?.[provider]?.enabled)
+    if (!enabled) {
+      continue
+    }
+    if (provider === 'claude_cli' && !claudeAvailable) {
+      continue
+    }
+    providers.push(provider)
+  }
+  if (providers.length > 0) {
+    return providers
+  }
+  return [normalizeProvider(settings.defaultProvider || DEFAULT_PROVIDER)]
+}
+
+function combineContext(systemPrompt: string, contextText: string, historyText: string) {
+  return [systemPrompt.trim(), contextText.trim(), historyText.trim()].filter(Boolean).join('\n\n')
+}
+
+function buildConversationContext(history: ChatMessage[]) {
+  const recent = history.slice(-8)
+  if (recent.length === 0) return ''
+
+  const lines = recent.map(message => {
+    const role = message.role === 'user' ? 'User' : 'Assistant'
+    return `${role}: ${message.content}`
+  })
+  return ['Conversation history (recent turns):', ...lines].join('\n')
+}
+
+function fallbackSettings(): AISettings {
+  return {
+    defaultProvider: DEFAULT_PROVIDER,
+    policy: {
+      chatAllowOverride: true,
+    },
+    providers: {
+      openai: { enabled: true, model: DEFAULT_MODEL, baseUrl: 'https://api.openai.com/v1', mode: 'openai_compatible' },
+      minimax: { enabled: false, model: '', baseUrl: 'https://api.minimax.io/v1', mode: 'openai_compatible' },
+      claude_cli: { enabled: false, model: '', baseUrl: '', mode: 'local_cli' },
+    },
+  }
 }
 
 export function useAiChatSession(contextProvider: ChatContextProvider): AiChatSession {
   const appApi = useAppApi()
-  const { CheckClaudeCLI, ClaudeChatWithSession, GetIntegrations, OpenAIChatWithMessages, MiniMaxChatWithMessages } = appApi
+  const { CheckClaudeCLI, ClaudeChatWithSession, GetAISettings, ChatWithAI } = appApi
 
   const [open, setOpen] = useState(false)
   const [maximized, setMaximized] = useState(false)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [sending, setSending] = useState(false)
   const [input, setInput] = useState('')
-  const [apiKey, setApiKeyState] = useState('')
-  const [openAIApiKey, setOpenAIApiKey] = useState('')
-  const [miniMaxApiKey, setMiniMaxApiKey] = useState('')
-  const [keyLoaded, setKeyLoaded] = useState(false)
-  const [chatModel, setChatModel] = useState<ChatModel>('openai')
+
+  const [globalProvider, setGlobalProvider] = useState<ChatProvider>(DEFAULT_PROVIDER)
+  const [globalModel, setGlobalModel] = useState(DEFAULT_MODEL)
+  const [chatProvider, setChatProviderState] = useState<ChatProvider>(DEFAULT_PROVIDER)
+  const [chatModel, setChatModel] = useState(DEFAULT_MODEL)
+  const [availableProviders, setAvailableProviders] = useState<ChatProvider[]>([DEFAULT_PROVIDER])
+  const [canOverride, setCanOverride] = useState(true)
+  const [overrideEnabled, setOverrideEnabled] = useState(false)
+
   const [claudeAvailable, setClaudeAvailable] = useState(false)
   const [claudeSessionID, setClaudeSessionID] = useState('')
   const [claudeMeta, setClaudeMeta] = useState<ClaudeMeta | null>(null)
@@ -33,16 +95,9 @@ export function useAiChatSession(contextProvider: ChatContextProvider): AiChatSe
     claude_cli: '',
   })
 
-  function setApiKey(key: string) {
-    setApiKeyState(key)
-    if (typeof window !== 'undefined') {
-      if (chatModel === 'minimax') {
-        setMiniMaxApiKey(key)
-        localStorage.setItem('minimax_api_key', key)
-      } else {
-        setOpenAIApiKey(key)
-        localStorage.setItem('openai_api_key', key)
-      }
+  const effectiveProvider = useMemo<ChatProvider>(() => {
+    if (canOverride && overrideEnabled) {
+      return chatProvider
     }
     return globalProvider
   }, [canOverride, overrideEnabled, chatProvider, globalProvider])
@@ -126,64 +181,16 @@ export function useAiChatSession(contextProvider: ChatContextProvider): AiChatSe
   }, [CheckClaudeCLI, GetAISettings])
 
   useEffect(() => {
-    GetIntegrations()
-      .then((integrations: any[]) => {
-        let openAIKey = ''
-        const openAIIntegration = integrations?.find((item: any) => item.toolType === 'openai')
-        if (openAIIntegration?.enabled && openAIIntegration.configJson) {
-          try {
-            const config = JSON.parse(openAIIntegration.configJson)
-            if (config.apiKey) {
-              openAIKey = String(config.apiKey)
-            }
-          } catch {
-            // fall through to localStorage
-          }
-        }
-        if (!openAIKey) {
-          openAIKey = typeof window !== 'undefined' ? localStorage.getItem('openai_api_key') || '' : ''
-        }
-
-        let miniMaxKey = ''
-        const miniMaxIntegration = integrations?.find((item: any) => item.toolType === 'minimax')
-        if (miniMaxIntegration?.enabled && miniMaxIntegration.configJson) {
-          try {
-            const config = JSON.parse(miniMaxIntegration.configJson)
-            if (config.apiKey) {
-              miniMaxKey = String(config.apiKey)
-            }
-          } catch {
-            // fall through to localStorage
-          }
-        }
-        if (!miniMaxKey) {
-          miniMaxKey = typeof window !== 'undefined' ? localStorage.getItem('minimax_api_key') || '' : ''
-        }
-
-        setOpenAIApiKey(openAIKey)
-        setMiniMaxApiKey(miniMaxKey)
-        setKeyLoaded(true)
-      })
-      .catch(() => {
-        const openAIKey = typeof window !== 'undefined' ? localStorage.getItem('openai_api_key') || '' : ''
-        const miniMaxKey = typeof window !== 'undefined' ? localStorage.getItem('minimax_api_key') || '' : ''
-        setOpenAIApiKey(openAIKey)
-        setMiniMaxApiKey(miniMaxKey)
-        setKeyLoaded(true)
-      })
-  }, [GetIntegrations])
-
-  useEffect(() => {
-    if (chatModel === 'openai') {
-      setApiKeyState(openAIApiKey)
+    if (!canOverride || !overrideEnabled) {
+      setChatProviderState(globalProvider)
+      setChatModel(globalModel)
       return
     }
-    if (chatModel === 'minimax') {
-      setApiKeyState(miniMaxApiKey)
-      return
+    if (!availableProviders.includes(chatProvider)) {
+      setChatProviderState(globalProvider)
+      setChatModel(globalModel)
     }
-    setApiKeyState('')
-  }, [chatModel, miniMaxApiKey, openAIApiKey])
+  }, [availableProviders, canOverride, chatProvider, globalModel, globalProvider, overrideEnabled])
 
   async function handleClaudeSkill(cmd: string) {
     const userMsg: ChatMessage = { role: 'user', content: cmd }
@@ -215,10 +222,6 @@ export function useAiChatSession(contextProvider: ChatContextProvider): AiChatSe
   async function handleSendText(text: string): Promise<boolean> {
     const trimmed = text.trim()
     if (!trimmed || sending) return false
-    if (chatModel !== 'claude' && !apiKey) {
-      setShowKeyInput(true)
-      return false
-    }
 
     const userMsg: ChatMessage = { role: 'user', content: trimmed }
     const history = [...messages, userMsg]
@@ -230,45 +233,14 @@ export function useAiChatSession(contextProvider: ChatContextProvider): AiChatSe
       const historyContext = buildConversationContext(messages)
       const combinedContext = combineContext(context.systemPrompt, context.contextText, historyContext)
 
-      if (chatModel === 'claude') {
-        // Always pass retrieval context per turn so resumed Claude sessions stay grounded.
-        const ctx = combinedContext
-        const res = await ClaudeChatWithSession(trimmed, ctx, claudeSessionID)
-        if (res.sessionId) setClaudeSessionID(res.sessionId)
-        setClaudeMeta({
-          model: res.model,
-          numTurns: res.numTurns,
-          inputTokens: res.inputTokens,
-          outputTokens: res.outputTokens,
-          cacheReadTokens: res.cacheReadTokens,
-          cacheCreateTokens: res.cacheCreateTokens,
-          costUsd: res.costUsd,
-        })
-        setCumInputTokens(prev => prev + res.inputTokens)
-        setCumOutputTokens(prev => prev + res.outputTokens)
-        setCumCostUsd(prev => prev + res.costUsd)
-        reply = res.reply
-      } else if (chatModel === 'minimax') {
-        const result = await MiniMaxChatWithMessages(
-          combinedContext,
-          nextMessages.map(message => ({ role: message.role, content: message.content })),
-        )
-        setCumInputTokens(prev => prev + (result.inputTokens || 0))
-        setCumOutputTokens(prev => prev + (result.outputTokens || 0))
-        setCumCostUsd(prev => prev + (result.costUsd || 0))
-        reply = result.reply || '(no response)'
-      } else {
-        const result = await OpenAIChatWithMessages(
-          combinedContext,
-          nextMessages.map(message => ({ role: message.role, content: message.content })),
-        )
-        setCumInputTokens(prev => prev + (result.inputTokens || 0))
-        setCumOutputTokens(prev => prev + (result.outputTokens || 0))
-        setCumCostUsd(prev => prev + (result.costUsd || 0))
-        reply = result.reply || '(no response)'
-      }
+      const response = await ChatWithAI(
+        trimmed,
+        combinedContext,
+        canOverride && overrideEnabled ? chatProvider : '',
+        canOverride && overrideEnabled ? chatModel : '',
+      )
 
-      setMessages(prev => [...prev, { role: 'assistant', content: reply, references: context.references }])
+      setMessages(prev => [...prev, { role: 'assistant', content: response.reply || '(no response)', references: context.references }])
       return true
     } catch (error: any) {
       setMessages(prev => [...prev, { role: 'assistant', content: `Error: ${error?.message ?? String(error)}` }])

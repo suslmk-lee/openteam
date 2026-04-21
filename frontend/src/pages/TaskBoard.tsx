@@ -808,7 +808,7 @@ export default function TaskBoard() {
       cmd: '/summary',
       desc: '현재 이슈 요약',
       run: async () => {
-        if (chatSession.sending || (chatSession.chatModel !== 'claude' && !chatSession.apiKey)) {
+        if (chatSession.sending) {
           return false
         }
         return chatSession.handleSendText('현재 이슈를 상태와 우선순위 기준으로 요약해줘.')
@@ -818,7 +818,7 @@ export default function TaskBoard() {
       cmd: '/urgent',
       desc: '긴급 이슈 목록',
       run: async () => {
-        if (chatSession.sending || (chatSession.chatModel !== 'claude' && !chatSession.apiKey)) {
+        if (chatSession.sending) {
           return false
         }
         return chatSession.handleSendText('긴급 이슈와 블로커를 보여줘.')
@@ -828,7 +828,7 @@ export default function TaskBoard() {
       cmd: '/unassigned',
       desc: '미할당 이슈 목록',
       run: async () => {
-        if (chatSession.sending || (chatSession.chatModel !== 'claude' && !chatSession.apiKey)) {
+        if (chatSession.sending) {
           return false
         }
         return chatSession.handleSendText('담당자가 지정되지 않은 이슈를 모두 보여줘.')
@@ -838,7 +838,7 @@ export default function TaskBoard() {
       cmd: '/overdue',
       desc: '기한 초과 이슈 목록',
       run: async () => {
-        if (chatSession.sending || (chatSession.chatModel !== 'claude' && !chatSession.apiKey)) {
+        if (chatSession.sending) {
           return false
         }
         return chatSession.handleSendText(`오늘 날짜는 ${new Date().toISOString().slice(0, 10)}야. 기한이 지난 이슈를 보여줘.`)

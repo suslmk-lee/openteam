@@ -28,6 +28,30 @@ export interface VaultReference {
   content: string
 }
 
+export type AIProviderID = 'openai' | 'minimax' | 'claude_cli'
+
+export interface AIProviderConfig {
+  enabled: boolean
+  apiKey?: string
+  model?: string
+  baseUrl?: string
+  mode?: string
+}
+
+export interface AISettings {
+  defaultProvider: AIProviderID
+  policy: {
+    chatAllowOverride: boolean
+  }
+  providers: Record<string, AIProviderConfig>
+}
+
+export interface AIChatResult {
+  reply: string
+  provider: string
+  model: string
+}
+
 export interface AIProvider {
   id: number
   userId: number
@@ -274,7 +298,10 @@ export interface PersonalAIAutoCollectConfig {
   lastTriggeredMonth: string
 }
 
-export type AppApi = typeof AppModule & {
+type BaseAppApi = typeof AppModule
+type OverriddenAppApiKeys = 'GetAISettings' | 'SaveAISettings' | 'ChatWithAI'
+
+export type AppApi = Omit<BaseAppApi, OverriddenAppApiKeys> & {
   LookupLinearViewer: (apiKey: string) => Promise<Record<string, string>>
   GetLinearTeamLabels: () => Promise<Array<{ id: string; name: string; color: string }>>
   AutoMapLinearMembers: () => Promise<number>

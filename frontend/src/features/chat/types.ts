@@ -2,7 +2,7 @@ import type { Dispatch, SetStateAction } from 'react'
 import type { AIProviderID } from '../../services/appApi'
 
 export type ChatRole = 'user' | 'assistant'
-export type ChatModel = 'openai' | 'claude' | 'minimax'
+export type ChatProvider = AIProviderID
 
 export interface ChatReference {
   id: string

@@ -146,6 +146,10 @@ export function ExportWeeklyReport(arg1) {
   return window['go']['main']['App']['ExportWeeklyReport'](arg1);
 }
 
+export function GetAISettings() {
+  return window['go']['main']['App']['GetAISettings']();
+}
+
 export function GetAIUsageDashboard(arg1) {
   return window['go']['main']['App']['GetAIUsageDashboard'](arg1);
 }
@@ -436,6 +440,10 @@ export function SaveAIModel(arg1, arg2, arg3, arg4, arg5) {
 
 export function SaveAIProvider(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['SaveAIProvider'](arg1, arg2, arg3, arg4);
+}
+
+export function SaveAISettings(arg1) {
+  return window['go']['main']['App']['SaveAISettings'](arg1);
 }
 
 export function SaveAttendanceRecord(arg1) {

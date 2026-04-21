@@ -105,6 +105,13 @@ function formatDay(day: string) {
   return `${day.slice(5, 7)}-${day.slice(8, 10)}`
 }
 
+function formatDateOnly(day: string) {
+  if (!day) return '-'
+  const trimmed = day.trim()
+  if (trimmed.length >= 10) return trimmed.slice(0, 10)
+  return trimmed
+}
+
 export default function AIUsage() {
   const {
     GetAIUsageDashboard,
@@ -447,7 +454,7 @@ export default function AIUsage() {
                   <tbody>
                     {dashboard.daily.map(point => (
                       <tr key={point.day} className="border-b border-slate-100 last:border-b-0">
-                        <td className="px-2 py-1.5 text-slate-700">{point.day}</td>
+                        <td className="px-2 py-1.5 text-slate-700">{formatDateOnly(point.day)}</td>
                         <td className="px-2 py-1.5 text-right text-slate-600">{formatCount(point.inputTokens)}</td>
                         <td className="px-2 py-1.5 text-right text-slate-600">{formatCount(point.outputTokens)}</td>
                         <td className="px-2 py-1.5 text-right text-slate-700">{formatUsd(point.totalCostUsd)}</td>
@@ -469,9 +476,9 @@ export default function AIUsage() {
         )}
 
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+          <div className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4">
             <h3 className="mb-3 text-sm font-semibold text-slate-700">Provider 관리</h3>
-            <div className="mb-3 flex gap-2">
+            <div className="mb-3 flex min-w-0 items-center gap-2">
               <select
                 value={newProviderCode}
                 onChange={event => {
@@ -479,7 +486,7 @@ export default function AIUsage() {
                   setNewProviderCode(selectedCode)
                   setNewProviderName(providerPresetLabel(selectedCode))
                 }}
-                className="flex-1 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+                className="min-w-0 flex-1 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
               >
                 {PROVIDER_PRESETS.map(preset => (
                   <option key={preset.code} value={preset.code}>
@@ -491,7 +498,7 @@ export default function AIUsage() {
                 value={newProviderName}
                 onChange={event => setNewProviderName(event.target.value)}
                 placeholder="표시 이름"
-                className="flex-1 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+                className="min-w-0 flex-1 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
               />
               <button
                 type="button"
@@ -509,7 +516,7 @@ export default function AIUsage() {
                 <div key={provider.id} className="rounded-lg border border-slate-200 px-2 py-2 text-sm">
                   {editingProviderID === provider.id ? (
                     <>
-                      <div className="flex gap-2">
+                      <div className="flex min-w-0 items-center gap-2">
                         <select
                           value={editingProviderCode}
                           onChange={event => {
@@ -519,7 +526,7 @@ export default function AIUsage() {
                               setEditingProviderName(providerPresetLabel(selectedCode))
                             }
                           }}
-                          className="flex-1 rounded-lg border border-slate-300 px-2 py-1 text-sm"
+                          className="min-w-0 flex-1 rounded-lg border border-slate-300 px-2 py-1 text-sm"
                         >
                           {editingProviderOptions.map(option => (
                             <option key={option.code} value={option.code}>
@@ -530,7 +537,7 @@ export default function AIUsage() {
                         <input
                           value={editingProviderName}
                           onChange={event => setEditingProviderName(event.target.value)}
-                          className="flex-1 rounded-lg border border-slate-300 px-2 py-1 text-sm"
+                          className="min-w-0 flex-1 rounded-lg border border-slate-300 px-2 py-1 text-sm"
                           placeholder="표시 이름"
                         />
                       </div>
@@ -596,7 +603,7 @@ export default function AIUsage() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+          <div className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4">
             <h3 className="mb-3 text-sm font-semibold text-slate-700">Model 관리</h3>
             <div className="mb-3 space-y-2">
               <select
@@ -612,18 +619,18 @@ export default function AIUsage() {
                 ))}
               </select>
 
-              <div className="flex gap-2">
+              <div className="flex min-w-0 items-center gap-2">
                 <input
                   value={newModelCode}
                   onChange={event => setNewModelCode(event.target.value)}
                   placeholder="model code"
-                  className="flex-1 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+                  className="min-w-0 flex-1 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
                 />
                 <input
                   value={newModelName}
                   onChange={event => setNewModelName(event.target.value)}
                   placeholder="표시 이름"
-                  className="flex-1 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+                  className="min-w-0 flex-1 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
                 />
                 <button
                   type="button"
@@ -642,7 +649,7 @@ export default function AIUsage() {
                 <div key={model.id} className="rounded-lg border border-slate-200 px-2 py-2 text-sm">
                   {editingModelID === model.id ? (
                     <>
-                      <div className="space-y-2">
+                      <div className="min-w-0 space-y-2">
                         <select
                           value={editingModelProviderID}
                           onChange={event => setEditingModelProviderID(Number(event.target.value))}
@@ -654,17 +661,17 @@ export default function AIUsage() {
                             </option>
                           ))}
                         </select>
-                        <div className="flex gap-2">
+                        <div className="flex min-w-0 items-center gap-2">
                           <input
                             value={editingModelCode}
                             onChange={event => setEditingModelCode(event.target.value)}
-                            className="flex-1 rounded-lg border border-slate-300 px-2 py-1 text-sm"
+                            className="min-w-0 flex-1 rounded-lg border border-slate-300 px-2 py-1 text-sm"
                             placeholder="model code"
                           />
                           <input
                             value={editingModelName}
                             onChange={event => setEditingModelName(event.target.value)}
-                            className="flex-1 rounded-lg border border-slate-300 px-2 py-1 text-sm"
+                            className="min-w-0 flex-1 rounded-lg border border-slate-300 px-2 py-1 text-sm"
                             placeholder="표시 이름"
                           />
                         </div>
@@ -734,7 +741,7 @@ export default function AIUsage() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+          <div className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4">
             <h3 className="mb-3 text-sm font-semibold text-slate-700">요금제 관리</h3>
 
             <div className="space-y-2 text-sm">
@@ -744,7 +751,7 @@ export default function AIUsage() {
                   setPlanProviderID(Number(event.target.value))
                   setPlanModelID(0)
                 }}
-                className="w-full rounded-lg border border-slate-300 px-2 py-1.5"
+                className="w-full min-w-0 rounded-lg border border-slate-300 px-2 py-1.5"
               >
                 <option value={0}>Provider 선택</option>
                 {providers.map(provider => (
@@ -757,7 +764,7 @@ export default function AIUsage() {
               <select
                 value={planModelID}
                 onChange={event => setPlanModelID(Number(event.target.value))}
-                className="w-full rounded-lg border border-slate-300 px-2 py-1.5"
+                className="w-full min-w-0 rounded-lg border border-slate-300 px-2 py-1.5"
               >
                 <option value={0}>Provider 전체(모델 공통)</option>
                 {planModelOptions.map(model => (
@@ -773,21 +780,21 @@ export default function AIUsage() {
                   value={planFixed}
                   onChange={e => setPlanFixed(Number(e.target.value))}
                   placeholder="월 고정 USD"
-                  className="rounded-lg border border-slate-300 px-2 py-1.5"
+                  className="w-full min-w-0 rounded-lg border border-slate-300 px-2 py-1.5"
                 />
                 <input
                   type="number"
                   value={planIncludedInput}
                   onChange={e => setPlanIncludedInput(Number(e.target.value))}
                   placeholder="입력 포함 토큰"
-                  className="rounded-lg border border-slate-300 px-2 py-1.5"
+                  className="w-full min-w-0 rounded-lg border border-slate-300 px-2 py-1.5"
                 />
                 <input
                   type="number"
                   value={planIncludedOutput}
                   onChange={e => setPlanIncludedOutput(Number(e.target.value))}
                   placeholder="출력 포함 토큰"
-                  className="rounded-lg border border-slate-300 px-2 py-1.5"
+                  className="w-full min-w-0 rounded-lg border border-slate-300 px-2 py-1.5"
                 />
                 <input
                   type="number"
@@ -795,7 +802,7 @@ export default function AIUsage() {
                   value={planOverageInput}
                   onChange={e => setPlanOverageInput(Number(e.target.value))}
                   placeholder="입력 초과/1k USD"
-                  className="rounded-lg border border-slate-300 px-2 py-1.5"
+                  className="w-full min-w-0 rounded-lg border border-slate-300 px-2 py-1.5"
                 />
                 <input
                   type="number"
@@ -803,13 +810,13 @@ export default function AIUsage() {
                   value={planOverageOutput}
                   onChange={e => setPlanOverageOutput(Number(e.target.value))}
                   placeholder="출력 초과/1k USD"
-                  className="rounded-lg border border-slate-300 px-2 py-1.5"
+                  className="w-full min-w-0 rounded-lg border border-slate-300 px-2 py-1.5"
                 />
                 <input
                   type="date"
                   value={planFrom}
                   onChange={e => setPlanFrom(e.target.value)}
-                  className="rounded-lg border border-slate-300 px-2 py-1.5"
+                  className="w-full min-w-0 rounded-lg border border-slate-300 px-2 py-1.5"
                 />
               </div>
 
@@ -817,7 +824,7 @@ export default function AIUsage() {
                 type="date"
                 value={planTo}
                 onChange={e => setPlanTo(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 px-2 py-1.5"
+                className="w-full min-w-0 rounded-lg border border-slate-300 px-2 py-1.5"
               />
 
               <button

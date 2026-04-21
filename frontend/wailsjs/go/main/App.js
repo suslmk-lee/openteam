@@ -234,6 +234,10 @@ export function GetPersonalAIUsageHistory(arg1, arg2) {
   return window['go']['main']['App']['GetPersonalAIUsageHistory'](arg1, arg2);
 }
 
+export function GetPersonalAIUsageTodayUsage() {
+  return window['go']['main']['App']['GetPersonalAIUsageTodayUsage']();
+}
+
 export function GetPositionTypes() {
   return window['go']['main']['App']['GetPositionTypes']();
 }

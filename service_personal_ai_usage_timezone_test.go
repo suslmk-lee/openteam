@@ -1,10 +1,10 @@
 package main
 
 import (
+	"openreport/internal/db"
 	"os"
 	"path/filepath"
 	"strings"
-	"openreport/internal/db"
 	"testing"
 	"time"
 )
@@ -236,5 +236,21 @@ func TestParseUsageEventsFromFile_UsesRecentModelHintForTokenCount(t *testing.T)
 	}
 	if events[0].modelCode != "gpt-5.3-codex" {
 		t.Fatalf("expected inferred model gpt-5.3-codex, got %q", events[0].modelCode)
+	}
+}
+
+func TestHalfHourStartInKST_RoundsDown(t *testing.T) {
+	input := time.Date(2026, 4, 21, 8, 8, 59, 0, usageKSTLocation)
+	got := halfHourStartInKST(input)
+	want := time.Date(2026, 4, 21, 8, 0, 0, 0, usageKSTLocation)
+	if !got.Equal(want) {
+		t.Fatalf("expected half-hour bucket start %s, got %s", want.Format(time.RFC3339), got.Format(time.RFC3339))
+	}
+
+	input = time.Date(2026, 4, 21, 8, 44, 0, 0, usageKSTLocation)
+	got = halfHourStartInKST(input)
+	want = time.Date(2026, 4, 21, 8, 30, 0, 0, usageKSTLocation)
+	if !got.Equal(want) {
+		t.Fatalf("expected half-hour bucket start %s, got %s", want.Format(time.RFC3339), got.Format(time.RFC3339))
 	}
 }

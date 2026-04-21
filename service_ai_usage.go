@@ -45,6 +45,8 @@ func canonicalAIProviderCode(input string) string {
 	switch code {
 	case "codex":
 		return "openai"
+	case "claude":
+		return "anthropic"
 	case "mini-max", "mini_max":
 		return "minimax"
 	default:
@@ -165,6 +167,11 @@ func parseUsageDayInKST(value string) (time.Time, error) {
 	return time.ParseInLocation("2006-01-02", strings.TrimSpace(value), usageKSTLocation)
 }
 
+func isExternalUsageFeature(feature string) bool {
+	normalized := strings.TrimSpace(strings.ToLower(feature))
+	return strings.HasPrefix(normalized, "external_")
+}
+
 func marshalUsageMetadata(metadata map[string]any) string {
 	if len(metadata) == 0 {
 		return ""
@@ -249,6 +256,7 @@ func (a *App) trackAIUsage(event aiUsageEvent) error {
 	if err := a.database.AppendAIUsageHistoryEvent(history); err != nil {
 		return err
 	}
+	a.emitAIUsageUpdated(event)
 	if err := a.maybeEnforceAIUsageHistoryRetention(user.ID, time.Now()); err != nil {
 		log.Printf("[AIUsage] history retention skipped due to error: %v", err)
 	}
@@ -473,6 +481,10 @@ func (a *App) buildAIUsageDashboard(userID int64, month string) (db.AIUsageDashb
 	dailyMap := map[string]*db.AIUsageDailyPoint{}
 
 	for _, row := range usageRows {
+		if isExternalUsageFeature(row.Feature) {
+			continue
+		}
+
 		providerCode := canonicalAIProviderCode(row.RawProvider)
 		providerName := canonicalAIProviderDisplayName(providerCode, row.RawProvider)
 		modelCode := row.RawModel

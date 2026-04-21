@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -273,27 +274,47 @@ func (a *App) startPersonalAIUsageCollection(month string, options personalColle
 	a.personalCollectMu.Unlock()
 
 	go func(targetUserID int64, targetMonth string, runOptions personalCollectRunOptions) {
+		runStartedAt := time.Now()
+		if runOptions.Trigger == personalAICollectTriggerAuto {
+			log.Printf(
+				"[PersonalAIAutoCollect] START month=%s startedAt=%s",
+				targetMonth,
+				runStartedAt.Format(time.RFC3339),
+			)
+		}
+
 		defer func() {
 			if recovered := recover(); recovered != nil {
+				finishedAt := time.Now()
 				a.setPersonalAICollectStatus(db.PersonalAICollectStatus{
 					Running:    false,
 					Trigger:    runOptions.Trigger,
 					Month:      targetMonth,
 					StartedAt:  now,
-					FinishedAt: time.Now().Format(time.RFC3339),
+					FinishedAt: finishedAt.Format(time.RFC3339),
 					LastError:  fmt.Sprintf("panic: %v", recovered),
 					LastResult: nil,
 				})
+				if runOptions.Trigger == personalAICollectTriggerAuto {
+					log.Printf(
+						"[PersonalAIAutoCollect] END month=%s finishedAt=%s duration=%s status=panic error=%v",
+						targetMonth,
+						finishedAt.Format(time.RFC3339),
+						finishedAt.Sub(runStartedAt).Round(time.Millisecond),
+						recovered,
+					)
+				}
 			}
 		}()
 
 		result, collectErr := a.collectPersonalAIUsage(targetUserID, targetMonth, runOptions)
+		finishedAt := time.Now()
 		status := db.PersonalAICollectStatus{
 			Running:    false,
 			Trigger:    runOptions.Trigger,
 			Month:      targetMonth,
 			StartedAt:  now,
-			FinishedAt: time.Now().Format(time.RFC3339),
+			FinishedAt: finishedAt.Format(time.RFC3339),
 			LastError:  "",
 			LastResult: nil,
 		}
@@ -304,6 +325,25 @@ func (a *App) startPersonalAIUsageCollection(month string, options personalColle
 			status.LastResult = &copyResult
 		}
 		a.setPersonalAICollectStatus(status)
+		if runOptions.Trigger == personalAICollectTriggerAuto {
+			if collectErr != nil {
+				log.Printf(
+					"[PersonalAIAutoCollect] END month=%s finishedAt=%s duration=%s status=failed error=%v",
+					targetMonth,
+					finishedAt.Format(time.RFC3339),
+					finishedAt.Sub(runStartedAt).Round(time.Millisecond),
+					collectErr,
+				)
+			} else {
+				log.Printf(
+					"[PersonalAIAutoCollect] END month=%s finishedAt=%s duration=%s status=success sources=%d",
+					targetMonth,
+					finishedAt.Format(time.RFC3339),
+					finishedAt.Sub(runStartedAt).Round(time.Millisecond),
+					len(result.Results),
+				)
+			}
+		}
 	}(user.ID, normalizedMonth, options)
 
 	return a.getPersonalAICollectStatusSnapshot(), nil

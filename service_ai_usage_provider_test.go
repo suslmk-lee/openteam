@@ -30,6 +30,13 @@ func TestCanonicalAIProviderDisplayName_MiniMax(t *testing.T) {
 	}
 }
 
+func TestCanonicalAIProviderCode_ClaudeAlias(t *testing.T) {
+	got := canonicalAIProviderCode("claude")
+	if got != "anthropic" {
+		t.Fatalf("expected canonical provider anthropic, got %q", got)
+	}
+}
+
 func TestTrackAIUsage_AutoRegistersMiniMaxProviderAndModel(t *testing.T) {
 	app := setupAIUsageTestApp(t)
 
@@ -107,5 +114,60 @@ func TestTrackAIUsage_AutoRegistersMiniMaxProviderAndModel(t *testing.T) {
 			historyRows[0].InputTokens,
 			historyRows[0].OutputTokens,
 		)
+	}
+}
+
+func TestBuildAIUsageDashboard_ExcludesExternalFeatures(t *testing.T) {
+	app := setupAIUsageTestApp(t)
+
+	internalTime := time.Date(2026, 4, 21, 9, 0, 0, 0, usageKSTLocation)
+	if err := app.trackAIUsage(aiUsageEvent{
+		ProviderCode: "openai",
+		ModelCode:    "gpt-5.4",
+		Feature:      "chat",
+		RequestCount: 2,
+		InputTokens:  100,
+		OutputTokens: 40,
+		OccurredAt:   internalTime,
+	}); err != nil {
+		t.Fatalf("trackAIUsage internal failed: %v", err)
+	}
+
+	if err := app.trackAIUsage(aiUsageEvent{
+		ProviderCode: "openai",
+		ModelCode:    "gpt-5.3-codex",
+		Feature:      "external_codex_local",
+		RequestCount: 9,
+		InputTokens:  9000,
+		OutputTokens: 3000,
+		OccurredAt:   internalTime,
+	}); err != nil {
+		t.Fatalf("trackAIUsage external failed: %v", err)
+	}
+
+	user, err := app.database.GetOrCreateDefaultUser()
+	if err != nil {
+		t.Fatalf("GetOrCreateDefaultUser failed: %v", err)
+	}
+
+	dashboard, err := app.buildAIUsageDashboard(user.ID, "2026-04")
+	if err != nil {
+		t.Fatalf("buildAIUsageDashboard failed: %v", err)
+	}
+
+	if dashboard.Overview.RequestCount != 2 {
+		t.Fatalf("expected request count 2, got %d", dashboard.Overview.RequestCount)
+	}
+	if dashboard.Overview.InputTokens != 100 {
+		t.Fatalf("expected input tokens 100, got %d", dashboard.Overview.InputTokens)
+	}
+	if dashboard.Overview.OutputTokens != 40 {
+		t.Fatalf("expected output tokens 40, got %d", dashboard.Overview.OutputTokens)
+	}
+	if len(dashboard.ByModel) != 1 {
+		t.Fatalf("expected 1 model row, got %d", len(dashboard.ByModel))
+	}
+	if dashboard.ByModel[0].ModelCode != "gpt-5.4" {
+		t.Fatalf("expected remaining model gpt-5.4, got %s", dashboard.ByModel[0].ModelCode)
 	}
 }

@@ -120,6 +120,8 @@ export function GetPersonalAIUsageDashboard(arg1:string):Promise<db.PersonalAIUs
 
 export function GetPersonalAIUsageHistory(arg1:string,arg2:number):Promise<Array<db.AIUsageHistoryEvent>>;
 
+export function GetPersonalAIUsageTodayUsage():Promise<db.PersonalAIUsageTodayUsage>;
+
 export function GetPositionTypes():Promise<Array<string>>;
 
 export function GetProjectCategories():Promise<Array<db.ProjectCategory>>;

@@ -352,6 +352,34 @@ export namespace db {
 		}
 	}
 	
+	export class AIUsageTodayHalfHourPoint {
+	    slot: string;
+	    startAt: string;
+	    endAt: string;
+	    requestCount: number;
+	    inputTokens: number;
+	    outputTokens: number;
+	    totalTokens: number;
+	    paygCostUsd: number;
+	    paygCostKrw: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new AIUsageTodayHalfHourPoint(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.slot = source["slot"];
+	        this.startAt = source["startAt"];
+	        this.endAt = source["endAt"];
+	        this.requestCount = source["requestCount"];
+	        this.inputTokens = source["inputTokens"];
+	        this.outputTokens = source["outputTokens"];
+	        this.totalTokens = source["totalTokens"];
+	        this.paygCostUsd = source["paygCostUsd"];
+	        this.paygCostKrw = source["paygCostKrw"];
+	    }
+	}
 	export class Activity {
 	    id: number;
 	    integrationId: number;
@@ -875,6 +903,148 @@ export namespace db {
 		}
 	}
 	
+	export class PersonalAIUsageTodayModelRow {
+	    providerCode: string;
+	    providerName: string;
+	    modelCode: string;
+	    modelName: string;
+	    requestCount: number;
+	    inputTokens: number;
+	    outputTokens: number;
+	    totalTokens: number;
+	    paygCostUsd: number;
+	    paygCostKrw: number;
+	    buckets: AIUsageTodayHalfHourPoint[];
+	
+	    static createFrom(source: any = {}) {
+	        return new PersonalAIUsageTodayModelRow(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.providerCode = source["providerCode"];
+	        this.providerName = source["providerName"];
+	        this.modelCode = source["modelCode"];
+	        this.modelName = source["modelName"];
+	        this.requestCount = source["requestCount"];
+	        this.inputTokens = source["inputTokens"];
+	        this.outputTokens = source["outputTokens"];
+	        this.totalTokens = source["totalTokens"];
+	        this.paygCostUsd = source["paygCostUsd"];
+	        this.paygCostKrw = source["paygCostKrw"];
+	        this.buckets = this.convertValues(source["buckets"], AIUsageTodayHalfHourPoint);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class PersonalAIUsageTodayProviderRow {
+	    providerCode: string;
+	    providerName: string;
+	    requestCount: number;
+	    inputTokens: number;
+	    outputTokens: number;
+	    totalTokens: number;
+	    paygCostUsd: number;
+	    paygCostKrw: number;
+	    buckets: AIUsageTodayHalfHourPoint[];
+	
+	    static createFrom(source: any = {}) {
+	        return new PersonalAIUsageTodayProviderRow(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.providerCode = source["providerCode"];
+	        this.providerName = source["providerName"];
+	        this.requestCount = source["requestCount"];
+	        this.inputTokens = source["inputTokens"];
+	        this.outputTokens = source["outputTokens"];
+	        this.totalTokens = source["totalTokens"];
+	        this.paygCostUsd = source["paygCostUsd"];
+	        this.paygCostKrw = source["paygCostKrw"];
+	        this.buckets = this.convertValues(source["buckets"], AIUsageTodayHalfHourPoint);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class PersonalAIUsageTodayUsage {
+	    day: string;
+	    timezone: string;
+	    buckets: AIUsageTodayHalfHourPoint[];
+	    byProvider: PersonalAIUsageTodayProviderRow[];
+	    byModel: PersonalAIUsageTodayModelRow[];
+	    fxRateUsed: number;
+	    fxRateDate: string;
+	    fxSource: string;
+	    fxFallbackUsed: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new PersonalAIUsageTodayUsage(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.day = source["day"];
+	        this.timezone = source["timezone"];
+	        this.buckets = this.convertValues(source["buckets"], AIUsageTodayHalfHourPoint);
+	        this.byProvider = this.convertValues(source["byProvider"], PersonalAIUsageTodayProviderRow);
+	        this.byModel = this.convertValues(source["byModel"], PersonalAIUsageTodayModelRow);
+	        this.fxRateUsed = source["fxRateUsed"];
+	        this.fxRateDate = source["fxRateDate"];
+	        this.fxSource = source["fxSource"];
+	        this.fxFallbackUsed = source["fxFallbackUsed"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class Project {
 	    id: number;
 	    userId: number;

@@ -201,6 +201,56 @@ export interface AIUsageHistoryEvent {
   createdAt: string
 }
 
+export interface AIUsageTodayHalfHourPoint {
+  slot: string
+  startAt: string
+  endAt: string
+  requestCount: number
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+  paygCostUsd: number
+  paygCostKrw: number
+}
+
+export interface PersonalAIUsageTodayProviderRow {
+  providerCode: string
+  providerName: string
+  requestCount: number
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+  paygCostUsd: number
+  paygCostKrw: number
+  buckets: AIUsageTodayHalfHourPoint[]
+}
+
+export interface PersonalAIUsageTodayModelRow {
+  providerCode: string
+  providerName: string
+  modelCode: string
+  modelName: string
+  requestCount: number
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+  paygCostUsd: number
+  paygCostKrw: number
+  buckets: AIUsageTodayHalfHourPoint[]
+}
+
+export interface PersonalAIUsageTodayUsage {
+  day: string
+  timezone: string
+  buckets: AIUsageTodayHalfHourPoint[]
+  byProvider: PersonalAIUsageTodayProviderRow[]
+  byModel: PersonalAIUsageTodayModelRow[]
+  fxRateUsed: number
+  fxRateDate: string
+  fxSource: string
+  fxFallbackUsed: boolean
+}
+
 export interface PersonalAICollectStatus {
   running: boolean
   trigger?: string
@@ -291,6 +341,7 @@ export type AppApi = typeof AppModule & {
   DeleteAIBillingPlan: (id: number) => Promise<void>
   GetAIUsageDashboard: (month: string) => Promise<AIUsageDashboard>
   GetPersonalAIUsageDashboard: (month: string) => Promise<PersonalAIUsageDashboard>
+  GetPersonalAIUsageTodayUsage: () => Promise<PersonalAIUsageTodayUsage>
   GetPersonalAIUsageHistory: (month: string, limit: number) => Promise<AIUsageHistoryEvent[]>
   StartPersonalAIUsageCollection: (month: string) => Promise<PersonalAICollectStatus>
   GetPersonalAIUsageCollectionStatus: () => Promise<PersonalAICollectStatus>
@@ -431,6 +482,18 @@ const unavailablePersonalAICollectorResponse = async (_month: string): Promise<P
     results: [],
   })
 const unavailablePersonalAIHistory = async (_month: string, _limit: number): Promise<AIUsageHistoryEvent[]> => []
+const unavailablePersonalAIUsageToday = async (): Promise<PersonalAIUsageTodayUsage> =>
+  ({
+    day: '',
+    timezone: 'KST (Asia/Seoul)',
+    buckets: [],
+    byProvider: [],
+    byModel: [],
+    fxRateUsed: 0,
+    fxRateDate: '',
+    fxSource: '',
+    fxFallbackUsed: false,
+  })
 const unavailablePersonalAICollectStatus = async (): Promise<PersonalAICollectStatus> =>
   ({
     running: false,
@@ -555,6 +618,9 @@ export const appApi: AppApi = {
   GetPersonalAIUsageDashboard:
     (fallbackModule as AppApi).GetPersonalAIUsageDashboard ??
     (unavailablePersonalAIUsageDashboard as unknown as AppApi['GetPersonalAIUsageDashboard']),
+  GetPersonalAIUsageTodayUsage:
+    (fallbackModule as AppApi).GetPersonalAIUsageTodayUsage ??
+    (unavailablePersonalAIUsageToday as unknown as AppApi['GetPersonalAIUsageTodayUsage']),
   GetPersonalAIUsageHistory:
     (fallbackModule as AppApi).GetPersonalAIUsageHistory ??
     (unavailablePersonalAIHistory as unknown as AppApi['GetPersonalAIUsageHistory']),

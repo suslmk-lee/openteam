@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -137,6 +138,76 @@ func TestAppendAIUsageHistoryEvent_AndListByMonth(t *testing.T) {
 	}
 	if items[0].RequestCount != 3 || items[0].InputTokens != 111 || items[0].OutputTokens != 22 {
 		t.Fatalf("unexpected usage values %d/%d/%d", items[0].RequestCount, items[0].InputTokens, items[0].OutputTokens)
+	}
+}
+
+func TestListAIUsageHistoryEventsByDay_ReturnsOnlyTargetDay(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "history-by-day.db")
+	database, err := New(dbPath)
+	if err != nil {
+		t.Fatalf("failed to initialize db: %v", err)
+	}
+	defer database.Close()
+
+	user, err := database.GetOrCreateDefaultUser()
+	if err != nil {
+		t.Fatalf("failed to get default user: %v", err)
+	}
+
+	samples := []AIUsageHistoryEvent{
+		{
+			OccurredAt:   "2026-04-20T00:10:00+09:00",
+			Day:          "2026-04-20",
+			UserID:       user.ID,
+			RawProvider:  "openai",
+			RawModel:     "gpt-5.4",
+			Feature:      "chat",
+			RequestCount: 1,
+			InputTokens:  10,
+			OutputTokens: 2,
+		},
+		{
+			OccurredAt:   "2026-04-20T23:40:00+09:00",
+			Day:          "2026-04-20",
+			UserID:       user.ID,
+			RawProvider:  "anthropic",
+			RawModel:     "claude-sonnet-4-6",
+			Feature:      "chat",
+			RequestCount: 1,
+			InputTokens:  20,
+			OutputTokens: 4,
+		},
+		{
+			OccurredAt:   "2026-04-21T00:10:00+09:00",
+			Day:          "2026-04-21",
+			UserID:       user.ID,
+			RawProvider:  "minimax",
+			RawModel:     "MiniMax-M2.7",
+			Feature:      "chat",
+			RequestCount: 1,
+			InputTokens:  30,
+			OutputTokens: 6,
+		},
+	}
+	for _, sample := range samples {
+		sample := sample
+		if err := database.AppendAIUsageHistoryEvent(&sample); err != nil {
+			t.Fatalf("AppendAIUsageHistoryEvent failed: %v", err)
+		}
+	}
+
+	items, err := database.ListAIUsageHistoryEventsByDay(user.ID, "2026-04-20")
+	if err != nil {
+		t.Fatalf("ListAIUsageHistoryEventsByDay failed: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("expected 2 history rows on day, got %d", len(items))
+	}
+	if items[0].OccurredAt >= items[1].OccurredAt {
+		t.Fatalf("expected ascending occurred_at order, got %q then %q", items[0].OccurredAt, items[1].OccurredAt)
+	}
+	if !strings.HasPrefix(items[0].Day, "2026-04-20") || !strings.HasPrefix(items[1].Day, "2026-04-20") {
+		t.Fatalf("expected all rows to match day 2026-04-20")
 	}
 }
 

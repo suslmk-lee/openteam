@@ -584,6 +584,56 @@ type PersonalAIUsageDashboard struct {
 	FXFallbackUsed  bool                         `json:"fxFallbackUsed"`
 }
 
+type AIUsageTodayHalfHourPoint struct {
+	Slot         string  `json:"slot"`
+	StartAt      string  `json:"startAt"`
+	EndAt        string  `json:"endAt"`
+	RequestCount int64   `json:"requestCount"`
+	InputTokens  int64   `json:"inputTokens"`
+	OutputTokens int64   `json:"outputTokens"`
+	TotalTokens  int64   `json:"totalTokens"`
+	PaygCostUSD  float64 `json:"paygCostUsd"`
+	PaygCostKRW  float64 `json:"paygCostKrw"`
+}
+
+type PersonalAIUsageTodayProviderRow struct {
+	ProviderCode string                      `json:"providerCode"`
+	ProviderName string                      `json:"providerName"`
+	RequestCount int64                       `json:"requestCount"`
+	InputTokens  int64                       `json:"inputTokens"`
+	OutputTokens int64                       `json:"outputTokens"`
+	TotalTokens  int64                       `json:"totalTokens"`
+	PaygCostUSD  float64                     `json:"paygCostUsd"`
+	PaygCostKRW  float64                     `json:"paygCostKrw"`
+	Buckets      []AIUsageTodayHalfHourPoint `json:"buckets"`
+}
+
+type PersonalAIUsageTodayModelRow struct {
+	ProviderCode string                      `json:"providerCode"`
+	ProviderName string                      `json:"providerName"`
+	ModelCode    string                      `json:"modelCode"`
+	ModelName    string                      `json:"modelName"`
+	RequestCount int64                       `json:"requestCount"`
+	InputTokens  int64                       `json:"inputTokens"`
+	OutputTokens int64                       `json:"outputTokens"`
+	TotalTokens  int64                       `json:"totalTokens"`
+	PaygCostUSD  float64                     `json:"paygCostUsd"`
+	PaygCostKRW  float64                     `json:"paygCostKrw"`
+	Buckets      []AIUsageTodayHalfHourPoint `json:"buckets"`
+}
+
+type PersonalAIUsageTodayUsage struct {
+	Day            string                            `json:"day"`
+	Timezone       string                            `json:"timezone"`
+	Buckets        []AIUsageTodayHalfHourPoint       `json:"buckets"`
+	ByProvider     []PersonalAIUsageTodayProviderRow `json:"byProvider"`
+	ByModel        []PersonalAIUsageTodayModelRow    `json:"byModel"`
+	FXRateUsed     float64                           `json:"fxRateUsed"`
+	FXRateDate     string                            `json:"fxRateDate"`
+	FXSource       string                            `json:"fxSource"`
+	FXFallbackUsed bool                              `json:"fxFallbackUsed"`
+}
+
 type PersonalAICollectorResult struct {
 	SourceCode    string   `json:"sourceCode"`
 	SourceName    string   `json:"sourceName"`

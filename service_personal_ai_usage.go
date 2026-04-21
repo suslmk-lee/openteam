@@ -34,6 +34,7 @@ type personalUsageBucket struct {
 	inputTokens  int64
 	outputTokens int64
 	costUSD      float64
+	occurredAt   time.Time
 }
 
 type parsedUsageEvent struct {
@@ -76,6 +77,12 @@ type personalAICollectCursorPayload struct {
 type personalSeriesAggregate struct {
 	row   db.AIUsageSeriesRow
 	daily map[string]*db.AIUsageDailySeriesPoint
+}
+
+func halfHourStartInKST(value time.Time) time.Time {
+	kst := usageTimeInKST(value)
+	minute := (kst.Minute() / 30) * 30
+	return time.Date(kst.Year(), kst.Month(), kst.Day(), kst.Hour(), minute, 0, 0, usageKSTLocation)
 }
 
 func normalizeUsageDayKey(value string) string {
@@ -262,7 +269,7 @@ func (a *App) buildPersonalAIUsageDashboard(userID int64, month string) (db.Pers
 		return db.PersonalAIUsageDashboard{}, err
 	}
 
-	usageRows, err := a.database.ListAIUsageDailyByMonth(userID, normalizedMonth)
+	events, err := a.database.ListAIUsageHistoryEventsByMonth(userID, normalizedMonth, 200000)
 	if err != nil {
 		return db.PersonalAIUsageDashboard{}, err
 	}
@@ -296,8 +303,22 @@ func (a *App) buildPersonalAIUsageDashboard(userID int64, month string) (db.Pers
 		Month: normalizedMonth,
 	}
 
-	for _, row := range usageRows {
-		sourceCode, sourceName, isExternal := personalSourceMeta(row.Feature)
+	for _, event := range events {
+		if shouldSkipLegacyLocalDailyEvent(event) {
+			continue
+		}
+
+		occurredAt, ok := parseHistoryOccurredAt(event)
+		if !ok {
+			continue
+		}
+
+		requestCount := nonNegativeInt64(event.RequestCount)
+		inputTokens := nonNegativeInt64(event.InputTokens)
+		outputTokens := nonNegativeInt64(event.OutputTokens)
+		paygCostUSD := nonNegativeFloat64(event.PaygCostUSD)
+
+		sourceCode, sourceName, isExternal := personalSourceMeta(event.Feature)
 		sourceRow, ok := sourceMap[sourceCode]
 		if !ok {
 			sourceRow = &db.PersonalAISourceSummaryRow{
@@ -306,12 +327,19 @@ func (a *App) buildPersonalAIUsageDashboard(userID int64, month string) (db.Pers
 			}
 			sourceMap[sourceCode] = sourceRow
 		}
-		sourceRow.RequestCount += row.RequestCount
-		sourceRow.InputTokens += row.InputTokens
-		sourceRow.OutputTokens += row.OutputTokens
-		sourceRow.TotalCostUSD += row.PaygCostUSD
+		sourceRow.RequestCount += requestCount
+		sourceRow.InputTokens += inputTokens
+		sourceRow.OutputTokens += outputTokens
+		sourceRow.TotalCostUSD += paygCostUSD
 
-		providerCode, providerName, modelCode, modelName, isUnregistered := resolveUsageProviderModel(row, providerByID, modelByID)
+		usageLikeRow := db.AIUsageDaily{
+			Day:         event.Day,
+			ProviderID:  event.ProviderID,
+			ModelID:     event.ModelID,
+			RawProvider: event.RawProvider,
+			RawModel:    event.RawModel,
+		}
+		providerCode, providerName, modelCode, modelName, isUnregistered := resolveUsageProviderModel(usageLikeRow, providerByID, modelByID)
 
 		providerKey := providerCode
 		providerAgg, ok := providerMap[providerKey]
@@ -322,10 +350,10 @@ func (a *App) buildPersonalAIUsageDashboard(userID int64, month string) (db.Pers
 			}
 			providerMap[providerKey] = providerAgg
 		}
-		providerAgg.RequestCount += row.RequestCount
-		providerAgg.InputTokens += row.InputTokens
-		providerAgg.OutputTokens += row.OutputTokens
-		providerAgg.PaygCostUSD += row.PaygCostUSD
+		providerAgg.RequestCount += requestCount
+		providerAgg.InputTokens += inputTokens
+		providerAgg.OutputTokens += outputTokens
+		providerAgg.PaygCostUSD += paygCostUSD
 		providerAgg.TotalCostUSD = providerAgg.PaygCostUSD
 		providerAgg.IsUnregistered = providerAgg.IsUnregistered || isUnregistered
 
@@ -341,21 +369,21 @@ func (a *App) buildPersonalAIUsageDashboard(userID int64, month string) (db.Pers
 			}
 			modelMap[modelKey] = modelAgg
 		}
-		modelAgg.RequestCount += row.RequestCount
-		modelAgg.InputTokens += row.InputTokens
-		modelAgg.OutputTokens += row.OutputTokens
-		modelAgg.PaygCostUSD += row.PaygCostUSD
+		modelAgg.RequestCount += requestCount
+		modelAgg.InputTokens += inputTokens
+		modelAgg.OutputTokens += outputTokens
+		modelAgg.PaygCostUSD += paygCostUSD
 		modelAgg.TotalCostUSD = modelAgg.PaygCostUSD
 
-		dayKey := normalizeUsageDayKey(row.Day)
+		dayKey := normalizeUsageDayKey(usageDayString(occurredAt))
 		dayAgg, ok := dailyMap[dayKey]
 		if !ok {
 			dayAgg = &db.AIUsageDailyPoint{Day: dayKey}
 			dailyMap[dayKey] = dayAgg
 		}
-		dayAgg.InputTokens += row.InputTokens
-		dayAgg.OutputTokens += row.OutputTokens
-		dayAgg.TotalCostUSD += row.PaygCostUSD
+		dayAgg.InputTokens += inputTokens
+		dayAgg.OutputTokens += outputTokens
+		dayAgg.TotalCostUSD += paygCostUSD
 
 		providerSeriesAgg, ok := providerSeriesMap[providerKey]
 		if !ok {
@@ -368,15 +396,15 @@ func (a *App) buildPersonalAIUsageDashboard(userID int64, month string) (db.Pers
 			}
 			providerSeriesMap[providerKey] = providerSeriesAgg
 		}
-		providerSeriesAgg.row.RequestCount += row.RequestCount
-		providerSeriesAgg.row.InputTokens += row.InputTokens
-		providerSeriesAgg.row.OutputTokens += row.OutputTokens
-		providerSeriesAgg.row.TotalCostUSD += row.PaygCostUSD
+		providerSeriesAgg.row.RequestCount += requestCount
+		providerSeriesAgg.row.InputTokens += inputTokens
+		providerSeriesAgg.row.OutputTokens += outputTokens
+		providerSeriesAgg.row.TotalCostUSD += paygCostUSD
 		providerPoint := upsertSeriesPoint(providerSeriesAgg.daily, dayKey)
-		providerPoint.RequestCount += row.RequestCount
-		providerPoint.InputTokens += row.InputTokens
-		providerPoint.OutputTokens += row.OutputTokens
-		providerPoint.TotalCostUSD += row.PaygCostUSD
+		providerPoint.RequestCount += requestCount
+		providerPoint.InputTokens += inputTokens
+		providerPoint.OutputTokens += outputTokens
+		providerPoint.TotalCostUSD += paygCostUSD
 
 		modelSeriesAgg, ok := modelSeriesMap[modelKey]
 		if !ok {
@@ -391,25 +419,25 @@ func (a *App) buildPersonalAIUsageDashboard(userID int64, month string) (db.Pers
 			}
 			modelSeriesMap[modelKey] = modelSeriesAgg
 		}
-		modelSeriesAgg.row.RequestCount += row.RequestCount
-		modelSeriesAgg.row.InputTokens += row.InputTokens
-		modelSeriesAgg.row.OutputTokens += row.OutputTokens
-		modelSeriesAgg.row.TotalCostUSD += row.PaygCostUSD
+		modelSeriesAgg.row.RequestCount += requestCount
+		modelSeriesAgg.row.InputTokens += inputTokens
+		modelSeriesAgg.row.OutputTokens += outputTokens
+		modelSeriesAgg.row.TotalCostUSD += paygCostUSD
 		modelPoint := upsertSeriesPoint(modelSeriesAgg.daily, dayKey)
-		modelPoint.RequestCount += row.RequestCount
-		modelPoint.InputTokens += row.InputTokens
-		modelPoint.OutputTokens += row.OutputTokens
-		modelPoint.TotalCostUSD += row.PaygCostUSD
+		modelPoint.RequestCount += requestCount
+		modelPoint.InputTokens += inputTokens
+		modelPoint.OutputTokens += outputTokens
+		modelPoint.TotalCostUSD += paygCostUSD
 
-		overview.RequestCount += row.RequestCount
+		overview.RequestCount += requestCount
 		if isExternal {
-			overview.ExternalInputTokens += row.InputTokens
-			overview.ExternalOutputTokens += row.OutputTokens
-			overview.ExternalCostUSD += row.PaygCostUSD
+			overview.ExternalInputTokens += inputTokens
+			overview.ExternalOutputTokens += outputTokens
+			overview.ExternalCostUSD += paygCostUSD
 		} else {
-			overview.InternalInputTokens += row.InputTokens
-			overview.InternalOutputTokens += row.OutputTokens
-			overview.InternalCostUSD += row.PaygCostUSD
+			overview.InternalInputTokens += inputTokens
+			overview.InternalOutputTokens += outputTokens
+			overview.InternalCostUSD += paygCostUSD
 		}
 	}
 
@@ -1440,11 +1468,12 @@ func (a *App) runLocalUsageCollector(
 		return result, nextCursor, nil
 	}
 	metadataJSON := marshalUsageMetadata(map[string]any{
-		"collector":  "local_file_scan",
-		"sourceCode": sourceCode,
-		"sourceName": sourceName,
-		"trigger":    options.Trigger,
-		"month":      normalizedMonth,
+		"collector":   "local_file_scan",
+		"sourceCode":  sourceCode,
+		"sourceName":  sourceName,
+		"trigger":     options.Trigger,
+		"month":       normalizedMonth,
+		"granularity": "half_hour_v2",
 	})
 
 	for _, root := range normalizedRoots {
@@ -1511,11 +1540,26 @@ func (a *App) runLocalUsageCollector(
 			}
 			for _, event := range events {
 				result.ParsedEntries++
-				key := event.day + "|" + event.providerCode + "|" + event.modelCode
+				occurredAt := event.occurredAt
+				if occurredAt.IsZero() {
+					if parsedDay, err := parseUsageDayInKST(event.day); err == nil {
+						occurredAt = parsedDay.Add(12 * time.Hour)
+					} else {
+						occurredAt = usageTimeInKST(time.Now())
+					}
+				}
+				occurredAt = halfHourStartInKST(occurredAt)
+				dayKey := usageDayString(occurredAt)
+				slotKey := occurredAt.Format("15:04")
+				key := dayKey + "|" + event.providerCode + "|" + event.modelCode + "|" + slotKey
 				bucket, ok := buckets[key]
 				if !ok {
-					bucket = &personalUsageBucket{}
+					bucket = &personalUsageBucket{
+						occurredAt: occurredAt,
+					}
 					buckets[key] = bucket
+				} else if bucket.occurredAt.IsZero() {
+					bucket.occurredAt = occurredAt
 				}
 				bucket.requestCount++
 				bucket.inputTokens += event.inputTokens
@@ -1527,16 +1571,21 @@ func (a *App) runLocalUsageCollector(
 	}
 
 	for key, bucket := range buckets {
-		parts := strings.SplitN(key, "|", 3)
-		if len(parts) != 3 {
+		parts := strings.SplitN(key, "|", 4)
+		if len(parts) != 4 {
 			continue
 		}
-		day, providerCode, modelCode := parts[0], parts[1], parts[2]
-		occurredAt, err := parseUsageDayInKST(day)
-		if err != nil {
-			continue
+		day, providerCode, modelCode, slot := parts[0], parts[1], parts[2], parts[3]
+		occurredAt := bucket.occurredAt
+		if occurredAt.IsZero() {
+			if parsed, err := time.ParseInLocation("2006-01-02 15:04", day+" "+slot, usageKSTLocation); err == nil {
+				occurredAt = parsed
+			} else if parsedDay, err := parseUsageDayInKST(day); err == nil {
+				occurredAt = parsedDay.Add(12 * time.Hour)
+			} else {
+				occurredAt = usageTimeInKST(time.Now())
+			}
 		}
-		occurredAt = occurredAt.Add(12 * time.Hour)
 		if err := a.trackAIUsage(aiUsageEvent{
 			ProviderCode: providerCode,
 			ModelCode:    modelCode,

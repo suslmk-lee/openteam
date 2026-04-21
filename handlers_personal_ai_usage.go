@@ -17,6 +17,14 @@ func (a *App) GetPersonalAIUsageDashboard(month string) (db.PersonalAIUsageDashb
 	return a.buildPersonalAIUsageDashboard(user.ID, month)
 }
 
+func (a *App) GetPersonalAIUsageTodayUsage() (db.PersonalAIUsageTodayUsage, error) {
+	user, err := a.database.GetOrCreateDefaultUser()
+	if err != nil {
+		return db.PersonalAIUsageTodayUsage{}, err
+	}
+	return a.buildPersonalAIUsageTodayUsage(user.ID, time.Now())
+}
+
 func (a *App) CollectPersonalAIUsage(month string) (db.PersonalAICollectorResponse, error) {
 	user, err := a.database.GetOrCreateDefaultUser()
 	if err != nil {
@@ -72,7 +80,12 @@ func (a *App) AddPersonalAIManualUsage(
 	occurredAt := usageTimeInKST(time.Now())
 	if targetDay != "" {
 		if parsed, parseErr := parseUsageDayInKST(targetDay); parseErr == nil {
-			occurredAt = parsed.Add(12 * time.Hour)
+			todayKST := usageDayString(time.Now())
+			if parsed.Format("2006-01-02") == todayKST {
+				occurredAt = usageTimeInKST(time.Now())
+			} else {
+				occurredAt = parsed.Add(12 * time.Hour)
+			}
 		}
 	}
 

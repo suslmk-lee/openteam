@@ -499,9 +499,57 @@ func (d *Database) ListAIUsageHistoryEventsByMonth(userID int64, month string, l
 		        request_count, input_tokens, output_tokens, cache_read_tokens, cache_create_tokens, payg_cost_usd, metadata_json, created_at
 		 FROM ai_usage_history_events
 		 WHERE user_id = ? AND day >= ? AND day < ?
-		 ORDER BY occurred_at DESC, id DESC
+		 ORDER BY created_at DESC, id DESC
 		 LIMIT ?`,
 		userID, start, end, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]AIUsageHistoryEvent, 0)
+	for rows.Next() {
+		var item AIUsageHistoryEvent
+		if err := rows.Scan(
+			&item.ID,
+			&item.OccurredAt,
+			&item.Day,
+			&item.UserID,
+			&item.ProviderID,
+			&item.ModelID,
+			&item.RawProvider,
+			&item.RawModel,
+			&item.Feature,
+			&item.RequestCount,
+			&item.InputTokens,
+			&item.OutputTokens,
+			&item.CacheReadTokens,
+			&item.CacheCreateTokens,
+			&item.PaygCostUSD,
+			&item.MetadataJSON,
+			&item.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, nil
+}
+
+func (d *Database) ListAIUsageHistoryEventsByDay(userID int64, day string) ([]AIUsageHistoryEvent, error) {
+	targetDay := strings.TrimSpace(day)
+	if _, err := time.Parse("2006-01-02", targetDay); err != nil {
+		return nil, fmt.Errorf("invalid day format: %w", err)
+	}
+
+	rows, err := d.conn.Query(
+		`SELECT id, occurred_at, day, user_id, provider_id, model_id, raw_provider, raw_model, feature,
+		        request_count, input_tokens, output_tokens, cache_read_tokens, cache_create_tokens, payg_cost_usd, metadata_json, created_at
+		 FROM ai_usage_history_events
+		 WHERE user_id = ? AND day = ?
+		 ORDER BY occurred_at ASC, id ASC`,
+		userID, targetDay,
 	)
 	if err != nil {
 		return nil, err

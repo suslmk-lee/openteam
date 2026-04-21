@@ -1,4 +1,4 @@
-package db
+﻿package db
 
 import (
 	"database/sql"
@@ -44,26 +44,21 @@ func (d *Database) ListUsers() ([]User, error) {
 		}
 		users = append(users, u)
 	}
-	log.Printf("[ListUsers] Retrieved %d users", len(users))
 	return users, nil
 }
 
 func (d *Database) GetOrCreateDefaultUser() (*User, error) {
 	users, err := d.ListUsers()
 	if err != nil {
-		log.Printf("[GetOrCreateDefaultUser] Error: %v", err)
 		return nil, err
 	}
 	if len(users) > 0 {
-		log.Printf("[GetOrCreateDefaultUser] Retrieved default user with ID: %d", users[0].ID)
 		return &users[0], nil
 	}
-	id, err := d.CreateUser("기본 사용자", "기본 팀")
+	id, err := d.CreateUser("default user", "default team")
 	if err != nil {
-		log.Printf("[GetOrCreateDefaultUser] Error: %v", err)
 		return nil, err
 	}
-	log.Printf("[GetOrCreateDefaultUser] Created default user with ID: %d", id)
 	return d.GetUser(id)
 }
 
@@ -556,7 +551,7 @@ func (d *Database) GetOrCreateSelfTeamMember(userID int64, userName string) (int
 	// Create self team member
 	res, err := d.conn.Exec(
 		"INSERT INTO team_members (user_id, name, position, email, role, employment_type, active) VALUES (?, ?, ?, ?, ?, ?, ?)",
-		userID, userName, "본인", "", "member", "", 1,
+		userID, userName, "蹂몄씤", "", "member", "", 1,
 	)
 	if err != nil {
 		return 0, err
@@ -1042,7 +1037,7 @@ func (d *Database) GetAttendanceRecords(userID int64, startDate, endDate string)
 func (d *Database) GetAttendanceSummary(userID int64, startDate, endDate string) ([]AttendanceSummary, error) {
 	log.Printf("[DB GetAttendanceSummary] userID=%d, startDate=%s, endDate=%s", userID, startDate, endDate)
 
-	// 먼저 해당 기간에 근태 기록이 있는지 확인
+	// 癒쇱? ?대떦 湲곌컙??洹쇳깭 湲곕줉???덈뒗吏 ?뺤씤
 	countQuery := `SELECT COUNT(*) FROM attendance_records WHERE user_id = ? AND record_date >= ? AND record_date <= ?`
 	var totalCount int
 	err := d.conn.QueryRow(countQuery, userID, startDate, endDate).Scan(&totalCount)
@@ -1422,7 +1417,7 @@ func (d *Database) SaveTeamProfile(userID int64, p *TeamProfile) error {
 		return err
 	}
 	// Always delete all existing rows for this user and re-insert.
-	// This handles team_type changes (si_business → si_field etc.)
+	// This handles team_type changes (si_business ??si_field etc.)
 	// because UNIQUE(user_id, team_type) means changing type = new row, not update.
 	if _, err = d.conn.Exec("DELETE FROM team_type_configs WHERE user_id = ?", userID); err != nil {
 		return err
@@ -1735,3 +1730,4 @@ func (d *Database) ClearVaultItems() error {
 	_, err := d.conn.Exec(`DELETE FROM vault_items`)
 	return err
 }
+

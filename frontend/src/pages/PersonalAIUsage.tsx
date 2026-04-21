@@ -1,14 +1,19 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertCircle, Plus, RefreshCw } from 'lucide-react'
+import { EventsOn } from '../../wailsjs/runtime/runtime'
 import { useAppApi } from '../hooks/useAppApi'
 import { useTeamProfile } from '../contexts/TeamProfileContext'
 import type {
+  AIModel,
+  AIProvider,
   AIUsageHistoryEvent,
+  AIUsageTodayHalfHourPoint,
   AIUsageDailyPoint,
   AIUsageSeriesPoint,
   AIUsageSeriesRow,
   PersonalAICollectStatus,
   PersonalAICollectorResponse,
+  PersonalAIUsageTodayUsage,
   PersonalAIUsageDashboard,
 } from '../services/appApi'
 import { aggregateSeriesValues, buildMotionProfile, type MotionProfile } from './personalAiMotionProfile'
@@ -28,6 +33,7 @@ const PROVIDER_OPTIONS = [
 
 const TABS = [
   { id: 'overview', label: '개요' },
+  { id: 'today', label: '오늘사용량' },
   { id: 'daily', label: '일간 사용량' },
   { id: 'model', label: 'Model별 일간' },
   { id: 'provider', label: 'Provider별 일간' },
@@ -37,6 +43,7 @@ const TABS = [
 
 type DashboardTab = (typeof TABS)[number]['id']
 type TrendMetric = 'tokens' | 'cost'
+type PieDatum = { label: string; value: number; color: string }
 
 const SERIES_COLORS = ['#0ea5e9', '#22c55e', '#f97316', '#a855f7', '#eab308', '#14b8a6']
 const AUTO_INTERVAL_OPTIONS = [
@@ -47,14 +54,30 @@ const AUTO_INTERVAL_OPTIONS = [
   { value: 300, label: '5분' },
   { value: 600, label: '10분' },
 ]
+const OVERVIEW_LIVE_REFRESH_MS = 7000
 
 function currentMonth() {
-  const now = new Date()
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+  }).formatToParts(new Date())
+  const year = parts.find(part => part.type === 'year')?.value || '1970'
+  const month = parts.find(part => part.type === 'month')?.value || '01'
+  return `${year}-${month}`
 }
 
 function todayString() {
-  return new Date().toISOString().slice(0, 10)
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date())
+  const year = parts.find(part => part.type === 'year')?.value || '1970'
+  const month = parts.find(part => part.type === 'month')?.value || '01'
+  const day = parts.find(part => part.type === 'day')?.value || '01'
+  return `${year}-${month}-${day}`
 }
 
 function formatUsd(value: number) {
@@ -76,12 +99,30 @@ function formatDay(value: string) {
 
 function formatDateTime(value?: string) {
   if (!value) return '-'
-  const parsed = new Date(value)
+  const text = value.trim()
+  const normalized = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(text)
+    ? `${text.replace(' ', 'T')}Z`
+    : text
+  const parsed = new Date(normalized)
   if (Number.isNaN(parsed.getTime())) return value
   return new Intl.DateTimeFormat('ko-KR', {
+    timeZone: 'Asia/Seoul',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(parsed)
+}
+
+function formatTimeOnly(value?: string) {
+  if (!value) return '-'
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value
+  return new Intl.DateTimeFormat('ko-KR', {
+    timeZone: 'Asia/Seoul',
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
@@ -122,10 +163,139 @@ function formatPercent(value: number) {
   return `${Math.round(clamped * 100)}%`
 }
 
+function canonicalProviderCode(input?: string) {
+  const code = (input || '').trim().toLowerCase()
+  if (code === 'codex') return 'openai'
+  if (code === 'claude') return 'anthropic'
+  if (code === 'mini-max' || code === 'mini_max') return 'minimax'
+  return code
+}
+
+function inferProviderCodeFromModel(model?: string) {
+  const lower = (model || '').trim().toLowerCase()
+  if (!lower) return ''
+  if (lower.includes('claude')) return 'anthropic'
+  if (lower.includes('gpt') || lower.includes('o1') || lower.includes('o3') || lower.includes('o4') || lower.includes('codex')) return 'openai'
+  if (lower.includes('gemini')) return 'google'
+  if (lower.includes('grok')) return 'xai'
+  if (lower.includes('deepseek')) return 'deepseek'
+  if (lower.includes('mistral')) return 'mistral'
+  if (lower.includes('minimax')) return 'minimax'
+  return ''
+}
+
+function providerDisplayName(code: string) {
+  switch (code) {
+    case 'openai': return 'OpenAI'
+    case 'anthropic': return 'Anthropic'
+    case 'minimax': return 'MiniMax'
+    case 'google': return 'Google'
+    case 'xai': return 'xAI'
+    case 'mistral': return 'Mistral'
+    case 'deepseek': return 'DeepSeek'
+    default: return code || 'unknown'
+  }
+}
+
+function useAnimatedNumber(target: number, durationMs = 700) {
+  const [value, setValue] = useState(target)
+  const fromRef = useRef(target)
+  const rafRef = useRef<number | null>(null)
+  const startRef = useRef<number>(0)
+
+  useEffect(() => {
+    const from = fromRef.current
+    const to = target
+    if (!Number.isFinite(from) || !Number.isFinite(to) || from === to) {
+      fromRef.current = to
+      setValue(to)
+      return
+    }
+
+    if (rafRef.current) {
+      window.cancelAnimationFrame(rafRef.current)
+      rafRef.current = null
+    }
+    startRef.current = 0
+
+    const step = (ts: number) => {
+      if (startRef.current === 0) startRef.current = ts
+      const elapsed = ts - startRef.current
+      const progress = Math.max(0, Math.min(1, elapsed / durationMs))
+      const eased = 1 - Math.pow(1 - progress, 3)
+      const next = from + (to - from) * eased
+      setValue(next)
+      if (progress < 1) {
+        rafRef.current = window.requestAnimationFrame(step)
+      } else {
+        fromRef.current = to
+        rafRef.current = null
+      }
+    }
+
+    rafRef.current = window.requestAnimationFrame(step)
+
+    return () => {
+      if (rafRef.current) {
+        window.cancelAnimationFrame(rafRef.current)
+        rafRef.current = null
+      }
+    }
+  }, [target, durationMs])
+
+  return value
+}
+
+function shiftDay(day: string, delta: number) {
+  const parts = day.split('-').map(part => Number(part))
+  if (parts.length !== 3 || parts.some(part => Number.isNaN(part))) return day
+  const [year, month, date] = parts
+  const utc = new Date(Date.UTC(year, month - 1, date))
+  utc.setUTCDate(utc.getUTCDate() + delta)
+  const nextYear = utc.getUTCFullYear()
+  const nextMonth = String(utc.getUTCMonth() + 1).padStart(2, '0')
+  const nextDate = String(utc.getUTCDate()).padStart(2, '0')
+  return `${nextYear}-${nextMonth}-${nextDate}`
+}
+
+function buildPieData(
+  rows: AIUsageSeriesRow[],
+  rangeStart: string,
+  rangeEnd: string,
+  labelSelector: (row: AIUsageSeriesRow) => string,
+  topN = 8,
+): PieDatum[] {
+  const items = rows
+    .map((row, idx) => {
+      const total = row.daily.reduce((sum, point) => {
+        if (point.day < rangeStart || point.day > rangeEnd) return sum
+        return sum + point.inputTokens + point.outputTokens
+      }, 0)
+      return {
+        label: labelSelector(row) || 'unknown',
+        value: total,
+        color: SERIES_COLORS[idx % SERIES_COLORS.length],
+      }
+    })
+    .filter(item => item.value > 0)
+    .sort((a, b) => b.value - a.value)
+
+  const head = items.slice(0, topN)
+  const tail = items.slice(topN)
+  if (tail.length > 0) {
+    const etcValue = tail.reduce((sum, item) => sum + item.value, 0)
+    head.push({ label: '기타', value: etcValue, color: '#64748b' })
+  }
+  return head
+}
+
 export default function PersonalAIUsage() {
   const {
     GetPersonalAIUsageDashboard,
+    GetPersonalAIUsageTodayUsage,
     GetPersonalAIUsageHistory,
+    ListAIProviders,
+    ListAIModels,
     StartPersonalAIUsageCollection,
     GetPersonalAIUsageCollectionStatus,
     SetPersonalAIAutoCollect,
@@ -135,7 +305,10 @@ export default function PersonalAIUsage() {
 
   const [month, setMonth] = useState(currentMonth())
   const [dashboard, setDashboard] = useState<PersonalAIUsageDashboard | null>(null)
+  const [todayUsage, setTodayUsage] = useState<PersonalAIUsageTodayUsage | null>(null)
   const [historyRows, setHistoryRows] = useState<AIUsageHistoryEvent[]>([])
+  const [providersById, setProvidersById] = useState<Record<number, AIProvider>>({})
+  const [modelsById, setModelsById] = useState<Record<number, AIModel>>({})
   const [collectResult, setCollectResult] = useState<PersonalAICollectorResponse | null>(null)
   const [collectStatus, setCollectStatus] = useState<PersonalAICollectStatus | null>(null)
   const [loading, setLoading] = useState(false)
@@ -154,12 +327,15 @@ export default function PersonalAIUsage() {
   const [manualOutput, setManualOutput] = useState(0)
   const [manualCost, setManualCost] = useState(0)
   const [autoIntervalSeconds, setAutoIntervalSeconds] = useState(120)
+  const [lastLiveSyncedAt, setLastLiveSyncedAt] = useState('')
 
   const collecting = Boolean(collectStatus?.running)
   const collectTrigger = String(collectStatus?.trigger || '').toLowerCase()
   const autoEnabled = Boolean(collectStatus?.autoEnabled)
   const previousCollectRunningRef = useRef(false)
   const handledFinishedKeyRef = useRef('')
+  const liveRefreshInFlightRef = useRef(false)
+  const liveEventDebounceRef = useRef<number | null>(null)
 
   useEffect(() => {
     if (typeof window === 'undefined' || !window.matchMedia) return
@@ -179,10 +355,48 @@ export default function PersonalAIUsage() {
     setDashboard(data)
   }, [GetPersonalAIUsageDashboard, month])
 
+  const loadTodayUsage = useCallback(async () => {
+    const data = await GetPersonalAIUsageTodayUsage()
+    setTodayUsage(data)
+  }, [GetPersonalAIUsageTodayUsage])
+
   const loadHistory = useCallback(async () => {
-    const rows = await GetPersonalAIUsageHistory(month, 500)
+    const [rows, providers, models] = await Promise.all([
+      GetPersonalAIUsageHistory(month, 500),
+      ListAIProviders(),
+      ListAIModels(),
+    ])
     setHistoryRows(rows || [])
-  }, [GetPersonalAIUsageHistory, month])
+    const providerMap: Record<number, AIProvider> = {}
+    for (const provider of providers || []) {
+      providerMap[provider.id] = provider
+    }
+    setProvidersById(providerMap)
+    const modelMap: Record<number, AIModel> = {}
+    for (const model of models || []) {
+      modelMap[model.id] = model
+    }
+    setModelsById(modelMap)
+  }, [GetPersonalAIUsageHistory, ListAIModels, ListAIProviders, month])
+
+  const resolveHistoryProviderModel = useCallback((row: AIUsageHistoryEvent) => {
+    const modelEntry = row.modelId > 0 ? modelsById[row.modelId] : undefined
+    const providerEntry = row.providerId > 0 ? providersById[row.providerId] : undefined
+
+    let modelCode = (modelEntry?.modelCode || row.rawModel || '').trim()
+    if (!modelCode) modelCode = 'unknown'
+    let modelName = (modelEntry?.displayName || row.rawModel || '').trim()
+    if (!modelName) modelName = modelCode
+
+    let providerCode = canonicalProviderCode(providerEntry?.code || row.rawProvider || '')
+    if (!providerCode) {
+      providerCode = inferProviderCodeFromModel(modelCode)
+    }
+    if (!providerCode) providerCode = 'unknown'
+    const providerName = (providerEntry?.displayName || '').trim() || providerDisplayName(providerCode)
+
+    return { providerCode, providerName, modelCode, modelName }
+  }, [modelsById, providersById])
 
   const showMessage = useCallback((text: string) => {
     setMessage(text)
@@ -205,29 +419,34 @@ export default function PersonalAIUsage() {
       } else {
         if (finishedTrigger === 'auto') {
           await loadDashboard()
+          await loadTodayUsage()
           await loadHistory()
+          setLastLiveSyncedAt(new Date().toISOString())
         } else {
           showMessage('로컬 AI 사용량 수집이 완료되었습니다.')
           await loadDashboard()
+          await loadTodayUsage()
           await loadHistory()
+          setLastLiveSyncedAt(new Date().toISOString())
         }
       }
     }
     previousCollectRunningRef.current = isRunning
-  }, [GetPersonalAIUsageCollectionStatus, loadDashboard, loadHistory, showMessage])
+  }, [GetPersonalAIUsageCollectionStatus, loadDashboard, loadHistory, loadTodayUsage, showMessage])
 
   const reloadAll = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
-      await Promise.all([loadDashboard(), loadHistory()])
+      await Promise.all([loadDashboard(), loadTodayUsage(), loadHistory()])
       await refreshCollectStatus()
+      setLastLiveSyncedAt(new Date().toISOString())
     } catch (e: any) {
       setError(String(e?.message || e))
     } finally {
       setLoading(false)
     }
-  }, [loadDashboard, loadHistory, refreshCollectStatus])
+  }, [loadDashboard, loadHistory, loadTodayUsage, refreshCollectStatus])
 
   useEffect(() => {
     void reloadAll()
@@ -244,6 +463,59 @@ export default function PersonalAIUsage() {
     if (!collectStatus?.autoIntervalSeconds) return
     setAutoIntervalSeconds(collectStatus.autoIntervalSeconds)
   }, [collectStatus?.autoIntervalSeconds])
+
+  const refreshOverviewLive = useCallback(async () => {
+    if (activeTab !== 'overview') return
+    if (liveRefreshInFlightRef.current) return
+    liveRefreshInFlightRef.current = true
+    try {
+      await Promise.all([loadDashboard(), loadTodayUsage()])
+      setLastLiveSyncedAt(new Date().toISOString())
+    } catch {
+      // Keep prior values when background refresh fails.
+    } finally {
+      liveRefreshInFlightRef.current = false
+    }
+  }, [activeTab, loadDashboard, loadTodayUsage])
+
+  useEffect(() => {
+    if (activeTab !== 'overview') return
+    const timer = window.setInterval(() => {
+      void refreshOverviewLive()
+    }, OVERVIEW_LIVE_REFRESH_MS)
+    return () => window.clearInterval(timer)
+  }, [activeTab, refreshOverviewLive])
+
+  useEffect(() => {
+    const unsubscribe = EventsOn('personal-ai-usage-updated', () => {
+      if (liveEventDebounceRef.current) {
+        window.clearTimeout(liveEventDebounceRef.current)
+      }
+      liveEventDebounceRef.current = window.setTimeout(() => {
+        void (async () => {
+          try {
+            await Promise.all([
+              loadDashboard(),
+              loadTodayUsage(),
+              activeTab === 'history' ? loadHistory() : Promise.resolve(),
+              refreshCollectStatus(),
+            ])
+            setLastLiveSyncedAt(new Date().toISOString())
+          } catch {
+            // Keep current values when event-driven refresh fails.
+          }
+        })()
+      }, 180)
+    })
+
+    return () => {
+      if (liveEventDebounceRef.current) {
+        window.clearTimeout(liveEventDebounceRef.current)
+        liveEventDebounceRef.current = null
+      }
+      unsubscribe()
+    }
+  }, [activeTab, loadDashboard, loadHistory, loadTodayUsage, refreshCollectStatus])
 
   const updateAutoCollect = useCallback(async (enabled: boolean, intervalSeconds: number) => {
     setAutoSaving(true)
@@ -283,9 +555,110 @@ export default function PersonalAIUsage() {
     }))
   }, [dashboard, trendMetric])
 
+  const latestDayInDashboard = useMemo(() => {
+    if (!dashboard || dashboard.daily.length === 0) return todayString()
+    const nonZeroDays = dashboard.daily
+      .filter(point => (point.inputTokens + point.outputTokens) > 0)
+      .map(point => point.day)
+      .sort((a, b) => a.localeCompare(b))
+    if (nonZeroDays.length > 0) {
+      return nonZeroDays[nonZeroDays.length - 1]
+    }
+    return dashboard.daily
+      .map(point => point.day)
+      .sort((a, b) => a.localeCompare(b))
+      .at(-1) || todayString()
+  }, [dashboard])
+
+  const weeklyStartDayInDashboard = useMemo(() => shiftDay(latestDayInDashboard, -6), [latestDayInDashboard])
+
+  const monthlyModelPie = useMemo(
+    () => buildPieData(dashboard?.dailyByModel || [], '0000-01-01', '9999-12-31', row => row.modelName),
+    [dashboard],
+  )
+  const monthlyProviderPie = useMemo(
+    () => buildPieData(dashboard?.dailyByProvider || [], '0000-01-01', '9999-12-31', row => row.providerName),
+    [dashboard],
+  )
+  const weeklyModelPie = useMemo(
+    () => buildPieData(dashboard?.dailyByModel || [], weeklyStartDayInDashboard, latestDayInDashboard, row => row.modelName),
+    [dashboard, weeklyStartDayInDashboard, latestDayInDashboard],
+  )
+  const weeklyProviderPie = useMemo(
+    () => buildPieData(dashboard?.dailyByProvider || [], weeklyStartDayInDashboard, latestDayInDashboard, row => row.providerName),
+    [dashboard, weeklyStartDayInDashboard, latestDayInDashboard],
+  )
+  const dailyModelPie = useMemo(
+    () => buildPieData(dashboard?.dailyByModel || [], latestDayInDashboard, latestDayInDashboard, row => row.modelName),
+    [dashboard, latestDayInDashboard],
+  )
+  const dailyProviderPie = useMemo(
+    () => buildPieData(dashboard?.dailyByProvider || [], latestDayInDashboard, latestDayInDashboard, row => row.providerName),
+    [dashboard, latestDayInDashboard],
+  )
+  const overviewActiveProviders = useMemo(() => (dashboard?.byProvider || []).slice(0, 6), [dashboard])
+  const overviewTopModels = useMemo(() => {
+    const rows = [...(dashboard?.byModel || [])]
+    rows.sort((a, b) => (b.inputTokens + b.outputTokens) - (a.inputTokens + a.outputTokens))
+    return rows.slice(0, 8)
+  }, [dashboard])
+  const externalRatio = useMemo(() => {
+    if (!dashboard) return 0
+    const total = dashboard.overview.internalInputTokens + dashboard.overview.internalOutputTokens + dashboard.overview.externalInputTokens + dashboard.overview.externalOutputTokens
+    if (total <= 0) return 0
+    return (dashboard.overview.externalInputTokens + dashboard.overview.externalOutputTokens) / total
+  }, [dashboard])
+
+  const todayTotalTokensPoints = useMemo(() => {
+    if (!todayUsage) return []
+    return todayUsage.buckets.map(bucket => ({ label: bucket.slot, value: bucket.totalTokens }))
+  }, [todayUsage])
+
+  const todayProviderSeries = useMemo(() => {
+    if (!todayUsage) return []
+    return todayUsage.byProvider.slice(0, 6).map((row, idx) => ({
+      name: row.providerName,
+      color: SERIES_COLORS[idx % SERIES_COLORS.length],
+      points: row.buckets.map(bucket => ({ day: bucket.slot, value: bucket.totalTokens })),
+    }))
+  }, [todayUsage])
+
+  const todayTotals = useMemo(() => {
+    if (!todayUsage) {
+      return {
+        requestCount: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        paygCostUsd: 0,
+        paygCostKrw: 0,
+      }
+    }
+    return todayUsage.buckets.reduce(
+      (acc, bucket) => ({
+        requestCount: acc.requestCount + bucket.requestCount,
+        inputTokens: acc.inputTokens + bucket.inputTokens,
+        outputTokens: acc.outputTokens + bucket.outputTokens,
+        totalTokens: acc.totalTokens + bucket.totalTokens,
+        paygCostUsd: acc.paygCostUsd + bucket.paygCostUsd,
+        paygCostKrw: acc.paygCostKrw + bucket.paygCostKrw,
+      }),
+      {
+        requestCount: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        paygCostUsd: 0,
+        paygCostKrw: 0,
+      },
+    )
+  }, [todayUsage])
+
   const motionProfile = useMemo(() => {
     let values: number[] = []
-    if (activeTab === 'daily') {
+    if (activeTab === 'today') {
+      values = todayTotalTokensPoints.map(point => point.value)
+    } else if (activeTab === 'daily') {
       values = dailyChartPoints.map(point => point.value)
     } else if (activeTab === 'model') {
       values = aggregateSeriesValues(modelSeries)
@@ -293,12 +666,12 @@ export default function PersonalAIUsage() {
       values = aggregateSeriesValues(providerSeries)
     }
     return buildMotionProfile(values)
-  }, [activeTab, dailyChartPoints, modelSeries, providerSeries])
+  }, [activeTab, dailyChartPoints, modelSeries, providerSeries, todayTotalTokensPoints])
 
   if (profile?.teamType !== 'personal') {
     return (
-      <div className="h-full overflow-y-auto bg-slate-50 p-6">
-        <div className="mx-auto max-w-4xl rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700">
+      <div className="h-full overflow-y-auto bg-[#030712] p-6">
+        <div className="mx-auto max-w-4xl rounded-2xl border border-amber-400/30 bg-amber-900/20 p-4 text-sm text-amber-200">
           개인 팀에서만 사용할 수 있는 메뉴입니다.
         </div>
       </div>
@@ -306,14 +679,14 @@ export default function PersonalAIUsage() {
   }
 
   return (
-    <div className="relative h-full overflow-y-auto bg-slate-50 p-6">
+    <div className="relative h-full overflow-y-auto bg-gradient-to-b from-[#030712] via-[#071023] to-[#030712] p-6">
       <div className="mx-auto max-w-7xl space-y-5">
-        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+        <div className="rounded-2xl border border-slate-700/70 bg-[#0b1220]/85 p-4 shadow-[0_10px_40px_rgba(0,0,0,0.35)] backdrop-blur">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-[11px] font-medium uppercase tracking-wide text-blue-600">Settings / Personal AI Usage</p>
-              <h2 className="text-lg font-semibold text-slate-800">개인 AI 통합 사용량</h2>
-              <p className="text-xs text-slate-500">탭 기반 대시보드로 총량·일간 추세·모델별 추세를 함께 확인합니다.</p>
+              <p className="text-[11px] font-medium uppercase tracking-wide text-cyan-300">Settings / Personal AI Usage</p>
+              <h2 className="text-lg font-semibold text-slate-100">개인 AI 통합 사용량</h2>
+              <p className="text-xs text-slate-400">실시간 토큰 소비를 다크 대시보드로 확인합니다.</p>
             </div>
 
             <div className="flex items-center gap-2">
@@ -321,14 +694,14 @@ export default function PersonalAIUsage() {
                 type="month"
                 value={month}
                 onChange={event => setMonth(event.target.value)}
-                className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"
+                className="rounded-lg border border-slate-600 bg-[#0a1020] px-2 py-1.5 text-sm text-slate-100"
               />
               <button
                 type="button"
                 disabled={autoSaving}
                 onClick={() => { void updateAutoCollect(!autoEnabled, autoIntervalSeconds) }}
                 className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
-                  autoEnabled ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
+                  autoEnabled ? 'bg-emerald-500 text-slate-950 hover:bg-emerald-400' : 'bg-slate-700 text-slate-200 hover:bg-slate-600'
                 } disabled:opacity-60`}
               >
                 {autoEnabled ? '자동수집 ON' : '자동수집 OFF'}
@@ -343,7 +716,7 @@ export default function PersonalAIUsage() {
                     void updateAutoCollect(true, nextInterval)
                   }
                 }}
-                className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"
+                className="rounded-lg border border-slate-600 bg-[#0a1020] px-2 py-1.5 text-sm text-slate-100"
               >
                 {AUTO_INTERVAL_OPTIONS.map(option => (
                   <option key={option.value} value={option.value}>{option.label}</option>
@@ -352,7 +725,7 @@ export default function PersonalAIUsage() {
               <button
                 type="button"
                 onClick={() => { void reloadAll() }}
-                className="flex items-center gap-1 rounded-lg bg-slate-100 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-200"
+                className="flex items-center gap-1 rounded-lg bg-slate-700 px-3 py-1.5 text-sm text-slate-100 hover:bg-slate-600"
               >
                 <RefreshCw size={14} />
                 새로고침
@@ -371,7 +744,7 @@ export default function PersonalAIUsage() {
                     setError(String(e?.message || e))
                   }
                 }}
-                className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-60"
+                className="rounded-lg bg-cyan-500 px-3 py-1.5 text-sm font-medium text-slate-950 hover:bg-cyan-400 disabled:opacity-60"
               >
                 {collecting ? '수집 중...' : '통합 수집 실행'}
               </button>
@@ -379,22 +752,25 @@ export default function PersonalAIUsage() {
           </div>
 
           {dashboard && (
-            <p className="mt-2 text-[11px] text-slate-500">
+            <p className="mt-2 text-[11px] text-slate-400">
               FX 기준일: {dashboard.fxRateDate} / 출처: {dashboard.fxSource} / USDKRW: {dashboard.fxRateUsed.toFixed(2)}
               {dashboard.fxFallbackUsed ? ' (fallback)' : ''}
             </p>
           )}
 
-          <p className="mt-1 text-[11px] text-slate-500">
+          <p className="mt-1 text-[11px] text-slate-400">
             자동수집: {autoEnabled ? '활성화' : '비활성화'} / 간격: {autoIntervalSeconds}초 / 다음 실행: {formatDateTime(collectStatus?.autoNextRunAt)} / 최근 실행: {formatDateTime(collectStatus?.autoLastTriggeredAt)}
             {collectStatus?.autoLastTriggeredMonth ? ` (${collectStatus.autoLastTriggeredMonth})` : ''}
             {collecting && collectTrigger === 'auto' ? ' / 백그라운드 자동 수집중' : ''}
           </p>
+          <p className="mt-1 text-[11px] text-slate-400">
+            개요 라이브 반영: 7초 주기 / 마지막 반영: {formatTimeOnly(lastLiveSyncedAt)}
+          </p>
 
-          {message && <p className="mt-2 text-xs text-emerald-600">{message}</p>}
+          {message && <p className="mt-2 text-xs text-emerald-300">{message}</p>}
 
           {error && (
-            <div className="mt-2 flex items-center gap-2 rounded-lg bg-red-50 px-2 py-1.5 text-xs text-red-700">
+            <div className="mt-2 flex items-center gap-2 rounded-lg bg-red-900/30 px-2 py-1.5 text-xs text-red-200">
               <AlertCircle size={14} />
               <span>{error}</span>
             </div>
@@ -404,14 +780,14 @@ export default function PersonalAIUsage() {
         {dashboard && (
           <>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-3 lg:grid-cols-5">
-              <Card title="총 요청" value={formatCount(dashboard.overview.requestCount)} />
-              <Card title="내부 입력 토큰" value={formatCount(dashboard.overview.internalInputTokens)} />
-              <Card title="외부 입력 토큰" value={formatCount(dashboard.overview.externalInputTokens)} />
-              <Card title="총 비용 (USD)" value={formatUsd(dashboard.overview.totalCostUsd)} />
-              <Card title="총 비용 (KRW)" value={formatKrw(dashboard.overview.totalCostKrw)} />
+              <Card title="총 요청" numericValue={dashboard.overview.requestCount} formatter={formatCount} />
+              <Card title="내부 입력 토큰" numericValue={dashboard.overview.internalInputTokens} formatter={formatCount} />
+              <Card title="외부 입력 토큰" numericValue={dashboard.overview.externalInputTokens} formatter={formatCount} />
+              <Card title="총 비용 (USD)" numericValue={dashboard.overview.totalCostUsd} formatter={formatUsd} />
+              <Card title="총 비용 (KRW)" numericValue={dashboard.overview.totalCostKrw} formatter={formatKrw} />
             </div>
 
-            <div className="rounded-2xl border border-slate-200 bg-white p-2">
+            <div className="rounded-2xl border border-slate-700/70 bg-[#0b1220]/85 p-2">
               <div className="flex flex-wrap gap-2">
                 {TABS.map(tab => {
                   const active = tab.id === activeTab
@@ -421,7 +797,7 @@ export default function PersonalAIUsage() {
                       type="button"
                       onClick={() => setActiveTab(tab.id)}
                       className={`rounded-xl px-3 py-2 text-sm transition ${
-                        active ? 'bg-slate-900 text-white shadow-sm' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                        active ? 'bg-cyan-500 text-slate-950 shadow-sm' : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
                       }`}
                     >
                       {tab.label}
@@ -464,42 +840,134 @@ export default function PersonalAIUsage() {
 
             {activeTab === 'overview' && (
               <>
-                <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <h3 className="mb-3 text-sm font-semibold text-slate-700">소스별 통계</h3>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="border-b border-slate-200 text-slate-500">
-                          <th className="px-2 py-1 text-left">소스</th>
-                          <th className="px-2 py-1 text-right">요청 수</th>
-                          <th className="px-2 py-1 text-right">입력</th>
-                          <th className="px-2 py-1 text-right">출력</th>
-                          <th className="px-2 py-1 text-right">USD</th>
-                          <th className="px-2 py-1 text-right">KRW</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {dashboard.bySource.map(row => (
-                          <tr key={row.sourceCode} className="border-b border-slate-100 last:border-b-0">
-                            <td className="px-2 py-1.5 text-slate-700">{row.sourceName}</td>
-                            <td className="px-2 py-1.5 text-right text-slate-600">{formatCount(row.requestCount)}</td>
-                            <td className="px-2 py-1.5 text-right text-slate-600">{formatCount(row.inputTokens)}</td>
-                            <td className="px-2 py-1.5 text-right text-slate-600">{formatCount(row.outputTokens)}</td>
-                            <td className="px-2 py-1.5 text-right text-slate-700">{formatUsd(row.totalCostUsd)}</td>
-                            <td className="px-2 py-1.5 text-right text-slate-700">{formatKrw(row.totalCostKrw)}</td>
-                          </tr>
+                <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+                  <div className="space-y-4 xl:col-span-2">
+                    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                      <PieChartPanel title="월간 Model 사용량" subtitle={`${month} · 토큰 기준`} items={monthlyModelPie} />
+                      <PieChartPanel title="월간 Provider 사용량" subtitle={`${month} · 토큰 기준`} items={monthlyProviderPie} />
+                      <PieChartPanel title="주간 Model 사용량" subtitle={`${weeklyStartDayInDashboard} ~ ${latestDayInDashboard} · 토큰 기준`} items={weeklyModelPie} />
+                      <PieChartPanel title="주간 Provider 사용량" subtitle={`${weeklyStartDayInDashboard} ~ ${latestDayInDashboard} · 토큰 기준`} items={weeklyProviderPie} />
+                      <PieChartPanel title="일간 Model 사용량" subtitle={`${latestDayInDashboard} · 토큰 기준`} items={dailyModelPie} />
+                      <PieChartPanel title="일간 Provider 사용량" subtitle={`${latestDayInDashboard} · 토큰 기준`} items={dailyProviderPie} />
+                    </div>
+                    <div className="rounded-2xl border border-slate-700/70 bg-[#0b1220]/85 p-4">
+                      <h3 className="mb-3 text-sm font-semibold text-slate-100">소스별 통계</h3>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="border-b border-slate-700 text-slate-400">
+                              <th className="px-2 py-1 text-left">소스</th>
+                              <th className="px-2 py-1 text-right">요청 수</th>
+                              <th className="px-2 py-1 text-right">입력</th>
+                              <th className="px-2 py-1 text-right">출력</th>
+                              <th className="px-2 py-1 text-right">USD</th>
+                              <th className="px-2 py-1 text-right">KRW</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {dashboard.bySource.map(row => (
+                              <tr key={row.sourceCode} className="border-b border-slate-800 last:border-b-0">
+                                <td className="px-2 py-1.5 text-slate-200">{row.sourceName}</td>
+                                <td className="px-2 py-1.5 text-right text-slate-300">{formatCount(row.requestCount)}</td>
+                                <td className="px-2 py-1.5 text-right text-slate-300">{formatCount(row.inputTokens)}</td>
+                                <td className="px-2 py-1.5 text-right text-slate-300">{formatCount(row.outputTokens)}</td>
+                                <td className="px-2 py-1.5 text-right text-slate-100">{formatUsd(row.totalCostUsd)}</td>
+                                <td className="px-2 py-1.5 text-right text-slate-100">{formatKrw(row.totalCostKrw)}</td>
+                              </tr>
+                            ))}
+                            {dashboard.bySource.length === 0 && (
+                              <tr>
+                                <td colSpan={6} className="py-6 text-center text-slate-500">데이터가 없습니다.</td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="rounded-2xl border border-slate-700/70 bg-[#0b1220]/85 p-4">
+                      <h3 className="mb-2 text-sm font-semibold text-slate-100">ACTIVE PROVIDERS</h3>
+                      <div className="space-y-2">
+                        {overviewActiveProviders.map(row => (
+                          <div key={row.providerCode} className="rounded-xl border border-slate-700 bg-[#111a2d] p-2.5">
+                            <div className="flex items-center justify-between">
+                              <p className="text-xs font-semibold text-slate-100">{row.providerName}</p>
+                              <p className="text-[11px] text-cyan-300">{formatPercent((row.inputTokens + row.outputTokens) / Math.max(1, dashboard.overview.internalInputTokens + dashboard.overview.internalOutputTokens + dashboard.overview.externalInputTokens + dashboard.overview.externalOutputTokens))}</p>
+                            </div>
+                            <p className="mt-1 text-[11px] text-slate-400">{formatCount(row.inputTokens + row.outputTokens)} tok</p>
+                          </div>
                         ))}
-                        {dashboard.bySource.length === 0 && (
-                          <tr>
-                            <td colSpan={6} className="py-6 text-center text-slate-400">데이터가 없습니다.</td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
+                        {overviewActiveProviders.length === 0 && <p className="text-xs text-slate-500">데이터가 없습니다.</p>}
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-slate-700/70 bg-[#0b1220]/85 p-4">
+                      <h3 className="mb-2 text-sm font-semibold text-slate-100">TOP MODELS</h3>
+                      <div className="space-y-1.5">
+                        {overviewTopModels.map((row, idx) => (
+                          <div key={`${row.providerCode}-${row.modelCode}-${idx}`} className="flex items-center justify-between rounded-lg bg-[#111a2d] px-2 py-1.5 text-xs">
+                            <span className="truncate text-slate-200">{row.modelName}</span>
+                            <span className="text-emerald-300">{formatCount(row.inputTokens + row.outputTokens)}</span>
+                          </div>
+                        ))}
+                        {overviewTopModels.length === 0 && <p className="text-xs text-slate-500">데이터가 없습니다.</p>}
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-slate-700/70 bg-[#0b1220]/85 p-4">
+                      <h3 className="mb-2 text-sm font-semibold text-slate-100">ALERTS</h3>
+                      <p className="text-xs text-slate-400">외부 사용 비중</p>
+                      <div className="mt-2 h-2 w-full rounded-full bg-slate-800">
+                        <div className={`h-2 rounded-full ${externalRatio >= 0.8 ? 'bg-rose-400' : externalRatio >= 0.5 ? 'bg-amber-400' : 'bg-emerald-400'}`} style={{ width: `${Math.max(4, Math.round(externalRatio * 100))}%` }} />
+                      </div>
+                      <p className="mt-2 text-xs text-slate-300">{formatPercent(externalRatio)} (외부)</p>
+                    </div>
                   </div>
                 </div>
                 <UsageTable title="Provider별 통계" rows={dashboard.byProvider} showModel={false} />
                 <UsageTable title="Model별 통계" rows={dashboard.byModel} showModel />
+              </>
+            )}
+
+            {activeTab === 'today' && (
+              <>
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+                    <div>
+                      <h3 className="text-sm font-semibold text-slate-700">오늘 24시간 사용량 (30분 단위)</h3>
+                      <p className="text-xs text-slate-500">
+                        {todayUsage?.day || '-'} / {todayUsage?.timezone || 'KST'} / FX {todayUsage?.fxRateDate || '-'} ({todayUsage?.fxSource || '-'})
+                      </p>
+                    </div>
+                    <p className="text-xs text-slate-500">USDKRW: {(todayUsage?.fxRateUsed || 0).toFixed(2)} {todayUsage?.fxFallbackUsed ? '(fallback)' : ''}</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6">
+                    <Card title="오늘 요청" numericValue={todayTotals.requestCount} formatter={formatCount} />
+                    <Card title="오늘 입력" numericValue={todayTotals.inputTokens} formatter={formatCount} />
+                    <Card title="오늘 출력" numericValue={todayTotals.outputTokens} formatter={formatCount} />
+                    <Card title="오늘 총 토큰" numericValue={todayTotals.totalTokens} formatter={formatCount} />
+                    <Card title="오늘 비용 (USD)" numericValue={todayTotals.paygCostUsd} formatter={formatUsd} />
+                    <Card title="오늘 비용 (KRW)" numericValue={todayTotals.paygCostKrw} formatter={formatKrw} />
+                  </div>
+                </div>
+
+                <LineChartPanel
+                  title="30분 단위 총 토큰 추세"
+                  subtitle={`${todayUsage?.day || '-'} · KST`}
+                  points={todayTotalTokensPoints}
+                  formatter={formatCount}
+                />
+
+                <MultiSeriesChart
+                  title="Provider별 30분 단위 토큰 추세"
+                  subtitle="상위 6개 Provider"
+                  series={todayProviderSeries}
+                  formatter={formatCount}
+                />
+
+                <TodayUsageHalfHourTable rows={todayUsage?.buckets || []} />
+                <TodayUsageProviderTable rows={todayUsage?.byProvider || []} />
+                <TodayUsageModelTable rows={todayUsage?.byModel || []} />
               </>
             )}
 
@@ -564,12 +1032,20 @@ export default function PersonalAIUsage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {historyRows.map(row => (
+                      {historyRows.map(row => {
+                        const normalized = resolveHistoryProviderModel(row)
+                        return (
                         <tr key={row.id} className="border-b border-slate-100 last:border-b-0">
-                          <td className="px-2 py-1.5 text-slate-700">{formatDateTime(row.occurredAt)}</td>
+                          <td className="px-2 py-1.5 text-slate-700">{formatDateTime(row.createdAt || row.occurredAt)}</td>
                           <td className="px-2 py-1.5 text-slate-700">{formatDay(row.day)}</td>
-                          <td className="px-2 py-1.5 text-slate-700">{row.rawProvider || '-'}</td>
-                          <td className="px-2 py-1.5 text-slate-700">{row.rawModel || '-'}</td>
+                          <td className="px-2 py-1.5 text-slate-700">
+                            <p className="font-medium">{normalized.providerName}</p>
+                            <p className="text-[11px] text-slate-500">raw: {row.rawProvider || '-'}</p>
+                          </td>
+                          <td className="px-2 py-1.5 text-slate-700">
+                            <p className="font-medium">{normalized.modelName}</p>
+                            <p className="text-[11px] text-slate-500">raw: {row.rawModel || '-'}</p>
+                          </td>
                           <td className="px-2 py-1.5 text-slate-700">{row.feature}</td>
                           <td className="px-2 py-1.5 text-right text-slate-600">{formatCount(row.requestCount)}</td>
                           <td className="px-2 py-1.5 text-right text-slate-600">{formatCount(row.inputTokens)}</td>
@@ -577,7 +1053,7 @@ export default function PersonalAIUsage() {
                           <td className="px-2 py-1.5 text-right text-slate-700">{formatUsd(row.paygCostUsd)}</td>
                           <td className="px-2 py-1.5 text-slate-500">{formatHistoryMetadata(row.metadataJson)}</td>
                         </tr>
-                      ))}
+                      )})}
                       {historyRows.length === 0 && (
                         <tr>
                           <td colSpan={10} className="py-6 text-center text-slate-400">이력 데이터가 없습니다.</td>
@@ -611,7 +1087,7 @@ export default function PersonalAIUsage() {
                       onClick={async () => {
                         try {
                           await AddPersonalAIManualUsage(manualDay, manualProvider, manualModel.trim(), Number(manualInput) || 0, Number(manualOutput) || 0, Number(manualCost) || 0)
-                          await Promise.all([loadDashboard(), loadHistory()])
+                          await Promise.all([loadDashboard(), loadTodayUsage(), loadHistory()])
                           setManualInput(0)
                           setManualOutput(0)
                           setManualCost(0)
@@ -634,7 +1110,7 @@ export default function PersonalAIUsage() {
           </>
         )}
 
-        {loading && <p className="text-sm text-slate-500">불러오는 중...</p>}
+        {loading && <p className="text-sm text-slate-400">불러오는 중...</p>}
       </div>
 
       {collecting && collectTrigger !== 'auto' && (
@@ -658,30 +1134,45 @@ export default function PersonalAIUsage() {
 
 function MetricToggle({ metric, onChange }: { metric: TrendMetric; onChange: (metric: TrendMetric) => void }) {
   return (
-    <div className="inline-flex items-center rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-xs">
-      <button type="button" onClick={() => onChange('tokens')} className={`rounded-md px-2 py-1 ${metric === 'tokens' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>토큰</button>
-      <button type="button" onClick={() => onChange('cost')} className={`rounded-md px-2 py-1 ${metric === 'cost' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>비용</button>
+    <div className="inline-flex items-center rounded-lg border border-slate-700 bg-[#111a2d] p-0.5 text-xs">
+      <button type="button" onClick={() => onChange('tokens')} className={`rounded-md px-2 py-1 ${metric === 'tokens' ? 'bg-cyan-500 text-slate-950 shadow-sm' : 'text-slate-400'}`}>토큰</button>
+      <button type="button" onClick={() => onChange('cost')} className={`rounded-md px-2 py-1 ${metric === 'cost' ? 'bg-cyan-500 text-slate-950 shadow-sm' : 'text-slate-400'}`}>비용</button>
     </div>
   )
 }
 
-function Card({ title, value }: { title: string; value: string }) {
+function Card({
+  title,
+  value,
+  numericValue,
+  formatter,
+}: {
+  title: string
+  value?: string
+  numericValue?: number
+  formatter?: (value: number) => string
+}) {
+  const animated = useAnimatedNumber(Number(numericValue ?? 0), 800)
+  const displayValue = typeof numericValue === 'number'
+    ? (formatter ? formatter(animated) : String(Math.round(animated)))
+    : (value || '-')
+
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-3">
-      <p className="text-xs text-slate-500">{title}</p>
-      <p className="mt-1 text-lg font-semibold text-slate-800">{value}</p>
+    <div className="rounded-xl border border-slate-700/70 bg-[#0b1220]/85 p-3 shadow-[0_0_0_1px_rgba(148,163,184,0.08)]">
+      <p className="text-xs text-slate-400">{title}</p>
+      <p className="mt-1 text-lg font-semibold text-slate-100">{displayValue}</p>
     </div>
   )
 }
 
 function UsageTable({ title, rows, showModel }: { title: string; rows: PersonalAIUsageDashboard['byModel']; showModel: boolean }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-      <h3 className="mb-3 text-sm font-semibold text-slate-700">{title}</h3>
+    <div className="rounded-2xl border border-slate-700/70 bg-[#0b1220]/85 p-4">
+      <h3 className="mb-3 text-sm font-semibold text-slate-100">{title}</h3>
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
-            <tr className="border-b border-slate-200 text-slate-500">
+            <tr className="border-b border-slate-700 text-slate-400">
               <th className="px-2 py-1 text-left">Provider</th>
               {showModel && <th className="px-2 py-1 text-left">Model</th>}
               <th className="px-2 py-1 text-right">요청 수</th>
@@ -693,14 +1184,14 @@ function UsageTable({ title, rows, showModel }: { title: string; rows: PersonalA
           </thead>
           <tbody>
             {rows.map((row, idx) => (
-              <tr key={`${row.providerCode}-${row.modelCode}-${idx}`} className="border-b border-slate-100 last:border-b-0">
-                <td className="px-2 py-1.5 text-slate-700">{row.providerName}</td>
-                {showModel && <td className="px-2 py-1.5 text-slate-700">{row.modelName}</td>}
-                <td className="px-2 py-1.5 text-right text-slate-600">{formatCount(row.requestCount)}</td>
-                <td className="px-2 py-1.5 text-right text-slate-600">{formatCount(row.inputTokens)}</td>
-                <td className="px-2 py-1.5 text-right text-slate-600">{formatCount(row.outputTokens)}</td>
-                <td className="px-2 py-1.5 text-right text-slate-700">{formatUsd(row.totalCostUsd)}</td>
-                <td className="px-2 py-1.5 text-right text-slate-700">{formatKrw(row.totalCostKrw)}</td>
+              <tr key={`${row.providerCode}-${row.modelCode}-${idx}`} className="border-b border-slate-800 last:border-b-0">
+                <td className="px-2 py-1.5 text-slate-200">{row.providerName}</td>
+                {showModel && <td className="px-2 py-1.5 text-slate-200">{row.modelName}</td>}
+                <td className="px-2 py-1.5 text-right text-slate-300">{formatCount(row.requestCount)}</td>
+                <td className="px-2 py-1.5 text-right text-slate-300">{formatCount(row.inputTokens)}</td>
+                <td className="px-2 py-1.5 text-right text-slate-300">{formatCount(row.outputTokens)}</td>
+                <td className="px-2 py-1.5 text-right text-slate-100">{formatUsd(row.totalCostUsd)}</td>
+                <td className="px-2 py-1.5 text-right text-slate-100">{formatKrw(row.totalCostKrw)}</td>
               </tr>
             ))}
           </tbody>
@@ -739,6 +1230,213 @@ function DailyUsageTable({ rows }: { rows: AIUsageDailyPoint[] }) {
             ))}
           </tbody>
         </table>
+      </div>
+    </div>
+  )
+}
+
+function TodayUsageHalfHourTable({ rows }: { rows: AIUsageTodayHalfHourPoint[] }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+      <h3 className="mb-3 text-sm font-semibold text-slate-700">30분 단위 상세</h3>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-slate-200 text-slate-500">
+              <th className="px-2 py-1 text-left">시간(KST)</th>
+              <th className="px-2 py-1 text-right">요청 수</th>
+              <th className="px-2 py-1 text-right">입력</th>
+              <th className="px-2 py-1 text-right">출력</th>
+              <th className="px-2 py-1 text-right">총 토큰</th>
+              <th className="px-2 py-1 text-right">USD</th>
+              <th className="px-2 py-1 text-right">KRW</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(row => (
+              <tr key={row.startAt} className="border-b border-slate-100 last:border-b-0">
+                <td className="px-2 py-1.5 text-slate-700">{row.slot}</td>
+                <td className="px-2 py-1.5 text-right text-slate-600">{formatCount(row.requestCount)}</td>
+                <td className="px-2 py-1.5 text-right text-slate-600">{formatCount(row.inputTokens)}</td>
+                <td className="px-2 py-1.5 text-right text-slate-600">{formatCount(row.outputTokens)}</td>
+                <td className="px-2 py-1.5 text-right text-slate-700">{formatCount(row.totalTokens)}</td>
+                <td className="px-2 py-1.5 text-right text-slate-700">{formatUsd(row.paygCostUsd)}</td>
+                <td className="px-2 py-1.5 text-right text-slate-700">{formatKrw(row.paygCostKrw)}</td>
+              </tr>
+            ))}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={7} className="py-6 text-center text-slate-400">데이터가 없습니다.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function TodayUsageProviderTable({ rows }: { rows: PersonalAIUsageTodayUsage['byProvider'] }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+      <h3 className="mb-3 text-sm font-semibold text-slate-700">Provider별 오늘 사용량</h3>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-slate-200 text-slate-500">
+              <th className="px-2 py-1 text-left">Provider</th>
+              <th className="px-2 py-1 text-right">요청 수</th>
+              <th className="px-2 py-1 text-right">입력</th>
+              <th className="px-2 py-1 text-right">출력</th>
+              <th className="px-2 py-1 text-right">총 토큰</th>
+              <th className="px-2 py-1 text-right">USD</th>
+              <th className="px-2 py-1 text-right">KRW</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(row => (
+              <tr key={row.providerCode} className="border-b border-slate-100 last:border-b-0">
+                <td className="px-2 py-1.5 text-slate-700">{row.providerName}</td>
+                <td className="px-2 py-1.5 text-right text-slate-600">{formatCount(row.requestCount)}</td>
+                <td className="px-2 py-1.5 text-right text-slate-600">{formatCount(row.inputTokens)}</td>
+                <td className="px-2 py-1.5 text-right text-slate-600">{formatCount(row.outputTokens)}</td>
+                <td className="px-2 py-1.5 text-right text-slate-700">{formatCount(row.totalTokens)}</td>
+                <td className="px-2 py-1.5 text-right text-slate-700">{formatUsd(row.paygCostUsd)}</td>
+                <td className="px-2 py-1.5 text-right text-slate-700">{formatKrw(row.paygCostKrw)}</td>
+              </tr>
+            ))}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={7} className="py-6 text-center text-slate-400">데이터가 없습니다.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function TodayUsageModelTable({ rows }: { rows: PersonalAIUsageTodayUsage['byModel'] }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+      <h3 className="mb-3 text-sm font-semibold text-slate-700">Model별 오늘 사용량</h3>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-slate-200 text-slate-500">
+              <th className="px-2 py-1 text-left">Provider</th>
+              <th className="px-2 py-1 text-left">Model</th>
+              <th className="px-2 py-1 text-right">요청 수</th>
+              <th className="px-2 py-1 text-right">입력</th>
+              <th className="px-2 py-1 text-right">출력</th>
+              <th className="px-2 py-1 text-right">총 토큰</th>
+              <th className="px-2 py-1 text-right">USD</th>
+              <th className="px-2 py-1 text-right">KRW</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(row => (
+              <tr key={`${row.providerCode}:${row.modelCode}`} className="border-b border-slate-100 last:border-b-0">
+                <td className="px-2 py-1.5 text-slate-700">{row.providerName}</td>
+                <td className="px-2 py-1.5 text-slate-700">{row.modelName}</td>
+                <td className="px-2 py-1.5 text-right text-slate-600">{formatCount(row.requestCount)}</td>
+                <td className="px-2 py-1.5 text-right text-slate-600">{formatCount(row.inputTokens)}</td>
+                <td className="px-2 py-1.5 text-right text-slate-600">{formatCount(row.outputTokens)}</td>
+                <td className="px-2 py-1.5 text-right text-slate-700">{formatCount(row.totalTokens)}</td>
+                <td className="px-2 py-1.5 text-right text-slate-700">{formatUsd(row.paygCostUsd)}</td>
+                <td className="px-2 py-1.5 text-right text-slate-700">{formatKrw(row.paygCostKrw)}</td>
+              </tr>
+            ))}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={8} className="py-6 text-center text-slate-400">데이터가 없습니다.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function PieChartPanel({ title, subtitle, items }: { title: string; subtitle: string; items: PieDatum[] }) {
+  const [hoverOpen, setHoverOpen] = useState(false)
+  const [hoverPos, setHoverPos] = useState({ x: 0, y: 0 })
+  const total = items.reduce((sum, item) => sum + item.value, 0)
+  const animatedTotal = useAnimatedNumber(total, 900)
+  const rankedItems = [...items].sort((a, b) => b.value - a.value)
+  const gradient = items.length > 0
+    ? (() => {
+      let acc = 0
+      const segments = items.map(item => {
+        const start = total > 0 ? (acc / total) * 100 : 0
+        acc += item.value
+        const end = total > 0 ? (acc / total) * 100 : 100
+        return `${item.color} ${start.toFixed(2)}% ${end.toFixed(2)}%`
+      })
+      return `conic-gradient(${segments.join(', ')})`
+    })()
+    : 'conic-gradient(#e2e8f0 0% 100%)'
+
+  return (
+    <div className="rounded-2xl border border-slate-700/70 bg-[#0b1220]/85 p-4">
+      <div className="mb-3 flex items-start justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-semibold tracking-wide text-slate-100">{title}</h3>
+          <p className="text-xs text-slate-400">{subtitle}</p>
+        </div>
+        <span className="rounded-full border border-cyan-400/30 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-medium text-cyan-300">
+          hover details
+        </span>
+      </div>
+
+      <div
+        className="relative flex h-[220px] items-center justify-center rounded-xl border border-slate-700 bg-[#091325]"
+        onMouseEnter={() => setHoverOpen(true)}
+        onMouseLeave={() => setHoverOpen(false)}
+        onMouseMove={event => {
+          const rect = event.currentTarget.getBoundingClientRect()
+          setHoverPos({
+            x: event.clientX - rect.left,
+            y: event.clientY - rect.top,
+          })
+        }}
+      >
+        <div className="relative h-40 w-40 rounded-full shadow-[0_0_40px_rgba(34,211,238,0.15)]" style={{ background: gradient }}>
+          <div className="absolute left-1/2 top-1/2 flex h-20 w-20 -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-full bg-[#020617]">
+            <span className="text-[10px] text-slate-400">총 토큰</span>
+            <span className="text-xs font-semibold text-slate-100">{formatCount(Math.round(animatedTotal))}</span>
+          </div>
+        </div>
+
+        {hoverOpen && (
+          <div
+            className="pointer-events-none absolute z-20 w-64 rounded-xl border border-slate-600 bg-[#0b1220]/95 p-2.5 shadow-2xl backdrop-blur"
+            style={{
+              left: Math.max(10, Math.min(hoverPos.x + 14, 220)),
+              top: Math.max(8, Math.min(hoverPos.y - 12, 120)),
+            }}
+          >
+            <p className="mb-2 text-[11px] font-semibold text-slate-200">{title} 상세</p>
+            {rankedItems.length === 0 && <p className="text-xs text-slate-500">데이터가 없습니다.</p>}
+            {rankedItems.slice(0, 10).map(item => {
+              const ratio = total > 0 ? item.value / total : 0
+              return (
+                <div key={`hover-${item.label}`} className="mb-1.5 rounded-md bg-[#111a2d] px-2 py-1.5 last:mb-0">
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    <span className="inline-flex min-w-0 items-center gap-1.5 text-slate-200">
+                      <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                      <span className="truncate">{item.label}</span>
+                    </span>
+                    <span className="text-slate-400">{formatPercent(ratio)}</span>
+                  </div>
+                  <p className="text-right text-xs font-medium text-cyan-200">{formatCount(item.value)}</p>
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -1192,3 +1890,4 @@ function WebGLMotionPanel({ enabled, metric, profile }: { enabled: boolean; metr
     </div>
   )
 }
+

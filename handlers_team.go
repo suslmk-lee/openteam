@@ -789,6 +789,11 @@ func (a *App) UpdateTeamProfile(profile db.TeamProfile) error {
 	if err != nil {
 		return err
 	}
+	currentProfile, _ := a.database.GetTeamProfile(user.ID)
+	previousVaultRoot := ""
+	if currentProfile != nil {
+		previousVaultRoot = strings.TrimSpace(currentProfile.VaultRoot)
+	}
 	profile.SetupDone = true
 
 	// If Linear API Key is set or changed, fetch and store the current user's Linear ID
@@ -814,8 +819,10 @@ func (a *App) UpdateTeamProfile(profile db.TeamProfile) error {
 		a.vaultRoot = root
 	}
 
-	if _, err := a.RefreshVault(); err != nil {
-		return fmt.Errorf("failed to refresh vault cache: %w", err)
+	if root != previousVaultRoot {
+		if _, err := a.RefreshVault(); err != nil {
+			return fmt.Errorf("failed to refresh vault cache: %w", err)
+		}
 	}
 	return nil
 }

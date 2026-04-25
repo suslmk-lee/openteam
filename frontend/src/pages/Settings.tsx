@@ -50,6 +50,14 @@ const TOOL_OPTIONS = [
 const OPENAI_MODEL_OPTIONS = ['gpt-5.4-mini', 'gpt-5.4', 'gpt-5.3-codex', 'gpt-4o-mini']
 const MINIMAX_MODEL_OPTIONS = ['MiniMax-M2.7', 'MiniMax-M2.5']
 const MINIMAX_USAGE_ENDPOINT_DEFAULT = 'https://www.minimax.io/v1/token_plan/remains'
+const INTEGRATION_NAV_ITEMS = [
+  { id: 'openai-report', label: 'OpenAI 보고서' },
+  { id: 'minimax-chat', label: 'MiniMax 채팅' },
+  { id: 'google-workspace', label: 'Google 연동' },
+  { id: 'collaboration-tools', label: '기타 협업툴' },
+  { id: 'linear-integration', label: 'Linear 연동' },
+  { id: 'vault-integration', label: '지식베이스' },
+]
 
 type SettingsSection = 'user' | 'template' | 'integrations' | 'categories' | 'team-profile'
 
@@ -142,6 +150,8 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
   const [linearUserId, setLinearUserId] = useState('')
   const [linearLookupLoading, setLinearLookupLoading] = useState(false)
   const [linearLookupMessage, setLinearLookupMessage] = useState('')
+  const [linearSaveLoading, setLinearSaveLoading] = useState(false)
+  const [linearSaveMessage, setLinearSaveMessage] = useState('')
 
   // Team profile
   const { profile: teamProfile, reload: reloadProfile } = useTeamProfile()
@@ -363,7 +373,27 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6">
-        <div className="max-w-3xl mx-auto space-y-8">
+        <div className={section === 'integrations' ? 'max-w-6xl mx-auto lg:grid lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-6' : 'max-w-3xl mx-auto'}>
+          {section === 'integrations' && (
+            <aside className="mb-5 lg:mb-0">
+              <div className="lg:sticky lg:top-0 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-[var(--color-card)] p-3">
+                <p className="px-2 pb-2 text-xs font-semibold text-slate-500 dark:text-slate-400">연동 설정 바로가기</p>
+                <nav className="flex gap-1 overflow-x-auto lg:flex-col lg:overflow-visible">
+                  {INTEGRATION_NAV_ITEMS.map(item => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => document.getElementById(item.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                      className="whitespace-nowrap rounded-lg px-3 py-2 text-left text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100 transition-colors"
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </nav>
+              </div>
+            </aside>
+          )}
+          <div className="min-w-0 space-y-8">
           {section === 'user' && (
           <>
           <section className="bg-white dark:bg-[var(--color-card)] border border-slate-200 dark:border-slate-700 rounded-xl p-6">
@@ -491,7 +521,7 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
 
           {section === 'integrations' && (
           <>
-          <section className="bg-white dark:bg-[var(--color-card)] border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+          <section id="openai-report" className="scroll-mt-6 bg-white dark:bg-[var(--color-card)] border border-slate-200 dark:border-slate-700 rounded-xl p-6">
             <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100 mb-2">OpenAI 보고서 작성</h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
               메일 활동을 보고서 문장으로 자동 작성합니다. API Key는 로컬 DB에 저장됩니다.
@@ -555,7 +585,7 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
               </div>
             </div>
           </section>
-          <section className="bg-white dark:bg-[var(--color-card)] border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+          <section id="minimax-chat" className="scroll-mt-6 bg-white dark:bg-[var(--color-card)] border border-slate-200 dark:border-slate-700 rounded-xl p-6">
             <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100 mb-2">MiniMax 채팅 설정</h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
               채팅/지식기반 대화에서 MiniMax API를 사용합니다. API Key와 모델을 설정하면 채팅 모델 선택에서 사용할 수 있습니다.
@@ -647,7 +677,7 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
             </div>
           </section>
 
-          <section className="bg-white dark:bg-[var(--color-card)] border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+          <section id="google-workspace" className="scroll-mt-6 bg-white dark:bg-[var(--color-card)] border border-slate-200 dark:border-slate-700 rounded-xl p-6">
             <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100 mb-4">Google 연동 (gws)</h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
               Gmail, Google Calendar 데이터를 가져오려면 gws CLI 설정이 필요합니다.
@@ -873,7 +903,7 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
             </div>
           </section>
 
-          <section className="bg-white dark:bg-[var(--color-card)] border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+          <section id="collaboration-tools" className="scroll-mt-6 bg-white dark:bg-[var(--color-card)] border border-slate-200 dark:border-slate-700 rounded-xl p-6">
             <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100 mb-4">기타 협업툴 연동</h3>
             <div className="space-y-3">
               {TOOL_OPTIONS.filter(t => t.type !== 'gmail' && t.type !== 'google_calendar').map(tool => {
@@ -953,7 +983,7 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
 
           {/* Linear Settings (shown in integrations section) */}
           {section === 'integrations' && (
-          <section className="bg-white border border-slate-200 rounded-xl p-6">
+          <section id="linear-integration" className="scroll-mt-6 bg-white border border-slate-200 rounded-xl p-6">
             <div className="flex items-center gap-3 mb-2">
               <GitBranch size={18} className="text-violet-500" />
               <h3 className="text-base font-semibold text-slate-800">Linear 연동</h3>
@@ -1034,30 +1064,51 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
               </div>
               <button
                 onClick={async () => {
+                  const baseProfile = teamProfile ?? {
+                    teamType: profileTeamType || 'personal',
+                    teamName: profileTeamName || userTeam || '나의 팀',
+                    userName: profileUserName || userName || '사용자',
+                    memberCount: profileMemberCount || 1,
+                    setupDone: true,
+                    linearApiKey: '',
+                    linearTeamId: '',
+                    linearUserId: '',
+                    vaultRoot: vaultRootPath,
+                  }
                   try {
-                    if (!teamProfile) return
+                    setLinearSaveLoading(true)
+                    setLinearSaveMessage('')
                     await UpdateTeamProfile({
-                      ...teamProfile,
+                      ...baseProfile,
                       linearApiKey: linearApiKey.trim(),
                       linearTeamId: linearTeamId.trim(),
                       linearUserId: linearUserId.trim(),
                     } as any)
                     await reloadProfile()
+                    setLinearSaveMessage('Linear 설정이 저장되었습니다.')
                     showStatus('Linear 설정이 저장되었습니다')
                   } catch (err) {
                     console.error('Failed to save Linear config:', err)
+                    const message = err instanceof Error ? err.message : String(err || '')
+                    setLinearSaveMessage(message ? `Linear 설정 저장에 실패했습니다: ${message}` : 'Linear 설정 저장에 실패했습니다.')
+                  } finally {
+                    setLinearSaveLoading(false)
                   }
                 }}
-                className="px-4 py-2 text-sm bg-violet-600 text-white hover:bg-violet-700 rounded-lg transition-colors"
+                disabled={linearSaveLoading}
+                className="px-4 py-2 text-sm bg-violet-600 text-white hover:bg-violet-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Linear 설정 저장
+                {linearSaveLoading ? '저장 중...' : 'Linear 설정 저장'}
               </button>
+              {linearSaveMessage && (
+                <p className="text-xs text-slate-500 dark:text-slate-400">{linearSaveMessage}</p>
+              )}
             </div>
           </section>
           )}
 
           {section === 'integrations' && (
-          <section className="bg-white border border-slate-200 rounded-xl p-6">
+          <section id="vault-integration" className="scroll-mt-6 bg-white border border-slate-200 rounded-xl p-6">
             <h3 className="text-base font-semibold text-slate-800 mb-2">지식베이스</h3>
             <p className="text-xs text-slate-500 mb-4">지식베이스 경로는 Linear 연동 설정과 분리되어 관리됩니다.</p>
             <div className="space-y-3">
@@ -1169,6 +1220,7 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
             </div>
           </section>
           )}
+          </div>
         </div>
       </div>
     </div>

@@ -789,7 +789,10 @@ func (a *App) UpdateTeamProfile(profile db.TeamProfile) error {
 	if err != nil {
 		return err
 	}
-	currentProfile, _ := a.database.GetTeamProfile(user.ID)
+	currentProfile, err := a.database.GetTeamProfile(user.ID)
+	if err != nil {
+		return err
+	}
 	previousVaultRoot := ""
 	if currentProfile != nil {
 		previousVaultRoot = strings.TrimSpace(currentProfile.VaultRoot)

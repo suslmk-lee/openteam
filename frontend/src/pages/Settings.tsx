@@ -11,6 +11,7 @@ import {
   Sun,
   Moon,
   Monitor,
+  X,
 } from 'lucide-react'
 import { useAppApi } from '../hooks/useAppApi'
 import AISettingsSection from '../components/settings/AISettingsSection'
@@ -55,7 +56,6 @@ const INTEGRATION_NAV_ITEMS = [
   { id: 'minimax-chat', label: 'MiniMax 채팅' },
   { id: 'google-workspace', label: 'Google 연동' },
   { id: 'collaboration-tools', label: '기타 협업툴' },
-  { id: 'linear-integration', label: 'Linear 연동' },
   { id: 'vault-integration', label: '지식베이스' },
 ]
 
@@ -152,6 +152,7 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
   const [linearLookupMessage, setLinearLookupMessage] = useState('')
   const [linearSaveLoading, setLinearSaveLoading] = useState(false)
   const [linearSaveMessage, setLinearSaveMessage] = useState('')
+  const [linearModalOpen, setLinearModalOpen] = useState(false)
 
   // Team profile
   const { profile: teamProfile, reload: reloadProfile } = useTeamProfile()
@@ -427,15 +428,15 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
             </button>
           </section>
 
-          <section className="bg-white border border-slate-200 rounded-xl p-6">
-            <h3 className="text-base font-semibold text-slate-800 mb-4">외관 테마</h3>
+          <section className="bg-white dark:bg-[var(--color-card)] border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+            <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100 mb-4">외관 테마</h3>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setTheme('light')}
                 className={`flex items-center gap-2 px-4 py-2.5 text-sm rounded-lg border-2 transition-all ${
                   theme === 'light'
-                    ? 'border-blue-500 bg-blue-50 text-blue-700'
-                    : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                    ? 'border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-400 dark:bg-blue-500/15 dark:text-blue-200'
+                    : 'border-slate-200 text-slate-600 hover:border-slate-300 dark:border-slate-600 dark:text-slate-300 dark:hover:border-slate-500 dark:hover:bg-slate-800'
                 }`}
               >
                 <Sun size={18} />
@@ -445,8 +446,8 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
                 onClick={() => setTheme('dark')}
                 className={`flex items-center gap-2 px-4 py-2.5 text-sm rounded-lg border-2 transition-all ${
                   theme === 'dark'
-                    ? 'border-blue-500 bg-blue-50 text-blue-700'
-                    : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                    ? 'border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-400 dark:bg-blue-500/15 dark:text-blue-200'
+                    : 'border-slate-200 text-slate-600 hover:border-slate-300 dark:border-slate-600 dark:text-slate-300 dark:hover:border-slate-500 dark:hover:bg-slate-800'
                 }`}
               >
                 <Moon size={18} />
@@ -456,8 +457,8 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
                 onClick={() => setTheme('system')}
                 className={`flex items-center gap-2 px-4 py-2.5 text-sm rounded-lg border-2 transition-all ${
                   theme === 'system'
-                    ? 'border-blue-500 bg-blue-50 text-blue-700'
-                    : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                    ? 'border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-400 dark:bg-blue-500/15 dark:text-blue-200'
+                    : 'border-slate-200 text-slate-600 hover:border-slate-300 dark:border-slate-600 dark:text-slate-300 dark:hover:border-slate-500 dark:hover:bg-slate-800'
                 }`}
               >
                 <Monitor size={18} />
@@ -907,7 +908,7 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
             <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100 mb-4">기타 협업툴 연동</h3>
             <div className="space-y-3">
               {TOOL_OPTIONS.filter(t => t.type !== 'gmail' && t.type !== 'google_calendar').map(tool => {
-                const enabled = isIntegrationEnabled(tool.type)
+                const enabled = tool.type === 'linear' ? Boolean(linearApiKey.trim()) : isIntegrationEnabled(tool.type)
                 return (
                   <div
                     key={tool.type}
@@ -918,14 +919,20 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
                       <p className="text-xs text-slate-500 dark:text-slate-400">{tool.description}</p>
                     </div>
                     <button
-                      onClick={() => handleToggleIntegration(tool.type, '{}', !enabled)}
+                      onClick={() => {
+                        if (tool.type === 'linear') {
+                          setLinearModalOpen(true)
+                          return
+                        }
+                        handleToggleIntegration(tool.type, '{}', !enabled)
+                      }}
                       className={`px-3 py-1 text-xs rounded-full transition-colors ${
                         enabled
                           ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300'
                           : 'bg-slate-100 text-slate-500 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600'
-                      }`}
+                        }`}
                     >
-                      {enabled ? '연동 중' : '연동하기'}
+                      {tool.type === 'linear' ? '연동 설정' : enabled ? '연동 중' : '연동하기'}
                     </button>
                   </div>
                 )
@@ -982,11 +989,28 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
           )}
 
           {/* Linear Settings (shown in integrations section) */}
-          {section === 'integrations' && (
-          <section id="linear-integration" className="scroll-mt-6 bg-white border border-slate-200 rounded-xl p-6">
-            <div className="flex items-center gap-3 mb-2">
-              <GitBranch size={18} className="text-violet-500" />
-              <h3 className="text-base font-semibold text-slate-800">Linear 연동</h3>
+          {section === 'integrations' && linearModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 px-4 py-8">
+          <button
+            type="button"
+            aria-label="Linear 설정 닫기"
+            className="absolute inset-0 cursor-default"
+            onClick={() => setLinearModalOpen(false)}
+          />
+          <section id="linear-integration" className="relative z-10 max-h-[calc(100vh-4rem)] w-full max-w-2xl overflow-y-auto bg-white dark:bg-[var(--color-card)] border border-slate-200 dark:border-slate-700 rounded-xl p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4 mb-2">
+              <div className="flex items-center gap-3">
+                <GitBranch size={18} className="text-violet-500" />
+                <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100">Linear 연동</h3>
+              </div>
+              <button
+                type="button"
+                aria-label="Linear 설정 닫기"
+                onClick={() => setLinearModalOpen(false)}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-100 transition-colors"
+              >
+                <X size={18} />
+              </button>
             </div>
             <p className="text-xs text-slate-500 mb-4">
               현장 SI팀·소규모팀에서 Linear 이슈/태스크를 읽기 전용으로 표시합니다. API Key는 로컬 DB에 저장됩니다.
@@ -1083,7 +1107,8 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
                       linearApiKey: linearApiKey.trim(),
                       linearTeamId: linearTeamId.trim(),
                       linearUserId: linearUserId.trim(),
-                    } as any)
+                      vaultRoot: baseProfile.vaultRoot || '',
+                    })
                     await reloadProfile()
                     setLinearSaveMessage('Linear 설정이 저장되었습니다.')
                     showStatus('Linear 설정이 저장되었습니다')
@@ -1096,7 +1121,7 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
                   }
                 }}
                 disabled={linearSaveLoading}
-                className="px-4 py-2 text-sm bg-violet-600 text-white hover:bg-violet-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-4 py-2 text-sm bg-violet-600 text-white hover:bg-violet-700 dark:bg-violet-500 dark:hover:bg-violet-400 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {linearSaveLoading ? '저장 중...' : 'Linear 설정 저장'}
               </button>
@@ -1105,23 +1130,24 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
               )}
             </div>
           </section>
+          </div>
           )}
 
           {section === 'integrations' && (
-          <section id="vault-integration" className="scroll-mt-6 bg-white border border-slate-200 rounded-xl p-6">
-            <h3 className="text-base font-semibold text-slate-800 mb-2">지식베이스</h3>
-            <p className="text-xs text-slate-500 mb-4">지식베이스 경로는 Linear 연동 설정과 분리되어 관리됩니다.</p>
+          <section id="vault-integration" className="scroll-mt-6 bg-white dark:bg-[var(--color-card)] border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+            <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100 mb-2">지식베이스</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">지식베이스 경로는 Linear 연동 설정과 분리되어 관리됩니다.</p>
             <div className="space-y-3">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Vault Root Path</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Vault Root Path</label>
                 <input
                   type="text"
                   value={vaultRootPath}
                   onChange={e => setVaultRootPath(e.target.value)}
                   placeholder="D:\\Vault"
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
                 />
-                <p className="text-xs text-slate-400 mt-1">비워두면 기본 경로를 사용합니다.</p>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">비워두면 기본 경로를 사용합니다.</p>
               </div>
               <button
                 onClick={async () => {
@@ -1137,7 +1163,7 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
                     console.error('Failed to save vault root path:', err)
                   }
                 }}
-                className="px-4 py-2 text-sm bg-blue-600 text-white hover:bg-blue-700 rounded-lg transition-colors"
+                className="px-4 py-2 text-sm bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-400 rounded-lg transition-colors"
               >
                 지식베이스 설정 저장
               </button>
@@ -1147,43 +1173,43 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
 
           {/* Team Profile section */}
           {section === 'team-profile' && (
-          <section className="bg-white border border-slate-200 rounded-xl p-6">
-            <h3 className="text-base font-semibold text-slate-800 mb-4">팀 프로필 관리</h3>
+          <section className="bg-white dark:bg-[var(--color-card)] border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+            <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100 mb-4">팀 프로필 관리</h3>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">팀 유형</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">팀 유형</label>
                 <select
                   value={profileTeamType}
                   onChange={e => setProfileTeamType(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
                 >
                   <option value="personal">개인 (Personal)</option>
                   <option value="si_business">SI 사업팀</option>
                   <option value="si_field">현장 SI팀 (PM/PL)</option>
                   <option value="small_team">소규모팀 (3~4인)</option>
                 </select>
-                <p className="text-xs text-slate-400 mt-1">팀 유형을 변경하면 사이드바 메뉴와 대시보드가 전환됩니다. 기존 데이터는 유지됩니다.</p>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">팀 유형을 변경하면 사이드바 메뉴와 대시보드가 전환됩니다. 기존 데이터는 유지됩니다.</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">팀 이름</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">팀 이름</label>
                 <input
                   type="text"
                   value={profileTeamName}
                   onChange={e => setProfileTeamName(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">팀장 이름</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">팀장 이름</label>
                 <input
                   type="text"
                   value={profileUserName}
                   onChange={e => setProfileUserName(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">팀 인원수</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">팀 인원수</label>
                 <div className="flex items-center gap-3">
                   <input
                     type="range"
@@ -1191,9 +1217,9 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
                     max={30}
                     value={profileMemberCount}
                     onChange={e => setProfileMemberCount(Number(e.target.value))}
-                    className="flex-1"
+                    className="flex-1 accent-blue-600 dark:accent-blue-400"
                   />
-                  <span className="w-12 text-center font-semibold text-slate-700 bg-slate-100 rounded-lg py-1 text-sm">{profileMemberCount}명</span>
+                  <span className="w-12 text-center font-semibold text-slate-700 dark:text-slate-100 bg-slate-100 dark:bg-slate-800 border border-transparent dark:border-slate-700 rounded-lg py-1 text-sm">{profileMemberCount}명</span>
                 </div>
               </div>
               <button
@@ -1213,7 +1239,7 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
                     console.error('Failed to save team profile:', err)
                   }
                 }}
-                className="px-4 py-2 text-sm bg-blue-600 text-white hover:bg-blue-700 rounded-lg transition-colors"
+                className="px-4 py-2 text-sm bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-400 rounded-lg transition-colors"
               >
                 팀 프로필 저장
               </button>

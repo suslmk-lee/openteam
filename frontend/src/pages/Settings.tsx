@@ -384,13 +384,7 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
                     <button
                       key={item.id}
                       type="button"
-                      onClick={() => {
-                        if (item.id === 'linear-integration') {
-                          setLinearModalOpen(true)
-                          return
-                        }
-                        document.getElementById(item.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                      }}
+                      onClick={() => document.getElementById(item.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
                       className="whitespace-nowrap rounded-lg px-3 py-2 text-left text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100 transition-colors"
                     >
                       {item.label}
@@ -1113,7 +1107,8 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
                       linearApiKey: linearApiKey.trim(),
                       linearTeamId: linearTeamId.trim(),
                       linearUserId: linearUserId.trim(),
-                    } as any)
+                      vaultRoot: baseProfile.vaultRoot || '',
+                    })
                     await reloadProfile()
                     setLinearSaveMessage('Linear 설정이 저장되었습니다.')
                     showStatus('Linear 설정이 저장되었습니다')
@@ -1126,7 +1121,7 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
                   }
                 }}
                 disabled={linearSaveLoading}
-                className="px-4 py-2 text-sm bg-violet-600 text-white hover:bg-violet-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-4 py-2 text-sm bg-violet-600 text-white hover:bg-violet-700 dark:bg-violet-500 dark:hover:bg-violet-400 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {linearSaveLoading ? '저장 중...' : 'Linear 설정 저장'}
               </button>
@@ -1139,20 +1134,20 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
           )}
 
           {section === 'integrations' && (
-          <section id="vault-integration" className="scroll-mt-6 bg-white border border-slate-200 rounded-xl p-6">
-            <h3 className="text-base font-semibold text-slate-800 mb-2">지식베이스</h3>
-            <p className="text-xs text-slate-500 mb-4">지식베이스 경로는 Linear 연동 설정과 분리되어 관리됩니다.</p>
+          <section id="vault-integration" className="scroll-mt-6 bg-white dark:bg-[var(--color-card)] border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+            <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100 mb-2">지식베이스</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">지식베이스 경로는 Linear 연동 설정과 분리되어 관리됩니다.</p>
             <div className="space-y-3">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Vault Root Path</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Vault Root Path</label>
                 <input
                   type="text"
                   value={vaultRootPath}
                   onChange={e => setVaultRootPath(e.target.value)}
                   placeholder="D:\\Vault"
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
                 />
-                <p className="text-xs text-slate-400 mt-1">비워두면 기본 경로를 사용합니다.</p>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">비워두면 기본 경로를 사용합니다.</p>
               </div>
               <button
                 onClick={async () => {
@@ -1168,7 +1163,7 @@ export default function Settings({ section = 'user' }: { section?: SettingsSecti
                     console.error('Failed to save vault root path:', err)
                   }
                 }}
-                className="px-4 py-2 text-sm bg-blue-600 text-white hover:bg-blue-700 rounded-lg transition-colors"
+                className="px-4 py-2 text-sm bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-400 rounded-lg transition-colors"
               >
                 지식베이스 설정 저장
               </button>
